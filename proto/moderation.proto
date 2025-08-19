@@ -1,0 +1,66 @@
+syntax = "proto3";
+
+package moderation;
+
+service ModerationService {
+  rpc CheckContent(CheckContentRequest) returns (CheckContentResponse);
+  rpc ReportContent(ReportContentRequest) returns (ReportContentResponse);
+  rpc GetModerationStatus(GetModerationStatusRequest) returns (GetModerationStatusResponse);
+  rpc AddBlockedHash(AddBlockedHashRequest) returns (AddBlockedHashResponse);
+}
+
+message CheckContentRequest {
+  string content_id = 1;
+  string content_type = 2;
+  string file_hash = 3;
+  bytes content_data = 4;
+  string user_id = 5;
+}
+
+message CheckContentResponse {
+  bool approved = 1;
+  string status = 2; // approved, rejected, pending
+  string reason = 3;
+  repeated string flags = 4;
+  string moderation_id = 5;
+  string error = 6;
+}
+
+message ReportContentRequest {
+  string content_id = 1;
+  string reporter_id = 2;
+  string reason = 3;
+  string description = 4;
+}
+
+message ReportContentResponse {
+  string report_id = 1;
+  bool success = 2;
+  string error = 3;
+}
+
+message GetModerationStatusRequest {
+  string content_id = 1;
+}
+
+message GetModerationStatusResponse {
+  string content_id = 1;
+  string status = 2;
+  string reason = 3;
+  int64 checked_at = 4;
+  string moderator_id = 5;
+  string error = 6;
+}
+
+message AddBlockedHashRequest {
+  string hash_value = 1;
+  string hash_type = 2; // md5, sha256, perceptual
+  string reason = 3;
+  string added_by = 4;
+}
+
+message AddBlockedHashResponse {
+  bool success = 1;
+  string hash_id = 2;
+  string error = 3;
+}
