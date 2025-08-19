@@ -35,7 +35,7 @@ Le Media Service est un microservice NestJS haute performance conçu pour gérer
 
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Client Web    │    │  Mobile App     │    │  Other Services │
+│   Client Web    │    │    Mobile App   │    │  Other Services │
 └─────────┬───────┘    └─────────┬───────┘    └─────────┬───────┘
           │                      │                      │
           └──────────────────────┼──────────────────────┘
@@ -47,17 +47,17 @@ Le Media Service est un microservice NestJS haute performance conçu pour gérer
                                  │
         ┌────────────────────────┼────────────────────────┐
         │                        │                        │
-┌───────▼───────┐      ┌─────────▼────────┐    ┌─────────▼────────┐
-│ Auth Service  │      │ Moderation       │    │ Google Cloud     │
-│ (gRPC:50051)  │      │ Service          │    │ Storage          │
-└───────────────┘      │ (gRPC:50052)     │    └──────────────────┘
+┌───────▼───────┐      ┌─────────▼────────┐     ┌─────────▼────────┐
+│ Auth Service  │      │ Moderation       │     │ Google Cloud     │
+│ (gRPC:50051)  │      │ Service          │     │ Storage          │
+└───────────────┘      │ (gRPC:50052)     │     └──────────────────┘
                        └──────────────────┘
         ┌─────────────────────────┼─────────────────────────┐
         │                         │                         │
-┌───────▼───────┐     ┌──────────▼──────────┐    ┌────────▼────────┐
-│ PostgreSQL    │     │ Redis Cache         │    │ File System     │
-│ (Port: 5432)  │     │ (Port: 6379)        │    │ (Temp Storage)  │
-└───────────────┘     └─────────────────────┘    └─────────────────┘
+┌───────▼───────┐      ┌──────────▼──────────┐     ┌────────▼────────┐
+│ PostgreSQL    │      │ Redis Cache         │     │ File System     │
+│ (Port: 5432)  │      │ (Port: 6379)        │     │ (Temp Storage)  │
+└───────────────┘      └─────────────────────┘     └─────────────────┘
 ```
 
 ## Installation
