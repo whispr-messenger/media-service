@@ -396,7 +396,7 @@ Ce projet est sous licence privée. Tous droits réservés à l'équipe Whispr.
 - **Documentation** : [INTEGRATION.md](./INTEGRATION.md)
 - **Issues** : GitHub Issues
 - **Email** : dev-team@whispr.com
-- **Slack** : #media-service
+- **Discord** : #DALM14866
 
 ## Changelog
 
