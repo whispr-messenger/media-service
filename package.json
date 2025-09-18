@@ -26,7 +26,7 @@
     "docker:run": "docker run -p 3000:3000 media-service"
   },
   "dependencies": {
-    "@google-cloud/secret-manager": "^4.2.2",
+    "@google-cloud/secret-manager": "^6.1.0",
     "@google-cloud/storage": "^6.12.0",
     "@grpc/grpc-js": "^1.13.4",
     "@grpc/proto-loader": "^0.7.15",
