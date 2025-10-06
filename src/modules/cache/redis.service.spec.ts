@@ -35,7 +35,6 @@ import { RedisService } from './redis.service';
 
 describe('RedisService', () => {
   let service: RedisService;
-  let configService: ConfigService;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -109,7 +108,7 @@ describe('RedisService', () => {
       expect(mockRedisClient.setEx).toHaveBeenCalledWith(
         `quota:${userId}`,
         3600,
-        expect.stringContaining(`"userId":"${userId}"`)
+        expect.stringContaining(`"userId":"${userId}"`),
       );
     });
 
@@ -120,8 +119,6 @@ describe('RedisService', () => {
 
       // updateStorageUsed method doesn't exist, removing this test
       // await service.updateStorageUsed(userId, sizeChange);
-
-      const expectedQuota = { ...mockQuota, totalSize: mockQuota.totalSize + sizeChange };
       // expect(mockRedisClient.hSet).toHaveBeenCalledWith(
       //   'user_quotas',
       //   userId,
@@ -135,8 +132,6 @@ describe('RedisService', () => {
 
       // incrementFilesCount method doesn't exist, removing this test
       // await service.incrementFilesCount(userId);
-
-      const expectedQuota = { ...mockQuota, fileCount: mockQuota.fileCount + 1 };
       // expect(mockRedisClient.hSet).toHaveBeenCalledWith(
       //   'user_quotas',
       //   userId,
@@ -190,7 +185,7 @@ describe('RedisService', () => {
       expect(mockRedisClient.setEx).toHaveBeenCalledWith(
         `media:${mediaId}`,
         3600,
-        JSON.stringify(mockMetadata)
+        JSON.stringify(mockMetadata),
       );
     });
 
@@ -219,13 +214,17 @@ describe('RedisService', () => {
       const userId = 'test-user-id';
       const expiresIn = 1800;
 
-      const result = await service.createDownloadSession(mediaId, userId, expiresIn);
+      const result = await service.createDownloadSession(
+        mediaId,
+        userId,
+        expiresIn,
+      );
 
       expect(result).toMatch(/^dl_\d+_[a-z0-9]+$/);
       expect(mockRedisClient.setEx).toHaveBeenCalledWith(
         expect.stringMatching(/^download:dl_\d+_[a-z0-9]+$/),
         expiresIn,
-        expect.stringContaining(`"mediaId":"${mediaId}","userId":"${userId}"`)
+        expect.stringContaining(`"mediaId":"${mediaId}","userId":"${userId}"`),
       );
     });
 
@@ -246,7 +245,9 @@ describe('RedisService', () => {
 
       await service.delete(`upload_session:${sessionId}`);
 
-      expect(mockRedisClient.del).toHaveBeenCalledWith(`upload_session:${sessionId}`);
+      expect(mockRedisClient.del).toHaveBeenCalledWith(
+        `upload_session:${sessionId}`,
+      );
     });
   });
 
@@ -254,7 +255,7 @@ describe('RedisService', () => {
     it('should set and get string value', async () => {
       const key = 'test-key';
       const value = 'test-value';
-      
+
       mockRedisClient.setEx.mockResolvedValue('OK');
       mockRedisClient.get.mockResolvedValue(value);
 
