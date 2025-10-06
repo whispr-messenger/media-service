@@ -108,14 +108,8 @@ export class MediaService {
   }
 
   async uploadFile(uploadDto: UploadFileDto): Promise<MediaResponse> {
-    const {
-      file,
-      userId,
-      conversationId,
-      messageId,
-      categoryId,
-      expiresAt,
-    } = uploadDto;
+    const { file, userId, conversationId, messageId, categoryId, expiresAt } =
+      uploadDto;
 
     try {
       // Validation de la taille du fichier

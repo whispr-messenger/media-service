@@ -33,15 +33,15 @@ export class AuthGuard implements CanActivate {
     const token = this.extractTokenFromHeader(request);
 
     if (!token) {
-      throw new UnauthorizedException('Token d\'authentification manquant');
+      throw new UnauthorizedException("Token d'authentification manquant");
     }
 
     try {
       const validation = await this.authClient.validateToken({ token });
-      
+
       if (!validation.valid) {
         throw new UnauthorizedException(
-          validation.error || 'Token d\'authentification invalide'
+          validation.error || "Token d'authentification invalide",
         );
       }
 
@@ -65,12 +65,12 @@ export class AuthGuard implements CanActivate {
       return true;
     } catch (error) {
       this.logger.error('Erreur lors de la validation du token:', error);
-      
+
       if (error instanceof UnauthorizedException) {
         throw error;
       }
-      
-      throw new UnauthorizedException('Erreur d\'authentification');
+
+      throw new UnauthorizedException("Erreur d'authentification");
     }
   }
 
