@@ -55,7 +55,6 @@ describe('RedisService', () => {
     }).compile();
 
     service = module.get<RedisService>(RedisService);
-    configService = module.get<ConfigService>(ConfigService);
 
     // Initialize the service
     await service.onModuleInit();
