@@ -1,11 +1,17 @@
 import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
-import { PrismaClient, Prisma } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
 
 @Injectable()
-export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
+export class PrismaService
+  extends PrismaClient
+  implements OnModuleInit, OnModuleDestroy
+{
   constructor() {
     super({
-      log: process.env.NODE_ENV === 'development' ? ['query', 'info', 'warn', 'error'] : ['error'],
+      log:
+        process.env.NODE_ENV === 'development'
+          ? ['query', 'info', 'warn', 'error']
+          : ['error'],
       errorFormat: 'pretty',
     });
   }
@@ -18,16 +24,16 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     await this.$disconnect();
   }
 
-  async enableShutdownHooks(app: any) {
+  async enableShutdownHooks() {
     // Note: Prisma v5+ doesn't support beforeExit event
     // This method is kept for compatibility but doesn't do anything
   }
 
   async cleanDatabase() {
     if (process.env.NODE_ENV === 'test') {
-      const tablenames = await this.$queryRawUnsafe(
-        "SELECT tablename FROM pg_tables WHERE schemaname='public'"
-      ) as Array<{ tablename: string }>;
+      const tablenames = (await this.$queryRawUnsafe(
+        "SELECT tablename FROM pg_tables WHERE schemaname='public'",
+      )) as Array<{ tablename: string }>;
 
       const tables = tablenames
         .map(({ tablename }) => tablename)
