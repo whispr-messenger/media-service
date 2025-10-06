@@ -45,7 +45,10 @@ export class AuthClient implements OnModuleInit {
   private readonly authServiceUrl: string;
 
   constructor(private readonly configService: ConfigService) {
-    this.authServiceUrl = this.configService.get<string>('grpc.authService.url', 'localhost:50051');
+    this.authServiceUrl = this.configService.get<string>(
+      'grpc.authService.url',
+      'localhost:50051',
+    );
   }
 
   async onModuleInit() {
@@ -59,20 +62,26 @@ export class AuthClient implements OnModuleInit {
         oneofs: true,
       });
 
-      const authProto = grpc.loadPackageDefinition(packageDefinition).auth as any;
-      
+      const authProto = grpc.loadPackageDefinition(packageDefinition)
+        .auth as any;
+
       this.client = new authProto.AuthService(
         this.authServiceUrl,
-        grpc.credentials.createInsecure()
+        grpc.credentials.createInsecure(),
       );
 
       this.logger.log(`Client gRPC Auth connecté à ${this.authServiceUrl}`);
     } catch (error) {
-      this.logger.error('Erreur lors de l\'initialisation du client Auth gRPC:', error);
+      this.logger.error(
+        "Erreur lors de l'initialisation du client Auth gRPC:",
+        error,
+      );
     }
   }
 
-  async validateToken(request: ValidateTokenRequest): Promise<ValidateTokenResponse> {
+  async validateToken(
+    request: ValidateTokenRequest,
+  ): Promise<ValidateTokenResponse> {
     return new Promise((resolve, reject) => {
       if (!this.client) {
         reject(new Error('Client gRPC Auth non initialisé'));
@@ -105,32 +114,40 @@ export class AuthClient implements OnModuleInit {
         return;
       }
 
-      this.client.GetUserInfo({ user_id: request.userId }, (error: any, response: any) => {
-        if (error) {
-          this.logger.error('Erreur lors de la récupération des infos utilisateur:', error);
-          resolve({
-            userId: request.userId,
-            email: '',
-            username: '',
-            roles: [],
-            active: false,
-            error: error.message,
-          });
-        } else {
-          resolve({
-            userId: response.user_id,
-            email: response.email,
-            username: response.username,
-            roles: response.roles || [],
-            active: response.active,
-            error: response.error,
-          });
-        }
-      });
+      this.client.GetUserInfo(
+        { user_id: request.userId },
+        (error: any, response: any) => {
+          if (error) {
+            this.logger.error(
+              'Erreur lors de la récupération des infos utilisateur:',
+              error,
+            );
+            resolve({
+              userId: request.userId,
+              email: '',
+              username: '',
+              roles: [],
+              active: false,
+              error: error.message,
+            });
+          } else {
+            resolve({
+              userId: response.user_id,
+              email: response.email,
+              username: response.username,
+              roles: response.roles || [],
+              active: response.active,
+              error: response.error,
+            });
+          }
+        },
+      );
     });
   }
 
-  async checkPermission(request: CheckPermissionRequest): Promise<CheckPermissionResponse> {
+  async checkPermission(
+    request: CheckPermissionRequest,
+  ): Promise<CheckPermissionResponse> {
     return new Promise((resolve, reject) => {
       if (!this.client) {
         reject(new Error('Client gRPC Auth non initialisé'));
@@ -145,7 +162,10 @@ export class AuthClient implements OnModuleInit {
 
       this.client.CheckPermission(grpcRequest, (error: any, response: any) => {
         if (error) {
-          this.logger.error('Erreur lors de la vérification des permissions:', error);
+          this.logger.error(
+            'Erreur lors de la vérification des permissions:',
+            error,
+          );
           resolve({
             allowed: false,
             error: error.message,

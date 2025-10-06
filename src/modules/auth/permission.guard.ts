@@ -54,7 +54,9 @@ export class PermissionGuard implements CanActivate {
           this.logger.error(
             `Erreur lors de la vérification de permission: ${permissionCheck.error}`,
           );
-          throw new ForbiddenException('Erreur de vérification des permissions');
+          throw new ForbiddenException(
+            'Erreur de vérification des permissions',
+          );
         }
 
         if (!permissionCheck.allowed) {
@@ -66,12 +68,15 @@ export class PermissionGuard implements CanActivate {
 
       return true;
     } catch (error) {
-      this.logger.error('Erreur lors de la vérification des permissions:', error);
-      
+      this.logger.error(
+        'Erreur lors de la vérification des permissions:',
+        error,
+      );
+
       if (error instanceof ForbiddenException) {
         throw error;
       }
-      
+
       throw new ForbiddenException('Erreur de vérification des permissions');
     }
   }

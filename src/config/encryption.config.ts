@@ -5,7 +5,8 @@ export const encryptionConfig = () => ({
   tagLength: 16,
   saltLength: 32,
   iterations: 100000,
-  masterKey: process.env.ENCRYPTION_KEY || 'your-encryption-key-change-in-production',
+  masterKey:
+    process.env.ENCRYPTION_KEY || 'your-encryption-key-change-in-production',
   keyDerivation: {
     algorithm: 'pbkdf2',
     digest: 'sha256',
