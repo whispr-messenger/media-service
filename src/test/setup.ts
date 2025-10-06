@@ -1,8 +1,7 @@
-import { ConfigService } from '@nestjs/config';
-
 // Mock environment variables for testing
 process.env.NODE_ENV = 'test';
-process.env.DATABASE_URL = 'postgresql://test:test@localhost:5432/media_service_test';
+process.env.DATABASE_URL =
+  'postgresql://test:test@localhost:5432/media_service_test';
 process.env.REDIS_URL = 'redis://localhost:6379/1';
 process.env.ENCRYPTION_KEY = 'test-encryption-key-32-characters';
 process.env.GOOGLE_CLOUD_PROJECT_ID = 'test-project';
