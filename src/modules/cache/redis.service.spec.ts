@@ -113,11 +113,11 @@ describe('RedisService', () => {
     });
 
     it('should update storage used', async () => {
-      const sizeChange = 2048;
       mockRedisClient.hGet.mockResolvedValue(JSON.stringify(mockQuota));
       mockRedisClient.hSet.mockResolvedValue(1);
 
       // updateStorageUsed method doesn't exist, removing this test
+      // const sizeChange = 2048;
       // await service.updateStorageUsed(userId, sizeChange);
       // expect(mockRedisClient.hSet).toHaveBeenCalledWith(
       //   'user_quotas',
