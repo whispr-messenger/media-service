@@ -5,7 +5,6 @@ import * as crypto from 'crypto';
 
 describe('EncryptionService', () => {
   let service: EncryptionService;
-  let configService: ConfigService;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -22,7 +21,7 @@ describe('EncryptionService', () => {
                 'encryption.tagLength': 16,
                 'encryption.saltLength': 32,
                 'encryption.iterations': 100000,
-                'encryption.masterKey': 'test-master-key-32-characters-long'
+                'encryption.masterKey': 'test-master-key-32-characters-long',
               };
               return config[key] || null;
             }),
@@ -72,13 +71,13 @@ describe('EncryptionService', () => {
       const testData = Buffer.from('Hello, World!');
       const userKey = 'test-user-key';
       const encrypted = service.encryptBuffer(testData, userKey);
-      
+
       const decrypted = service.decryptBuffer({
         encryptedData: encrypted.encryptedData,
         iv: encrypted.iv,
         tag: encrypted.tag,
         salt: encrypted.salt,
-        userKey: userKey
+        userKey: userKey,
       });
 
       expect(decrypted).toEqual(testData);
@@ -96,7 +95,7 @@ describe('EncryptionService', () => {
           iv: encrypted.iv,
           tag: encrypted.tag,
           salt: encrypted.salt,
-          userKey: invalidKey
+          userKey: invalidKey,
         });
       }).toThrow();
     });
@@ -113,7 +112,7 @@ describe('EncryptionService', () => {
           iv: invalidIv,
           tag: encrypted.tag,
           salt: encrypted.salt,
-          userKey: userKey
+          userKey: userKey,
         });
       }).toThrow();
     });
@@ -138,6 +137,4 @@ describe('EncryptionService', () => {
       expect(hash1).not.toBe(hash2);
     });
   });
-
-
 });
