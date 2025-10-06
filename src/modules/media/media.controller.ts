@@ -17,14 +17,24 @@ import {
   ParseIntPipe,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiTags, ApiOperation, ApiResponse, ApiConsumes, ApiBody, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiConsumes,
+  ApiBody,
+  ApiBearerAuth,
+  ApiQuery,
+} from '@nestjs/swagger';
 import { Response } from 'express';
 import { MediaService, UploadFileDto, MediaResponse } from './media.service';
 import { AuthGuard } from '../auth/auth.guard';
 import { PermissionGuard } from '../auth/permission.guard';
-import { RequirePermissions, MediaPermissions } from '../auth/permissions.decorator';
+import {
+  RequirePermissions,
+  MediaPermissions,
+} from '../auth/permissions.decorator';
 import { Public } from '../auth/public.decorator';
-
 
 @ApiTags('Media')
 @ApiBearerAuth()
@@ -109,14 +119,17 @@ export class MediaController {
           'application/zip',
           'application/x-rar-compressed',
         ];
-        
+
         if (allowedMimes.includes(file.mimetype)) {
           callback(null, true);
         } else {
-          callback(new BadRequestException('Type de fichier non autorisé'), false);
+          callback(
+            new BadRequestException('Type de fichier non autorisé'),
+            false,
+          );
         }
       },
-    })
+    }),
   )
   async uploadFile(
     @UploadedFile() file: Express.Multer.File,
@@ -162,11 +175,11 @@ export class MediaController {
 
     try {
       const fileBuffer = await this.mediaService.getMedia(mediaId, userId);
-      
+
       // TODO: Récupérer les métadonnées du fichier pour définir les headers appropriés
       res.setHeader('Content-Type', 'application/octet-stream');
       res.setHeader('Content-Disposition', `attachment; filename="${mediaId}"`);
-      
+
       res.send(fileBuffer);
     } catch (error) {
       throw new BadRequestException('Erreur lors du téléchargement du fichier');
@@ -191,11 +204,13 @@ export class MediaController {
     try {
       // TODO: Implémenter la récupération de preview
       const previewBuffer = Buffer.alloc(0); // Placeholder
-      
+
       res.setHeader('Content-Type', 'image/jpeg');
       res.send(previewBuffer);
     } catch (error) {
-      throw new BadRequestException('Erreur lors de la récupération de la preview');
+      throw new BadRequestException(
+        'Erreur lors de la récupération de la preview',
+      );
     }
   }
 
@@ -232,7 +247,6 @@ export class MediaController {
     @Request() req: any,
     @Query('page', new ParseIntPipe({ optional: true })) page: number = 1,
     @Query('limit', new ParseIntPipe({ optional: true })) limit: number = 10,
-    @Query('category') category?: string,
   ): Promise<any> {
     const userId = req.user.id;
     // TODO: Implémenter la récupération des médias utilisateur avec pagination
@@ -258,10 +272,9 @@ export class MediaController {
     description: 'User media files retrieved successfully',
   })
   async getUserMedia(
-    @Param('userId') userId: string,
+    @Param('userId') _userId: string,
     @Query('page', new ParseIntPipe({ optional: true })) page: number = 1,
     @Query('limit', new ParseIntPipe({ optional: true })) limit: number = 10,
-    @Query('category') category?: string,
   ): Promise<any> {
     // TODO: Implémenter la récupération des médias utilisateur avec pagination
     return {
