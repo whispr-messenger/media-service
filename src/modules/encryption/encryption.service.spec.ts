@@ -31,7 +31,6 @@ describe('EncryptionService', () => {
     }).compile();
 
     service = module.get<EncryptionService>(EncryptionService);
-    configService = module.get<ConfigService>(ConfigService);
   });
 
   it('should be defined', () => {

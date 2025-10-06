@@ -70,11 +70,6 @@ describe('MediaService', () => {
     }).compile();
 
     service = module.get<MediaService>(MediaService);
-    prismaService = module.get<PrismaService>(PrismaService);
-    encryptionService = module.get<EncryptionService>(EncryptionService);
-    storageService = module.get<StorageService>(StorageService);
-    moderationClient = module.get<ModerationClient>(ModerationClient);
-    redisService = module.get<RedisService>(RedisService);
 
     // Reset all mocks
     jest.clearAllMocks();
