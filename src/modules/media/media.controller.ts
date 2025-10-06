@@ -248,8 +248,8 @@ export class MediaController {
     @Query('page', new ParseIntPipe({ optional: true })) page: number = 1,
     @Query('limit', new ParseIntPipe({ optional: true })) limit: number = 10,
   ): Promise<any> {
-    const userId = req.user.id;
     // TODO: Implémenter la récupération des médias utilisateur avec pagination
+    // const userId = req.user.id;
     return {
       data: [],
       pagination: {
