@@ -6,7 +6,6 @@ import { StorageService } from '../storage/storage.service';
 import { ModerationClient } from '../grpc/moderation.client';
 import { RedisService } from '../cache/redis.service';
 import { ConfigService } from '@nestjs/config';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
 
 // Mock services
 const mockPrismaService = {
@@ -56,11 +55,6 @@ const mockConfigService = {
 
 describe('MediaService', () => {
   let service: MediaService;
-  let prismaService: PrismaService;
-  let encryptionService: EncryptionService;
-  let storageService: StorageService;
-  let moderationClient: ModerationClient;
-  let redisService: RedisService;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
