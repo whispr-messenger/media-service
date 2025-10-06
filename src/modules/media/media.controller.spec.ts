@@ -3,8 +3,11 @@ import { MediaController } from './media.controller';
 import { MediaService } from './media.service';
 import { AuthGuard } from '../auth/auth.guard';
 import { PermissionGuard } from '../auth/permission.guard';
-import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
-import { Request } from 'express';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 
 // Mock MediaService
 const mockMediaService = {
@@ -98,7 +101,7 @@ describe('MediaController', () => {
       const result = await controller.uploadFile(
         mockRequest.file,
         body,
-        mockRequest
+        mockRequest,
       );
 
       expect(mediaService.uploadFile).toHaveBeenCalledWith({
@@ -120,7 +123,7 @@ describe('MediaController', () => {
       };
 
       await expect(
-        controller.uploadFile(undefined, body, mockRequest)
+        controller.uploadFile(undefined, body, mockRequest),
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -131,11 +134,11 @@ describe('MediaController', () => {
       };
 
       mockMediaService.uploadFile.mockRejectedValue(
-        new BadRequestException('File too large')
+        new BadRequestException('File too large'),
       );
 
       await expect(
-        controller.uploadFile(mockRequest.file, body, mockRequest)
+        controller.uploadFile(mockRequest.file, body, mockRequest),
       ).rejects.toThrow(BadRequestException);
     });
   });
@@ -156,7 +159,7 @@ describe('MediaController', () => {
 
       expect(mediaService.getMedia).toHaveBeenCalledWith(
         mediaId,
-        'test-user-id'
+        'test-user-id',
       );
       expect(mockResponse.setHeader).toHaveBeenCalled();
       expect(mockResponse.send).toHaveBeenCalled();
@@ -164,21 +167,21 @@ describe('MediaController', () => {
 
     it('should handle not found error', async () => {
       mockMediaService.getMedia.mockRejectedValue(
-        new NotFoundException('File not found')
+        new NotFoundException('File not found'),
       );
 
       await expect(
-        controller.downloadFile(mediaId, mockResponse, mockRequest)
+        controller.downloadFile(mediaId, mockResponse, mockRequest),
       ).rejects.toThrow(BadRequestException);
     });
 
     it('should handle forbidden error', async () => {
       mockMediaService.getMedia.mockRejectedValue(
-        new ForbiddenException('Access denied')
+        new ForbiddenException('Access denied'),
       );
 
       await expect(
-        controller.downloadFile(mediaId, mockResponse, mockRequest)
+        controller.downloadFile(mediaId, mockResponse, mockRequest),
       ).rejects.toThrow(BadRequestException);
     });
   });
@@ -193,28 +196,28 @@ describe('MediaController', () => {
 
       expect(mediaService.deleteMedia).toHaveBeenCalledWith(
         mediaId,
-        'test-user-id'
+        'test-user-id',
       );
     });
 
     it('should handle not found error', async () => {
       mockMediaService.deleteMedia.mockRejectedValue(
-        new NotFoundException('Media not found')
+        new NotFoundException('Media not found'),
       );
 
-      await expect(
-        controller.deleteFile(mediaId, mockRequest)
-      ).rejects.toThrow(NotFoundException);
+      await expect(controller.deleteFile(mediaId, mockRequest)).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
     it('should handle forbidden error', async () => {
       mockMediaService.deleteMedia.mockRejectedValue(
-        new ForbiddenException('Access denied')
+        new ForbiddenException('Access denied'),
       );
 
-      await expect(
-        controller.deleteFile(mediaId, mockRequest)
-      ).rejects.toThrow(ForbiddenException);
+      await expect(controller.deleteFile(mediaId, mockRequest)).rejects.toThrow(
+        ForbiddenException,
+      );
     });
   });
 
@@ -272,8 +275,4 @@ describe('MediaController', () => {
       expect(result.pagination.total).toBe(0);
     });
   });
-
-
-
-
 });
