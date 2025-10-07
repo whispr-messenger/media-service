@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  postgres-dev:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=whisper_media_dev
+      - POSTGRES_USER=whisper_user
+      - POSTGRES_PASSWORD=whisper_password
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U whisper_user -d whisper_media_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - media-dev-network
+
+  redis-dev:
+    image: redis:7-alpine
+    command: redis-server --requirepass redis_password
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_dev_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "redis_password", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - media-dev-network
+
+volumes:
+  postgres_dev_data:
+  redis_dev_data:
+
+networks:
+  media-dev-network:
+    driver: bridge
