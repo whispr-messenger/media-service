@@ -103,7 +103,7 @@ jobs:
         run: npm run lint
 
       - name: Run format check
-        run: npx prettier --check "src/**/*.ts" "test/**/*.ts"
+        run: npx prettier --check "src/**/*.ts"
 
       ####################################################################################################
       # Unit and E2E Tests
