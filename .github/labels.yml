@@ -74,11 +74,11 @@
   description: Build and deployment scripts
 
 # ================================
-# Component Labels
+# Component Labels - Media Service Specific
 # ================================
 - name: 🗄️ database
   color: "5319e7"
-  description: Database-related changes
+  description: Database-related changes (Prisma)
 
 - name: 🛡️ security:guards
   color: "d93f0b"
@@ -100,6 +100,30 @@
   color: "0e8a16"
   description: Health checks and monitoring
 
+- name: ☁️ storage:gcs
+  color: "4285f4"
+  description: Google Cloud Storage integration
+
+- name: 🎥 media:video
+  color: "ff6b6b"
+  description: Video processing and FFmpeg
+
+- name: 🖼️ media:image
+  color: "ee82ee"
+  description: Image processing and Sharp
+
+- name: 🔐 encryption
+  color: "f59e0b"
+  description: Encryption and data security
+
+- name: 💾 cache:redis
+  color: "dc2626"
+  description: Redis caching layer
+
+- name: 📡 grpc
+  color: "6366f1"
+  description: gRPC client communication
+
 # ================================
 # Documentation Labels
 # ================================
@@ -111,9 +135,9 @@
   color: "1d76db"
   description: Architecture documentation and diagrams
 
-- name: 🔗 docs:integration
+- name: 🔗 docs:api
   color: "5319e7"
-  description: Integration guides and API documentation
+  description: API documentation and Swagger
 
 # ================================
 # Testing Labels
