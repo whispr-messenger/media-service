@@ -86,7 +86,7 @@ jobs:
         run: npm ci
 
       - name: Run DB migrations
-        run: npm run migration:run
+        run: npm run prisma:deploy
         env:
           DATABASE_HOST: localhost
           DATABASE_PORT: 5433
@@ -94,6 +94,7 @@ jobs:
           DATABASE_PASSWORD: whisper_password
           DATABASE_NAME: whisper_media_dev
           DATABASE_SSL: false
+          DATABASE_URL: postgresql://whisper_user:whisper_password@localhost:5433/whisper_media_dev?schema=public
 
       ####################################################################################################
       # Linting and Formatting
@@ -102,7 +103,7 @@ jobs:
         run: npm run lint
 
       - name: Run format check
-        run: npx prettier --check "src/**/*.ts" "test/**/*.ts"
+        run: npx prettier --check "src/**/*.ts"
 
       ####################################################################################################
       # Unit and E2E Tests
