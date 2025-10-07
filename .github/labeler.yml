@@ -31,12 +31,55 @@ dependencies:
   - changed-files:
     - any-glob-to-any-file: ['package.json', 'package-lock.json']
 
-# Database migrations
+# Database migrations (Prisma)
 database:
   - changed-files:
-    - any-glob-to-any-file: ['src/migrations/**/*', '**/migration/**/*', 'prisma/**/*']
+    - any-glob-to-any-file: ['prisma/**/*']
 
-# Security
+# Security (Auth, Guards, Encryption)
 security:
   - changed-files:
-    - any-glob-to-any-file: ['**/guards/**/*', '**/auth/**/*', '**/security/**/*']
+    - any-glob-to-any-file: ['**/guards/**/*', '**/auth/**/*', '**/encryption/**/*']
+
+# ================================
+# Media Service Specific Labels
+# ================================
+
+# Google Cloud Storage
+☁️ storage:gcs:
+  - changed-files:
+    - any-glob-to-any-file: ['src/modules/storage/**/*', 'src/config/storage.config.ts']
+
+# Media processing (video/image)
+🎥 media:video:
+  - changed-files:
+    - any-glob-to-any-file: ['src/modules/media/**/*']
+
+🖼️ media:image:
+  - changed-files:
+    - any-glob-to-any-file: ['src/modules/media/**/*']
+
+# Encryption
+🔐 encryption:
+  - changed-files:
+    - any-glob-to-any-file: ['src/modules/encryption/**/*', 'src/config/encryption.config.ts']
+
+# Redis cache
+💾 cache:redis:
+  - changed-files:
+    - any-glob-to-any-file: ['src/modules/cache/**/*', 'src/config/redis.config.ts']
+
+# gRPC communication
+📡 grpc:
+  - changed-files:
+    - any-glob-to-any-file: ['src/modules/grpc/**/*', '**/*.proto']
+
+# Filters and error handling
+🗂️ filters:
+  - changed-files:
+    - any-glob-to-any-file: ['src/common/filters/**/*']
+
+# Middleware and interceptors
+🔄 middleware:
+  - changed-files:
+    - any-glob-to-any-file: ['src/common/interceptors/**/*', 'src/common/middleware/**/*']
