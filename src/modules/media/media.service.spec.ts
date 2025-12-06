@@ -1,12 +1,12 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { MediaService } from './media.service';
-import { PrismaService } from '../database/prisma.service';
-import { EncryptionService } from '../encryption/encryption.service';
-import { StorageService } from '../storage/storage.service';
-import { ModerationClient } from '../grpc/moderation.client';
-import { RedisService } from '../cache/redis.service';
-import { ConfigService } from '@nestjs/config';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { Test, TestingModule } from "@nestjs/testing";
+import { MediaService } from "./media.service";
+import { PrismaService } from "../database/prisma.service";
+import { EncryptionService } from "../encryption/encryption.service";
+import { StorageService } from "../storage/storage.service";
+import { ModerationClient } from "../grpc/moderation.client";
+import { RedisService } from "../cache/redis.service";
+import { ConfigService } from "@nestjs/config";
+import { BadRequestException, NotFoundException } from "@nestjs/common";
 
 // Mock services
 const mockPrismaService = {
@@ -48,13 +48,13 @@ const mockRedisService = {
 const mockConfigService = {
   get: jest.fn((key: string, defaultValue?: any) => {
     const config = {
-      'media.maxFileSize': 100 * 1024 * 1024, // 100MB
+      "media.maxFileSize": 100 * 1024 * 1024, // 100MB
     };
     return config[key] || defaultValue;
   }),
 };
 
-describe('MediaService', () => {
+describe("MediaService", () => {
   let service: MediaService;
   let prismaService: PrismaService;
   let encryptionService: EncryptionService;
@@ -86,7 +86,7 @@ describe('MediaService', () => {
     jest.clearAllMocks();
   });
 
-  it('should be defined', () => {
+  it("should be defined", () => {
     expect(service).toBeDefined();
   });
 

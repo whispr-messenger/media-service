@@ -1,5 +1,5 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { ConfigService } from '@nestjs/config';
+import { Test, TestingModule } from "@nestjs/testing";
+import { ConfigService } from "@nestjs/config";
 
 // Mock Redis client
 const mockRedisClient = {
@@ -23,17 +23,17 @@ const mockRedisClient = {
   flushDb: jest.fn(),
   flushall: jest.fn(),
   on: jest.fn(),
-  ping: jest.fn().mockResolvedValue('PONG'),
+  ping: jest.fn().mockResolvedValue("PONG"),
 };
 
-jest.mock('redis', () => ({
+jest.mock("redis", () => ({
   createClient: jest.fn(() => mockRedisClient),
 }));
 
 // Import after mocking
-import { RedisService } from './redis.service';
+import { RedisService } from "./redis.service";
 
-describe('RedisService', () => {
+describe("RedisService", () => {
   let service: RedisService;
   let configService: ConfigService;
 
@@ -45,8 +45,8 @@ describe('RedisService', () => {
           provide: ConfigService,
           useValue: {
             get: jest.fn((key: string) => {
-              if (key === 'REDIS_URL') {
-                return 'redis://localhost:6379';
+              if (key === "REDIS_URL") {
+                return "redis://localhost:6379";
               }
               return null;
             }),
@@ -66,25 +66,25 @@ describe('RedisService', () => {
   });
 
   afterEach(async () => {
-    if (service && typeof service.onModuleDestroy === 'function') {
+    if (service && typeof service.onModuleDestroy === "function") {
       await service.onModuleDestroy();
     }
   });
 
-  it('should be defined', () => {
+  it("should be defined", () => {
     expect(service).toBeDefined();
   });
 
-  describe('User Quota Management', () => {
-    const userId = 'test-user-id';
+  describe("User Quota Management", () => {
+    const userId = "test-user-id";
     const mockQuota = {
       userId: userId,
       totalSize: 1024,
       fileCount: 5,
-      lastUpdated: new Date('2025-08-19T13:13:13.408Z'),
+      lastUpdated: new Date("2025-08-19T13:13:13.408Z"),
     };
 
-    it('should get user quota', async () => {
+    it("should get user quota", async () => {
       mockRedisClient.get.mockResolvedValue(JSON.stringify(mockQuota));
 
       const result = await service.getUserQuota(userId);
@@ -93,7 +93,7 @@ describe('RedisService', () => {
       expect(result).toEqual(mockQuota);
     });
 
-    it('should return null when quota not found', async () => {
+    it("should return null when quota not found", async () => {
       mockRedisClient.get.mockResolvedValue(null);
 
       const result = await service.getUserQuota(userId);
@@ -101,19 +101,19 @@ describe('RedisService', () => {
       expect(result).toBeNull();
     });
 
-    it('should set user quota', async () => {
-      mockRedisClient.setEx.mockResolvedValue('OK');
+    it("should set user quota", async () => {
+      mockRedisClient.setEx.mockResolvedValue("OK");
 
       await service.setUserQuota(mockQuota);
 
       expect(mockRedisClient.setEx).toHaveBeenCalledWith(
         `quota:${userId}`,
         3600,
-        expect.stringContaining(`"userId":"${userId}"`)
+        expect.stringContaining(`"userId":"${userId}"`),
       );
     });
 
-    it('should update storage used', async () => {
+    it("should update storage used", async () => {
       const sizeChange = 2048;
       mockRedisClient.hGet.mockResolvedValue(JSON.stringify(mockQuota));
       mockRedisClient.hSet.mockResolvedValue(1);
@@ -121,7 +121,10 @@ describe('RedisService', () => {
       // updateStorageUsed method doesn't exist, removing this test
       // await service.updateStorageUsed(userId, sizeChange);
 
-      const expectedQuota = { ...mockQuota, totalSize: mockQuota.totalSize + sizeChange };
+      const expectedQuota = {
+        ...mockQuota,
+        totalSize: mockQuota.totalSize + sizeChange,
+      };
       // expect(mockRedisClient.hSet).toHaveBeenCalledWith(
       //   'user_quotas',
       //   userId,
@@ -129,14 +132,17 @@ describe('RedisService', () => {
       // );
     });
 
-    it('should increment files count', async () => {
+    it("should increment files count", async () => {
       mockRedisClient.hGet.mockResolvedValue(JSON.stringify(mockQuota));
       mockRedisClient.hSet.mockResolvedValue(1);
 
       // incrementFilesCount method doesn't exist, removing this test
       // await service.incrementFilesCount(userId);
 
-      const expectedQuota = { ...mockQuota, fileCount: mockQuota.fileCount + 1 };
+      const expectedQuota = {
+        ...mockQuota,
+        fileCount: mockQuota.fileCount + 1,
+      };
       // expect(mockRedisClient.hSet).toHaveBeenCalledWith(
       //   'user_quotas',
       //   userId,
@@ -144,7 +150,7 @@ describe('RedisService', () => {
       // );
     });
 
-    it('should increment daily uploads', async () => {
+    it("should increment daily uploads", async () => {
       mockRedisClient.hGet.mockResolvedValue(JSON.stringify(mockQuota));
       mockRedisClient.hSet.mockResolvedValue(1);
 
@@ -161,19 +167,19 @@ describe('RedisService', () => {
     });
   });
 
-  describe('Media Metadata Management', () => {
-    const mediaId = 'test-media-id';
+  describe("Media Metadata Management", () => {
+    const mediaId = "test-media-id";
     const mockMetadata = {
       id: mediaId,
-      filename: 'test.jpg',
-      mimetype: 'image/jpeg',
+      filename: "test.jpg",
+      mimetype: "image/jpeg",
       size: 1024,
-      userId: 'test-user-id',
-      categoryId: 'test-category',
+      userId: "test-user-id",
+      categoryId: "test-category",
       uploadedAt: new Date(),
     };
 
-    it('should get media metadata', async () => {
+    it("should get media metadata", async () => {
       mockRedisClient.get.mockResolvedValue(JSON.stringify(mockMetadata));
 
       const result = await service.getMediaMetadata(mediaId);
@@ -182,19 +188,19 @@ describe('RedisService', () => {
       expect(result).toEqual(mockMetadata);
     });
 
-    it('should set media metadata', async () => {
-      mockRedisClient.setEx.mockResolvedValue('OK');
+    it("should set media metadata", async () => {
+      mockRedisClient.setEx.mockResolvedValue("OK");
 
       await service.setMediaMetadata(mockMetadata);
 
       expect(mockRedisClient.setEx).toHaveBeenCalledWith(
         `media:${mediaId}`,
         3600,
-        JSON.stringify(mockMetadata)
+        JSON.stringify(mockMetadata),
       );
     });
 
-    it('should delete media metadata', async () => {
+    it("should delete media metadata", async () => {
       mockRedisClient.del.mockResolvedValue(1);
 
       await service.deleteMediaMetadata(mediaId);
@@ -203,33 +209,37 @@ describe('RedisService', () => {
     });
   });
 
-  describe('Temporary Upload Sessions', () => {
-    const sessionId = 'test-session-id';
+  describe("Temporary Upload Sessions", () => {
+    const sessionId = "test-session-id";
     const sessionData = {
-      userId: 'test-user-id',
-      filename: 'test.jpg',
+      userId: "test-user-id",
+      filename: "test.jpg",
       totalSize: 1024,
       uploadedChunks: [],
-      createdAt: '2025-08-19T13:13:13.408Z',
+      createdAt: "2025-08-19T13:13:13.408Z",
     };
 
-    it('should create download session', async () => {
-      mockRedisClient.setEx.mockResolvedValue('OK');
-      const mediaId = 'test-media-id';
-      const userId = 'test-user-id';
+    it("should create download session", async () => {
+      mockRedisClient.setEx.mockResolvedValue("OK");
+      const mediaId = "test-media-id";
+      const userId = "test-user-id";
       const expiresIn = 1800;
 
-      const result = await service.createDownloadSession(mediaId, userId, expiresIn);
+      const result = await service.createDownloadSession(
+        mediaId,
+        userId,
+        expiresIn,
+      );
 
       expect(result).toMatch(/^dl_\d+_[a-z0-9]+$/);
       expect(mockRedisClient.setEx).toHaveBeenCalledWith(
         expect.stringMatching(/^download:dl_\d+_[a-z0-9]+$/),
         expiresIn,
-        expect.stringContaining(`"mediaId":"${mediaId}","userId":"${userId}"`)
+        expect.stringContaining(`"mediaId":"${mediaId}","userId":"${userId}"`),
       );
     });
 
-    it('should get upload session', async () => {
+    it("should get upload session", async () => {
       mockRedisClient.get.mockResolvedValue(JSON.stringify(sessionData));
 
       const result = await service.getDownloadSession(sessionId);
@@ -241,21 +251,23 @@ describe('RedisService', () => {
       });
     });
 
-    it('should delete upload session', async () => {
+    it("should delete upload session", async () => {
       mockRedisClient.del.mockResolvedValue(1);
 
       await service.delete(`upload_session:${sessionId}`);
 
-      expect(mockRedisClient.del).toHaveBeenCalledWith(`upload_session:${sessionId}`);
+      expect(mockRedisClient.del).toHaveBeenCalledWith(
+        `upload_session:${sessionId}`,
+      );
     });
   });
 
-  describe('Generic Redis Operations', () => {
-    it('should set and get string value', async () => {
-      const key = 'test-key';
-      const value = 'test-value';
-      
-      mockRedisClient.setEx.mockResolvedValue('OK');
+  describe("Generic Redis Operations", () => {
+    it("should set and get string value", async () => {
+      const key = "test-key";
+      const value = "test-value";
+
+      mockRedisClient.setEx.mockResolvedValue("OK");
       mockRedisClient.get.mockResolvedValue(value);
 
       await service.set(key, value, 3600);
@@ -266,8 +278,8 @@ describe('RedisService', () => {
       expect(result).toBe(value);
     });
 
-    it('should delete key', async () => {
-      const key = 'test-key';
+    it("should delete key", async () => {
+      const key = "test-key";
       mockRedisClient.del.mockResolvedValue(1);
 
       const result = await service.delete(key);
@@ -276,8 +288,8 @@ describe('RedisService', () => {
       expect(result).toBe(true);
     });
 
-    it('should check if key exists', async () => {
-      const key = 'test-key';
+    it("should check if key exists", async () => {
+      const key = "test-key";
       mockRedisClient.exists.mockResolvedValue(1);
 
       const result = await service.exists(key);

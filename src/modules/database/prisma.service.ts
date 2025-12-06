@@ -1,12 +1,18 @@
-import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
-import { PrismaClient, Prisma } from '@prisma/client';
+import { Injectable, OnModuleInit, OnModuleDestroy } from "@nestjs/common";
+import { PrismaClient, Prisma } from "@prisma/client";
 
 @Injectable()
-export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
+export class PrismaService
+  extends PrismaClient
+  implements OnModuleInit, OnModuleDestroy
+{
   constructor() {
     super({
-      log: process.env.NODE_ENV === 'development' ? ['query', 'info', 'warn', 'error'] : ['error'],
-      errorFormat: 'pretty',
+      log:
+        process.env.NODE_ENV === "development"
+          ? ["query", "info", "warn", "error"]
+          : ["error"],
+      errorFormat: "pretty",
     });
   }
 
@@ -24,16 +30,16 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   }
 
   async cleanDatabase() {
-    if (process.env.NODE_ENV === 'test') {
-      const tablenames = await this.$queryRawUnsafe(
-        "SELECT tablename FROM pg_tables WHERE schemaname='public'"
-      ) as Array<{ tablename: string }>;
+    if (process.env.NODE_ENV === "test") {
+      const tablenames = (await this.$queryRawUnsafe(
+        "SELECT tablename FROM pg_tables WHERE schemaname='public'",
+      )) as Array<{ tablename: string }>;
 
       const tables = tablenames
         .map(({ tablename }) => tablename)
-        .filter((name) => name !== '_prisma_migrations')
+        .filter((name) => name !== "_prisma_migrations")
         .map((name) => `"public"."${name}"`)
-        .join(', ');
+        .join(", ");
 
       try {
         await this.$executeRawUnsafe(`TRUNCATE TABLE ${tables} CASCADE;`);

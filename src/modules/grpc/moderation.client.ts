@@ -1,8 +1,8 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import * as grpc from '@grpc/grpc-js';
-import * as protoLoader from '@grpc/proto-loader';
-import * as path from 'path';
+import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import * as grpc from "@grpc/grpc-js";
+import * as protoLoader from "@grpc/proto-loader";
+import * as path from "path";
 
 export interface CheckContentRequest {
   contentId: string;
@@ -67,12 +67,15 @@ export class ModerationClient implements OnModuleInit {
   private readonly moderationServiceUrl: string;
 
   constructor(private readonly configService: ConfigService) {
-    this.moderationServiceUrl = this.configService.get<string>('grpc.moderationService.url', 'localhost:50052');
+    this.moderationServiceUrl = this.configService.get<string>(
+      "grpc.moderationService.url",
+      "localhost:50052",
+    );
   }
 
   async onModuleInit() {
     try {
-      const protoPath = path.join(__dirname, '../../../proto/moderation.proto');
+      const protoPath = path.join(__dirname, "../../../proto/moderation.proto");
       const packageDefinition = protoLoader.loadSync(protoPath, {
         keepCase: true,
         longs: String,
@@ -81,23 +84,31 @@ export class ModerationClient implements OnModuleInit {
         oneofs: true,
       });
 
-      const moderationProto = grpc.loadPackageDefinition(packageDefinition).moderation as any;
-      
+      const moderationProto = grpc.loadPackageDefinition(packageDefinition)
+        .moderation as any;
+
       this.client = new moderationProto.ModerationService(
         this.moderationServiceUrl,
-        grpc.credentials.createInsecure()
+        grpc.credentials.createInsecure(),
       );
 
-      this.logger.log(`Client gRPC Moderation connecté à ${this.moderationServiceUrl}`);
+      this.logger.log(
+        `Client gRPC Moderation connecté à ${this.moderationServiceUrl}`,
+      );
     } catch (error) {
-      this.logger.error('Erreur lors de l\'initialisation du client Moderation gRPC:', error);
+      this.logger.error(
+        "Erreur lors de l'initialisation du client Moderation gRPC:",
+        error,
+      );
     }
   }
 
-  async checkContent(request: CheckContentRequest): Promise<CheckContentResponse> {
+  async checkContent(
+    request: CheckContentRequest,
+  ): Promise<CheckContentResponse> {
     return new Promise((resolve, reject) => {
       if (!this.client) {
-        reject(new Error('Client gRPC Moderation non initialisé'));
+        reject(new Error("Client gRPC Moderation non initialisé"));
         return;
       }
 
@@ -111,13 +122,16 @@ export class ModerationClient implements OnModuleInit {
 
       this.client.CheckContent(grpcRequest, (error: any, response: any) => {
         if (error) {
-          this.logger.error('Erreur lors de la vérification du contenu:', error);
+          this.logger.error(
+            "Erreur lors de la vérification du contenu:",
+            error,
+          );
           resolve({
             approved: false,
-            status: 'error',
+            status: "error",
             reason: error.message,
             flags: [],
-            moderationId: '',
+            moderationId: "",
             error: error.message,
           });
         } else {
@@ -134,10 +148,12 @@ export class ModerationClient implements OnModuleInit {
     });
   }
 
-  async reportContent(request: ReportContentRequest): Promise<ReportContentResponse> {
+  async reportContent(
+    request: ReportContentRequest,
+  ): Promise<ReportContentResponse> {
     return new Promise((resolve, reject) => {
       if (!this.client) {
-        reject(new Error('Client gRPC Moderation non initialisé'));
+        reject(new Error("Client gRPC Moderation non initialisé"));
         return;
       }
 
@@ -150,9 +166,9 @@ export class ModerationClient implements OnModuleInit {
 
       this.client.ReportContent(grpcRequest, (error: any, response: any) => {
         if (error) {
-          this.logger.error('Erreur lors du signalement du contenu:', error);
+          this.logger.error("Erreur lors du signalement du contenu:", error);
           resolve({
-            reportId: '',
+            reportId: "",
             success: false,
             error: error.message,
           });
@@ -167,41 +183,51 @@ export class ModerationClient implements OnModuleInit {
     });
   }
 
-  async getModerationStatus(request: GetModerationStatusRequest): Promise<GetModerationStatusResponse> {
+  async getModerationStatus(
+    request: GetModerationStatusRequest,
+  ): Promise<GetModerationStatusResponse> {
     return new Promise((resolve, reject) => {
       if (!this.client) {
-        reject(new Error('Client gRPC Moderation non initialisé'));
+        reject(new Error("Client gRPC Moderation non initialisé"));
         return;
       }
 
-      this.client.GetModerationStatus({ content_id: request.contentId }, (error: any, response: any) => {
-        if (error) {
-          this.logger.error('Erreur lors de la récupération du statut de modération:', error);
-          resolve({
-            contentId: request.contentId,
-            status: 'error',
-            reason: error.message,
-            checkedAt: 0,
-            error: error.message,
-          });
-        } else {
-          resolve({
-            contentId: response.content_id,
-            status: response.status,
-            reason: response.reason,
-            checkedAt: parseInt(response.checked_at),
-            moderatorId: response.moderator_id,
-            error: response.error,
-          });
-        }
-      });
+      this.client.GetModerationStatus(
+        { content_id: request.contentId },
+        (error: any, response: any) => {
+          if (error) {
+            this.logger.error(
+              "Erreur lors de la récupération du statut de modération:",
+              error,
+            );
+            resolve({
+              contentId: request.contentId,
+              status: "error",
+              reason: error.message,
+              checkedAt: 0,
+              error: error.message,
+            });
+          } else {
+            resolve({
+              contentId: response.content_id,
+              status: response.status,
+              reason: response.reason,
+              checkedAt: parseInt(response.checked_at),
+              moderatorId: response.moderator_id,
+              error: response.error,
+            });
+          }
+        },
+      );
     });
   }
 
-  async addBlockedHash(request: AddBlockedHashRequest): Promise<AddBlockedHashResponse> {
+  async addBlockedHash(
+    request: AddBlockedHashRequest,
+  ): Promise<AddBlockedHashResponse> {
     return new Promise((resolve, reject) => {
       if (!this.client) {
-        reject(new Error('Client gRPC Moderation non initialisé'));
+        reject(new Error("Client gRPC Moderation non initialisé"));
         return;
       }
 
@@ -214,10 +240,10 @@ export class ModerationClient implements OnModuleInit {
 
       this.client.AddBlockedHash(grpcRequest, (error: any, response: any) => {
         if (error) {
-          this.logger.error('Erreur lors de l\'ajout du hash bloqué:', error);
+          this.logger.error("Erreur lors de l'ajout du hash bloqué:", error);
           resolve({
             success: false,
-            hashId: '',
+            hashId: "",
             error: error.message,
           });
         } else {
@@ -233,10 +259,12 @@ export class ModerationClient implements OnModuleInit {
 
   async healthCheck(): Promise<boolean> {
     try {
-      const response = await this.getModerationStatus({ contentId: 'health-check' });
+      const response = await this.getModerationStatus({
+        contentId: "health-check",
+      });
       return response.error !== undefined; // Si on reçoit une réponse, le service est accessible
     } catch (error) {
-      this.logger.warn('Service Moderation gRPC non accessible:', error);
+      this.logger.warn("Service Moderation gRPC non accessible:", error);
       return false;
     }
   }

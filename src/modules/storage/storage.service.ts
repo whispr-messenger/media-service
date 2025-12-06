@@ -1,8 +1,12 @@
-import { Injectable, Logger, InternalServerErrorException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { Storage } from '@google-cloud/storage';
-import * as path from 'path';
-import * as crypto from 'crypto';
+import {
+  Injectable,
+  Logger,
+  InternalServerErrorException,
+} from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import { Storage } from "@google-cloud/storage";
+import * as path from "path";
+import * as crypto from "crypto";
 
 export interface StorageUploadOptions {
   fileName: string;
@@ -24,11 +28,13 @@ export class StorageService {
   private readonly projectId: string;
 
   constructor(private readonly configService: ConfigService) {
-    this.projectId = this.configService.get<string>('storage.gcs.projectId');
-    this.bucketName = this.configService.get<string>('storage.gcs.bucketName');
-    
-    const keyFilename = this.configService.get<string>('storage.gcs.keyFilename');
-    
+    this.projectId = this.configService.get<string>("storage.gcs.projectId");
+    this.bucketName = this.configService.get<string>("storage.gcs.bucketName");
+
+    const keyFilename = this.configService.get<string>(
+      "storage.gcs.keyFilename",
+    );
+
     this.storage = new Storage({
       projectId: this.projectId,
       keyFilename,
@@ -37,35 +43,47 @@ export class StorageService {
 
   async uploadFile(options: StorageUploadOptions): Promise<string> {
     const { fileName, buffer, contentType, metadata } = options;
-    
+
     try {
       const bucket = this.storage.bucket(this.bucketName);
       const file = bucket.file(fileName);
-      
+
       const stream = file.createWriteStream({
         metadata: {
-          contentType: contentType || 'application/octet-stream',
+          contentType: contentType || "application/octet-stream",
           metadata: metadata || {},
         },
         resumable: false,
       });
-      
+
       return new Promise((resolve, reject) => {
-        stream.on('error', (error) => {
-          this.logger.error(`Erreur lors de l'upload vers GCS: ${error.message}`, error);
-          reject(new InternalServerErrorException('Échec de l\'upload vers le stockage'));
+        stream.on("error", (error) => {
+          this.logger.error(
+            `Erreur lors de l'upload vers GCS: ${error.message}`,
+            error,
+          );
+          reject(
+            new InternalServerErrorException(
+              "Échec de l'upload vers le stockage",
+            ),
+          );
         });
-        
-        stream.on('finish', () => {
+
+        stream.on("finish", () => {
           this.logger.log(`Fichier ${fileName} uploadé avec succès vers GCS`);
           resolve(fileName);
         });
-        
+
         stream.end(buffer);
       });
     } catch (error) {
-      this.logger.error(`Erreur lors de l'upload du fichier ${fileName}:`, error);
-      throw new InternalServerErrorException('Échec de l\'upload vers le stockage');
+      this.logger.error(
+        `Erreur lors de l'upload du fichier ${fileName}:`,
+        error,
+      );
+      throw new InternalServerErrorException(
+        "Échec de l'upload vers le stockage",
+      );
     }
   }
 
@@ -73,24 +91,29 @@ export class StorageService {
     try {
       const bucket = this.storage.bucket(this.bucketName);
       const file = bucket.file(fileName);
-      
+
       const [exists] = await file.exists();
       if (!exists) {
         throw new Error(`Fichier ${fileName} non trouvé dans le stockage`);
       }
-      
+
       const [buffer] = await file.download();
       const [metadata] = await file.getMetadata();
-      
+
       this.logger.log(`Fichier ${fileName} téléchargé avec succès depuis GCS`);
-      
+
       return {
         buffer,
         metadata: metadata.metadata || {},
       };
     } catch (error) {
-      this.logger.error(`Erreur lors du téléchargement du fichier ${fileName}:`, error);
-      throw new InternalServerErrorException('Échec du téléchargement depuis le stockage');
+      this.logger.error(
+        `Erreur lors du téléchargement du fichier ${fileName}:`,
+        error,
+      );
+      throw new InternalServerErrorException(
+        "Échec du téléchargement depuis le stockage",
+      );
     }
   }
 
@@ -98,12 +121,17 @@ export class StorageService {
     try {
       const bucket = this.storage.bucket(this.bucketName);
       const file = bucket.file(fileName);
-      
+
       await file.delete();
       this.logger.log(`Fichier ${fileName} supprimé avec succès de GCS`);
     } catch (error) {
-      this.logger.error(`Erreur lors de la suppression du fichier ${fileName}:`, error);
-      throw new InternalServerErrorException('Échec de la suppression du fichier');
+      this.logger.error(
+        `Erreur lors de la suppression du fichier ${fileName}:`,
+        error,
+      );
+      throw new InternalServerErrorException(
+        "Échec de la suppression du fichier",
+      );
     }
   }
 
@@ -111,11 +139,14 @@ export class StorageService {
     try {
       const bucket = this.storage.bucket(this.bucketName);
       const file = bucket.file(fileName);
-      
+
       const [exists] = await file.exists();
       return exists;
     } catch (error) {
-      this.logger.error(`Erreur lors de la vérification d'existence du fichier ${fileName}:`, error);
+      this.logger.error(
+        `Erreur lors de la vérification d'existence du fichier ${fileName}:`,
+        error,
+      );
       return false;
     }
   }
@@ -124,21 +155,30 @@ export class StorageService {
     try {
       const bucket = this.storage.bucket(this.bucketName);
       const file = bucket.file(fileName);
-      
+
       const [metadata] = await file.getMetadata();
       return metadata.metadata || {};
     } catch (error) {
-      this.logger.error(`Erreur lors de la récupération des métadonnées du fichier ${fileName}:`, error);
-      throw new InternalServerErrorException('Échec de la récupération des métadonnées');
+      this.logger.error(
+        `Erreur lors de la récupération des métadonnées du fichier ${fileName}:`,
+        error,
+      );
+      throw new InternalServerErrorException(
+        "Échec de la récupération des métadonnées",
+      );
     }
   }
 
-  generateStoragePath(userId: string, fileId: string, extension: string): string {
+  generateStoragePath(
+    userId: string,
+    fileId: string,
+    extension: string,
+  ): string {
     const date = new Date();
     const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+
     // Structure: users/{userId}/{year}/{month}/{day}/{fileId}.{extension}
     return `users/${userId}/${year}/${month}/${day}/${fileId}${extension}`;
   }
@@ -146,9 +186,9 @@ export class StorageService {
   generatePreviewPath(userId: string, fileId: string): string {
     const date = new Date();
     const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+
     // Structure: previews/{userId}/{year}/{month}/{day}/{fileId}.jpg
     return `previews/${userId}/${year}/${month}/${day}/${fileId}.jpg`;
   }
@@ -158,23 +198,23 @@ export class StorageService {
     fileId: string,
     encryptedBuffer: Buffer,
     originalExtension: string,
-    metadata?: Record<string, string>
+    metadata?: Record<string, string>,
   ): Promise<string> {
-    const storagePath = this.generateStoragePath(userId, fileId, '.enc');
-    
+    const storagePath = this.generateStoragePath(userId, fileId, ".enc");
+
     const uploadOptions: StorageUploadOptions = {
       fileName: storagePath,
       buffer: encryptedBuffer,
-      contentType: 'application/octet-stream',
+      contentType: "application/octet-stream",
       metadata: {
         ...metadata,
         originalExtension,
-        encrypted: 'true',
+        encrypted: "true",
         userId,
         fileId,
       },
     };
-    
+
     return this.uploadFile(uploadOptions);
   }
 
@@ -182,23 +222,23 @@ export class StorageService {
     userId: string,
     fileId: string,
     encryptedPreviewBuffer: Buffer,
-    metadata?: Record<string, string>
+    metadata?: Record<string, string>,
   ): Promise<string> {
     const previewPath = this.generatePreviewPath(userId, fileId);
-    
+
     const uploadOptions: StorageUploadOptions = {
       fileName: previewPath,
       buffer: encryptedPreviewBuffer,
-      contentType: 'application/octet-stream',
+      contentType: "application/octet-stream",
       metadata: {
         ...metadata,
-        encrypted: 'true',
-        preview: 'true',
+        encrypted: "true",
+        preview: "true",
         userId,
         fileId,
       },
     };
-    
+
     return this.uploadFile(uploadOptions);
   }
 
@@ -206,30 +246,65 @@ export class StorageService {
     try {
       const bucket = this.storage.bucket(this.bucketName);
       const [files] = await bucket.getFiles();
-      
+
       let deletedCount = 0;
       const now = new Date();
-      
+
       for (const file of files) {
         try {
           const [metadata] = await file.getMetadata();
           const expiresAt = metadata.metadata?.expiresAt;
-          
+
           if (expiresAt && new Date(expiresAt) < now) {
             await file.delete();
             deletedCount++;
             this.logger.log(`Fichier expiré supprimé: ${file.name}`);
           }
         } catch (error) {
-          this.logger.warn(`Erreur lors de la vérification d'expiration pour ${file.name}:`, error);
+          this.logger.warn(
+            `Erreur lors de la vérification d'expiration pour ${file.name}:`,
+            error,
+          );
         }
       }
-      
-      this.logger.log(`Nettoyage terminé: ${deletedCount} fichiers expirés supprimés`);
+
+      this.logger.log(
+        `Nettoyage terminé: ${deletedCount} fichiers expirés supprimés`,
+      );
       return deletedCount;
     } catch (error) {
-      this.logger.error('Erreur lors du nettoyage des fichiers expirés:', error);
-      throw new InternalServerErrorException('Échec du nettoyage des fichiers expirés');
+      this.logger.error(
+        "Erreur lors du nettoyage des fichiers expirés:",
+        error,
+      );
+      throw new InternalServerErrorException(
+        "Échec du nettoyage des fichiers expirés",
+      );
+    }
+  }
+
+  /**
+   * Check if the storage bucket is accessible
+   * This is used for health checks to verify MinIO/GCS connectivity
+   */
+  async checkBucketAccess(): Promise<boolean> {
+    try {
+      const bucket = this.storage.bucket(this.bucketName);
+      const [exists] = await bucket.exists();
+
+      if (!exists) {
+        this.logger.warn(
+          `Bucket ${this.bucketName} does not exist or is not accessible`,
+        );
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      this.logger.error(
+        `Failed to check bucket access: ${error instanceof Error ? error.message : "Unknown error"}`,
+      );
+      return false;
     }
   }
 }
