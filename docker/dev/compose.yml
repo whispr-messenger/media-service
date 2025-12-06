@@ -1,0 +1,101 @@
+name: whispr-media
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: whispr-media-postgres
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    volumes:
+      - whispr_media_postgres:/var/lib/postgresql/data
+    expose:
+      - ${POSTGRES_PORT}
+    networks:
+      - whispr_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: whispr-media-redis
+    volumes:
+      - whispr_media_redis:/data
+    command: redis-server
+    expose:
+      - ${REDIS_PORT}
+    networks:
+      - whispr_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    depends_on:
+      postgres:
+        condition: service_healthy
+        restart: true
+
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z-cpuv1
+    container_name: whispr-media-minio
+    command: server --console-address ":9001" /data
+    expose:
+      - "9000"
+      - "9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - whispr_media_minio:/data
+    networks:
+      - whispr_network
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  media-service:
+    build:
+      context: ../..
+      dockerfile: ./docker/dev/Dockerfile
+    container_name: whispr-media-api
+    ports:
+      - "3000:3000"
+      - "9229:9229"
+    env_file:
+      - .env
+    volumes:
+      - ../..:/workspace
+      - whispr_media_node_modules:/workspace/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - whispr_network
+    restart: unless-stopped
+    command: npm run start:dev
+
+volumes:
+  whispr_media_postgres:
+    driver: local
+  whispr_media_redis:
+    driver: local
+  whispr_media_minio:
+    driver: local
+  whispr_media_node_modules:
+    driver: local
+
+networks:
+  whispr_network:
+    driver: bridge
