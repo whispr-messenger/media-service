@@ -4,11 +4,11 @@ import {
   ExecutionContext,
   ForbiddenException,
   Logger,
-} from '@nestjs/common';
-import { Reflector } from '@nestjs/core';
-import { AuthClient } from '../grpc/auth.client';
+} from "@nestjs/common";
+import { Reflector } from "@nestjs/core";
+import { AuthClient } from "../grpc/auth.client";
 
-export const PERMISSIONS_KEY = 'permissions';
+export const PERMISSIONS_KEY = "permissions";
 
 export interface Permission {
   resource: string;
@@ -38,7 +38,7 @@ export class PermissionGuard implements CanActivate {
     const user = request.user;
 
     if (!user) {
-      throw new ForbiddenException('Utilisateur non authentifié');
+      throw new ForbiddenException("Utilisateur non authentifié");
     }
 
     try {
@@ -54,7 +54,9 @@ export class PermissionGuard implements CanActivate {
           this.logger.error(
             `Erreur lors de la vérification de permission: ${permissionCheck.error}`,
           );
-          throw new ForbiddenException('Erreur de vérification des permissions');
+          throw new ForbiddenException(
+            "Erreur de vérification des permissions",
+          );
         }
 
         if (!permissionCheck.allowed) {
@@ -66,13 +68,16 @@ export class PermissionGuard implements CanActivate {
 
       return true;
     } catch (error) {
-      this.logger.error('Erreur lors de la vérification des permissions:', error);
-      
+      this.logger.error(
+        "Erreur lors de la vérification des permissions:",
+        error,
+      );
+
       if (error instanceof ForbiddenException) {
         throw error;
       }
-      
-      throw new ForbiddenException('Erreur de vérification des permissions');
+
+      throw new ForbiddenException("Erreur de vérification des permissions");
     }
   }
 }

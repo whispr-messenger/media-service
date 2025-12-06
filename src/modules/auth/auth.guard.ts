@@ -4,11 +4,11 @@ import {
   ExecutionContext,
   UnauthorizedException,
   Logger,
-} from '@nestjs/common';
-import { Reflector } from '@nestjs/core';
-import { AuthClient } from '../grpc/auth.client';
+} from "@nestjs/common";
+import { Reflector } from "@nestjs/core";
+import { AuthClient } from "../grpc/auth.client";
 
-export const IS_PUBLIC_KEY = 'isPublic';
+export const IS_PUBLIC_KEY = "isPublic";
 
 @Injectable()
 export class AuthGuard implements CanActivate {
@@ -33,15 +33,15 @@ export class AuthGuard implements CanActivate {
     const token = this.extractTokenFromHeader(request);
 
     if (!token) {
-      throw new UnauthorizedException('Token d\'authentification manquant');
+      throw new UnauthorizedException("Token d'authentification manquant");
     }
 
     try {
       const validation = await this.authClient.validateToken({ token });
-      
+
       if (!validation.valid) {
         throw new UnauthorizedException(
-          validation.error || 'Token d\'authentification invalide'
+          validation.error || "Token d'authentification invalide",
         );
       }
 
@@ -51,7 +51,7 @@ export class AuthGuard implements CanActivate {
       });
 
       if (userInfo.error || !userInfo.active) {
-        throw new UnauthorizedException('Utilisateur inactif ou introuvable');
+        throw new UnauthorizedException("Utilisateur inactif ou introuvable");
       }
 
       // Ajouter les informations utilisateur à la requête
@@ -64,18 +64,18 @@ export class AuthGuard implements CanActivate {
 
       return true;
     } catch (error) {
-      this.logger.error('Erreur lors de la validation du token:', error);
-      
+      this.logger.error("Erreur lors de la validation du token:", error);
+
       if (error instanceof UnauthorizedException) {
         throw error;
       }
-      
-      throw new UnauthorizedException('Erreur d\'authentification');
+
+      throw new UnauthorizedException("Erreur d'authentification");
     }
   }
 
   private extractTokenFromHeader(request: any): string | undefined {
-    const [type, token] = request.headers.authorization?.split(' ') ?? [];
-    return type === 'Bearer' ? token : undefined;
+    const [type, token] = request.headers.authorization?.split(" ") ?? [];
+    return type === "Bearer" ? token : undefined;
   }
 }

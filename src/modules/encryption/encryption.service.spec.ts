@@ -1,9 +1,9 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { ConfigService } from '@nestjs/config';
-import { EncryptionService } from './encryption.service';
-import * as crypto from 'crypto';
+import { Test, TestingModule } from "@nestjs/testing";
+import { ConfigService } from "@nestjs/config";
+import { EncryptionService } from "./encryption.service";
+import * as crypto from "crypto";
 
-describe('EncryptionService', () => {
+describe("EncryptionService", () => {
   let service: EncryptionService;
   let configService: ConfigService;
 
@@ -16,13 +16,13 @@ describe('EncryptionService', () => {
           useValue: {
             get: jest.fn((key: string) => {
               const config = {
-                'encryption.algorithm': 'aes-256-gcm',
-                'encryption.keyLength': 32,
-                'encryption.ivLength': 16,
-                'encryption.tagLength': 16,
-                'encryption.saltLength': 32,
-                'encryption.iterations': 100000,
-                'encryption.masterKey': 'test-master-key-32-characters-long'
+                "encryption.algorithm": "aes-256-gcm",
+                "encryption.keyLength": 32,
+                "encryption.ivLength": 16,
+                "encryption.tagLength": 16,
+                "encryption.saltLength": 32,
+                "encryption.iterations": 100000,
+                "encryption.masterKey": "test-master-key-32-characters-long",
               };
               return config[key] || null;
             }),
@@ -35,29 +35,29 @@ describe('EncryptionService', () => {
     configService = module.get<ConfigService>(ConfigService);
   });
 
-  it('should be defined', () => {
+  it("should be defined", () => {
     expect(service).toBeDefined();
   });
 
-  describe('encryptBuffer', () => {
-    it('should encrypt buffer successfully', async () => {
-      const testData = Buffer.from('Hello, World!');
-      const userKey = 'test-user-key';
+  describe("encryptBuffer", () => {
+    it("should encrypt buffer successfully", async () => {
+      const testData = Buffer.from("Hello, World!");
+      const userKey = "test-user-key";
       const result = service.encryptBuffer(testData, userKey);
 
-      expect(result).toHaveProperty('encryptedData');
-      expect(result).toHaveProperty('iv');
-      expect(result).toHaveProperty('tag');
-      expect(result).toHaveProperty('salt');
+      expect(result).toHaveProperty("encryptedData");
+      expect(result).toHaveProperty("iv");
+      expect(result).toHaveProperty("tag");
+      expect(result).toHaveProperty("salt");
       expect(result.encryptedData).toBeInstanceOf(Buffer);
       expect(result.iv).toBeInstanceOf(Buffer);
       expect(result.tag).toBeInstanceOf(Buffer);
       expect(result.salt).toBeInstanceOf(Buffer);
     });
 
-    it('should produce different results for same input', async () => {
-      const testData = Buffer.from('Hello, World!');
-      const userKey = 'test-user-key';
+    it("should produce different results for same input", async () => {
+      const testData = Buffer.from("Hello, World!");
+      const userKey = "test-user-key";
       const result1 = service.encryptBuffer(testData, userKey);
       const result2 = service.encryptBuffer(testData, userKey);
 
@@ -67,28 +67,28 @@ describe('EncryptionService', () => {
     });
   });
 
-  describe('decryptBuffer', () => {
-    it('should decrypt data successfully', async () => {
-      const testData = Buffer.from('Hello, World!');
-      const userKey = 'test-user-key';
+  describe("decryptBuffer", () => {
+    it("should decrypt data successfully", async () => {
+      const testData = Buffer.from("Hello, World!");
+      const userKey = "test-user-key";
       const encrypted = service.encryptBuffer(testData, userKey);
-      
+
       const decrypted = service.decryptBuffer({
         encryptedData: encrypted.encryptedData,
         iv: encrypted.iv,
         tag: encrypted.tag,
         salt: encrypted.salt,
-        userKey: userKey
+        userKey: userKey,
       });
 
       expect(decrypted).toEqual(testData);
     });
 
-    it('should throw error with invalid key', async () => {
-      const testData = Buffer.from('Hello, World!');
-      const userKey = 'test-user-key';
+    it("should throw error with invalid key", async () => {
+      const testData = Buffer.from("Hello, World!");
+      const userKey = "test-user-key";
       const encrypted = service.encryptBuffer(testData, userKey);
-      const invalidKey = 'invalid-key';
+      const invalidKey = "invalid-key";
 
       expect(() => {
         service.decryptBuffer({
@@ -96,14 +96,14 @@ describe('EncryptionService', () => {
           iv: encrypted.iv,
           tag: encrypted.tag,
           salt: encrypted.salt,
-          userKey: invalidKey
+          userKey: invalidKey,
         });
       }).toThrow();
     });
 
-    it('should throw error with invalid IV', async () => {
-      const testData = Buffer.from('Hello, World!');
-      const userKey = 'test-user-key';
+    it("should throw error with invalid IV", async () => {
+      const testData = Buffer.from("Hello, World!");
+      const userKey = "test-user-key";
       const encrypted = service.encryptBuffer(testData, userKey);
       const invalidIv = crypto.randomBytes(16);
 
@@ -113,15 +113,15 @@ describe('EncryptionService', () => {
           iv: invalidIv,
           tag: encrypted.tag,
           salt: encrypted.salt,
-          userKey: userKey
+          userKey: userKey,
         });
       }).toThrow();
     });
   });
 
-  describe('generateFileHash', () => {
-    it('should generate consistent hash for same data', () => {
-      const testData = Buffer.from('Hello, World!');
+  describe("generateFileHash", () => {
+    it("should generate consistent hash for same data", () => {
+      const testData = Buffer.from("Hello, World!");
       const hash1 = service.generateFileHash(testData);
       const hash2 = service.generateFileHash(testData);
 
@@ -129,15 +129,13 @@ describe('EncryptionService', () => {
       expect(hash1).toHaveLength(64); // SHA-256 hex encoded
     });
 
-    it('should generate different hashes for different data', () => {
-      const data1 = Buffer.from('Hello, World!');
-      const data2 = Buffer.from('Goodbye, World!');
+    it("should generate different hashes for different data", () => {
+      const data1 = Buffer.from("Hello, World!");
+      const data2 = Buffer.from("Goodbye, World!");
       const hash1 = service.generateFileHash(data1);
       const hash2 = service.generateFileHash(data2);
 
       expect(hash1).not.toBe(hash2);
     });
   });
-
-
 });

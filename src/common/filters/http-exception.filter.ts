@@ -5,8 +5,8 @@ import {
   HttpException,
   HttpStatus,
   Logger,
-} from '@nestjs/common';
-import { Request, Response } from 'express';
+} from "@nestjs/common";
+import { Request, Response } from "express";
 
 @Catch(HttpException)
 export class HttpExceptionFilter implements ExceptionFilter {
@@ -23,19 +23,19 @@ export class HttpExceptionFilter implements ExceptionFilter {
       timestamp: new Date().toISOString(),
       path: request.url,
       method: request.method,
-      message: exception.message || 'Internal server error',
+      message: exception.message || "Internal server error",
     };
 
     if (status >= HttpStatus.INTERNAL_SERVER_ERROR) {
       this.logger.error(
         `${request.method} ${request.url}`,
         exception.stack,
-        'HttpExceptionFilter',
+        "HttpExceptionFilter",
       );
     } else {
       this.logger.warn(
         `${request.method} ${request.url} - ${status} - ${exception.message}`,
-        'HttpExceptionFilter',
+        "HttpExceptionFilter",
       );
     }
 
