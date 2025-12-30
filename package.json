@@ -38,7 +38,7 @@
     "@nestjs/microservices": "^10.0.0",
     "@nestjs/passport": "^10.0.0",
     "@nestjs/platform-express": "^10.0.0",
-    "@nestjs/platform-fastify": "^10.0.0",
+    "@nestjs/platform-fastify": "^11.1.10",
     "@nestjs/swagger": "^7.1.0",
     "@nestjs/terminus": "^10.0.0",
     "@nestjs/throttler": "^4.2.1",
