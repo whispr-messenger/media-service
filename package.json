@@ -43,7 +43,7 @@
     "@nestjs/terminus": "^10.0.0",
     "@nestjs/throttler": "^4.2.1",
     "@prisma/client": "^5.0.0",
-    "bcrypt": "^5.1.0",
+    "bcrypt": "^6.0.0",
     "cache-manager": "^7.1.1",
     "cache-manager-redis-store": "^3.0.1",
     "class-transformer": "^0.5.1",
