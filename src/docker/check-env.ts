@@ -57,7 +57,6 @@ export default function runEnvChecks(): void {
 	checkRequired('REDIS_HOST');
 	checkRequired('REDIS_PORT');
 
-
 	// Ports
 	checkRequired('HTTP_PORT');
 	checkRequired('GRPC_PORT');
