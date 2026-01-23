@@ -1,37 +1,21 @@
-import { Module } from "@nestjs/common";
-import { ConfigModule } from "@nestjs/config";
-import { ThrottlerModule } from "@nestjs/throttler";
-import { APP_GUARD } from "@nestjs/core";
-import { MediaModule } from "./modules/media/media.module";
-import { AuthModule } from "./modules/auth/auth.module";
-import { GrpcModule } from "./modules/grpc/grpc.module";
-import { DatabaseModule } from "./modules/database/database.module";
-import { CacheModule } from "./modules/cache/cache.module";
-import { HealthModule } from "./modules/health/health.module";
-import { AuthGuard } from "./modules/auth/auth.guard";
+import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { CacheModule } from '@nestjs/cache-manager';
+import { cacheModuleAsyncOptions } from './config/cache.config';
+import { typeOrmModuleAsyncOptions } from './config/typeorm.config';
+import { HealthModule } from './modules/health/health.module';
+
 
 @Module({
-  imports: [
-    ConfigModule.forRoot({
-      isGlobal: true,
-      envFilePath: [".env.local", ".env"],
-    }),
-    ThrottlerModule.forRoot({
-      ttl: 60000,
-      limit: 60,
-    }),
-    DatabaseModule,
-    CacheModule,
-    AuthModule,
-    GrpcModule,
-    MediaModule,
-    HealthModule,
-  ],
-  providers: [
-    {
-      provide: APP_GUARD,
-      useClass: AuthGuard,
-    },
-  ],
+	imports: [
+		ConfigModule.forRoot({
+			isGlobal: true,
+			envFilePath: ['.env.development', '.env.local', '.env'],
+		}),
+		TypeOrmModule.forRootAsync(typeOrmModuleAsyncOptions),
+		CacheModule.registerAsync(cacheModuleAsyncOptions),
+		HealthModule,
+	],
 })
 export class AppModule {}
