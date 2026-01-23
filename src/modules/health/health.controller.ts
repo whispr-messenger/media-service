@@ -1,64 +1,104 @@
-import { Controller, Get } from "@nestjs/common";
-import { ApiTags, ApiOperation, ApiResponse } from "@nestjs/swagger";
-import { HealthCheckService, HealthCheck, HealthCheckResult, PrismaHealthIndicator } from "@nestjs/terminus";
-import { Public } from "../auth/public.decorator";
-import { PrismaService } from "../database/prisma.service";
-import { RedisHealthIndicator } from "./indicators/redis.health";
-import { StorageHealthIndicator } from "./indicators/storage.health";
+import { Controller, Get, Inject, Logger } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { DataSource } from 'typeorm';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Cache } from 'cache-manager';
 
-@ApiTags("health")
-@Controller("health")
-@Public()
+@ApiTags('Health')
+@Controller('health')
 export class HealthController {
-    constructor(
-        private readonly health: HealthCheckService,
-        private readonly prismaHealth: PrismaHealthIndicator,
-        private readonly redisHealth: RedisHealthIndicator,
-        private readonly storageHealth: StorageHealthIndicator,
-        private readonly prisma: PrismaService,
-    ) { }
+	constructor(
+		private readonly dataSource: DataSource,
+		@Inject(CACHE_MANAGER) private readonly cacheManager: Cache
+	) {}
 
-    @Get()
-    @HealthCheck()
-    @ApiOperation({ summary: "Check overall service health" })
-    @ApiResponse({ status: 200, description: "Service is healthy" })
-    @ApiResponse({ status: 503, description: "Service is unhealthy" })
-    check(): Promise<HealthCheckResult> {
-        return this.health.check([
-            () => this.prismaHealth.pingCheck("database", this.prisma),
-            () => this.redisHealth.isHealthy("redis"),
-            () => this.storageHealth.isHealthy("storage"),
-        ]);
-    }
+	private logger = new Logger(HealthController.name);
 
-    @Get("live")
-    @HealthCheck()
-    @ApiOperation({ summary: "Liveness probe - checks if the service is running" })
-    @ApiResponse({ status: 200, description: "Service is alive" })
-    @ApiResponse({ status: 503, description: "Service is not alive" })
-    checkLiveness(): Promise<HealthCheckResult> {
-        return this.health.check([
-            // Liveness only checks if the app is responsive
-            // No external dependencies checked here
-            () =>
-                Promise.resolve({
-                    service: {
-                        status: "up",
-                    },
-                }),
-        ]);
-    }
+	@Get()
+	@ApiOperation({
+		summary: 'Check service health',
+		description: 'Returns the health status of the service and its dependencies (database and cache)',
+	})
+	@ApiResponse({ status: 200, description: 'Health check completed successfully' })
+	@ApiResponse({ status: 500, description: 'One or more services are unhealthy' })
+	async check() {
+		this.logger.debug('Health check started');
 
-    @Get("ready")
-    @HealthCheck()
-    @ApiOperation({ summary: "Readiness probe - checks if the service is ready to accept traffic" })
-    @ApiResponse({ status: 200, description: "Service is ready" })
-    @ApiResponse({ status: 503, description: "Service is not ready" })
-    checkReadiness(): Promise<HealthCheckResult> {
-        return this.health.check([
-            () => this.prismaHealth.pingCheck("database", this.prisma),
-            () => this.redisHealth.isHealthy("redis"),
-            () => this.storageHealth.isHealthy("storage"),
-        ]);
-    }
+		const health = {
+			status: 'ok',
+			timestamp: new Date().toISOString(),
+			uptime: process.uptime(),
+			memory: process.memoryUsage(),
+			version: process.env.npm_package_version || '1.0.0',
+			services: {
+				database: 'unknown',
+				cache: 'unknown',
+			},
+		};
+
+		// Check database connection
+		try {
+			this.logger.debug('Checking database connection');
+			await this.dataSource.query('SELECT 1');
+			health.services.database = 'healthy';
+			this.logger.debug('Database check passed');
+		} catch (error) {
+			if (process.env.NODE_ENV !== 'test') {
+				this.logger.error('Database check failed:', error.message);
+			}
+			health.services.database = 'unhealthy';
+			health.status = 'error';
+		}
+
+		// Check cache connection
+		try {
+			this.logger.debug('Checking cache connection');
+			await this.cacheManager.set('health-check', 'ok', 1000);
+			await this.cacheManager.get('health-check');
+			health.services.cache = 'healthy';
+			this.logger.debug('Cache check passed');
+		} catch (error) {
+			if (process.env.NODE_ENV !== 'test') {
+				this.logger.error('Cache check failed:', error.message);
+			}
+			health.services.cache = 'unhealthy';
+			health.status = 'error';
+		}
+
+		this.logger.debug('Health check completed:', health);
+		return health;
+	}
+
+	@Get('ready')
+	@ApiOperation({
+		summary: 'Check service readiness',
+		description: 'Returns whether the service is ready to accept traffic',
+	})
+	@ApiResponse({ status: 200, description: 'Service is ready' })
+	@ApiResponse({ status: 503, description: 'Service is not ready' })
+	async readiness() {
+		try {
+			await this.dataSource.query('SELECT 1');
+			await this.cacheManager.set('readiness-check', 'ok', 1000);
+			return { status: 'ready' };
+		} catch (error) {
+			return { status: 'not ready', error: error.message };
+		}
+	}
+
+	@Get('live')
+	@ApiOperation({
+		summary: 'Check service liveness',
+		description: 'Returns whether the service is alive and responding',
+	})
+	@ApiResponse({ status: 200, description: 'Service is alive' })
+	alive() {
+		return {
+			status: 'alive',
+			timestamp: new Date().toISOString(),
+			uptime: process.uptime(),
+			memory: process.memoryUsage(),
+			version: process.env.npm_package_version || '1.0.0',
+		};
+	}
 }
