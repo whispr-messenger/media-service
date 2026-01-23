@@ -13,7 +13,7 @@ export class HealthController {
 		private readonly dataSource: DataSource,
 		@Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
 		@InjectS3() private readonly s3: S3
-	) { }
+	) {}
 
 	@Get()
 	@ApiOperation({
