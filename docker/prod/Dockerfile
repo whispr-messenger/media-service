@@ -1,37 +1,58 @@
-FROM node:18-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
+# Copy package files (including lockfile) and install full deps for build
 COPY package*.json ./
-COPY prisma ./prisma/
+COPY package-lock.json ./
+RUN npm ci --no-audit --no-fund
 
-RUN npm install
-
-COPY . .
-
-RUN npx prisma generate
+# Copy tsconfig and source, then build
+COPY tsconfig*.json ./
+COPY src/ ./src/
 RUN npm run build
-RUN npm ci --only=production && npm cache clean --force
 
-FROM node:18-alpine AS production
+# Remove devDependencies to keep only production deps
+RUN npm prune --production
 
-RUN apk add --no-cache ffmpeg
+FROM gcr.io/distroless/nodejs22-debian12 AS production
+
+LABEL maintainer="Whispr Team" \
+    service="medias-service" \
+    version="1.0.0" \
+    environment="production" \
+    cloud.provider="gcp" \
+    org.opencontainers.image.source="https://github.com/whispr-messenger/media-service" \
+    org.opencontainers.image.description="Whispr Media Service" \
+    org.opencontainers.image.licenses="MIT" \
+    security.scan="enabled" \
+    optimization.level="production" \
+    gcp.cloud-run="compatible" \
+    gcp.gke="compatible" \
+    monitoring.prometheus="enabled"
+
 
 WORKDIR /app
 
-RUN addgroup -g 1001 -S nodejs
-RUN adduser -S nestjs -u 1001
+# Copy built application and production deps from builder
+# Use numeric UID/GID 65532 for nonroot in distroless images
+COPY --from=builder --chown=65532:65532 /app/node_modules ./node_modules
+COPY --from=builder --chown=65532:65532 /app/dist ./dist
+COPY --from=builder --chown=65532:65532 /app/package*.json ./
 
-COPY --from=builder --chown=nestjs:nodejs /app/node_modules ./node_modules
-COPY --from=builder --chown=nestjs:nodejs /app/dist ./dist
-COPY --from=builder --chown=nestjs:nodejs /app/prisma ./prisma
-COPY --chown=nestjs:nodejs package*.json ./
+# Run as non-root (distroless typically maps to uid 65532)
+user 65532
 
-USER nestjs
+ENV NODE_ENV=production
 
-EXPOSE 3000
+# Expose ports (documentation only)
+EXPOSE 3001 50051
 
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:3000/health || exit 1
+# Health check (ensure dist/docker/health-check.js is produced by build)
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD ["dist/docker/health-check.js"]
 
-CMD ["node", "dist/main.js"]
+# Start the application with environment checks (use compiled TS in dist)
+# Note: distroless images have 'node' as default ENTRYPOINT, so we only specify the script
+CMD ["dist/docker/entrypoint.js"]
+
