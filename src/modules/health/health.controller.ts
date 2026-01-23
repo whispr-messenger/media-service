@@ -3,16 +3,17 @@ import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { DataSource } from 'typeorm';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Cache } from 'cache-manager';
+import { InjectS3, S3 } from 'nestjs-s3';
 
 @ApiTags('Health')
 @Controller('health')
 export class HealthController {
+	private logger = new Logger(HealthController.name);
 	constructor(
 		private readonly dataSource: DataSource,
-		@Inject(CACHE_MANAGER) private readonly cacheManager: Cache
-	) {}
-
-	private logger = new Logger(HealthController.name);
+		@Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
+		@InjectS3() private readonly s3: S3
+	) { }
 
 	@Get()
 	@ApiOperation({
@@ -33,6 +34,7 @@ export class HealthController {
 			services: {
 				database: 'unknown',
 				cache: 'unknown',
+				minio: 'unknown',
 			},
 		};
 
@@ -65,6 +67,20 @@ export class HealthController {
 			health.status = 'error';
 		}
 
+		// Check Minio (S3) connection
+		try {
+			this.logger.debug('Checking Minio (S3) connection');
+			await this.s3.listBuckets();
+			health.services.minio = 'healthy';
+			this.logger.debug('Minio (S3) check passed');
+		} catch (error) {
+			if (process.env.NODE_ENV !== 'test') {
+				this.logger.error('Minio (S3) check failed:', error.message);
+			}
+			health.services.minio = 'unhealthy';
+			health.status = 'error';
+		}
+
 		this.logger.debug('Health check completed:', health);
 		return health;
 	}
@@ -80,6 +96,7 @@ export class HealthController {
 		try {
 			await this.dataSource.query('SELECT 1');
 			await this.cacheManager.set('readiness-check', 'ok', 1000);
+			await this.s3.listBuckets();
 			return { status: 'ready' };
 		} catch (error) {
 			return { status: 'not ready', error: error.message };
