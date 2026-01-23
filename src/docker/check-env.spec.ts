@@ -69,8 +69,8 @@ describe('check-env', () => {
 		it('should log header and footer', () => {
 			runEnvChecks();
 
-			expect(consoleLogSpy).toHaveBeenCalledWith('==================================================');
-			expect(consoleLogSpy).toHaveBeenCalledWith('  Whispr User Service - Environment Check');
+					   expect(consoleLogSpy).toHaveBeenCalledWith('==================================================');
+					   expect(consoleLogSpy).toHaveBeenCalledWith('  Whispr Media Service - Environment Check');
 		});
 
 		it('should check all required variables', () => {
