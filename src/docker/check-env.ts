@@ -57,8 +57,19 @@ export default function runEnvChecks(): void {
 	checkRequired('REDIS_HOST');
 	checkRequired('REDIS_PORT');
 
+
 	// Ports
 	checkRequired('HTTP_PORT');
+	checkRequired('GRPC_PORT');
+
+	// gRPC URLs
+	checkRequired('USER_SERVICE_GRPC_URL');
+	checkRequired('MEDIA_SERVICE_GRPC_URL');
+
+	// Twilio
+	checkRequired('TWILIO_ACCOUNT_SID');
+	checkRequired('TWILIO_AUTH_TOKEN');
+	checkRequired('TWILIO_FROM_NUMBER');
 
 	console.log('\nChecking OPTIONAL environment variables...');
 
