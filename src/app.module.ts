@@ -8,7 +8,6 @@ import { typeOrmModuleAsyncOptions } from './config/typeorm.config';
 import { s3ModuleAsyncOptions } from './config/s3.config';
 import { HealthModule } from './modules/health/health.module';
 
-
 @Module({
 	imports: [
 		ConfigModule.forRoot({
