@@ -36,4 +36,4 @@ logs ENV:
 
 
 shell:
-    docker compose -f docker/dev/compose.yml exec -it auth-service bash
+    docker compose -f docker/dev/compose.yml exec -it media-service bash
