@@ -18,4 +18,4 @@ process.env.REDIS_HOST = 'localhost';
 process.env.REDIS_PORT = '6379';
 
 // Other configuration
-process.env.HTTP_PORT = '3001';
+process.env.HTTP_PORT = '3002';

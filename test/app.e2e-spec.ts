@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import { AppModule } from '../src/app.module';
+import { VersioningType } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -23,6 +24,13 @@ describe('HealthController (e2e)', () => {
 				.compile();
 
 			app = moduleFixture.createNestApplication();
+			// Appliquer le préfixe global et le versioning comme dans main.ts
+			app.setGlobalPrefix('media');
+			app.enableVersioning({
+				type: VersioningType.URI,
+				defaultVersion: '1',
+				prefix: 'v',
+			});
 			await app.init();
 		} catch (error) {
 			console.error('Failed to initialize test app:', error);
@@ -49,7 +57,7 @@ describe('HealthController (e2e)', () => {
 
 	describe('Health Check', () => {
 		it('should return application info', async () => {
-			const response = await request(app.getHttpServer()).get('/health').expect(200);
+			const response = await request(app.getHttpServer()).get('/media/v1/health').expect(200);
 			expect(response).toBeDefined();
 			expect(response.body).toBeDefined();
 			expect(response.body.status).toBeDefined();
