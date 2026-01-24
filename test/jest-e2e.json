@@ -6,6 +6,5 @@
   "transform": {
     "^.+\\.(t|j)s$": "ts-jest"
   },
-  "passWithNoTests": true,
-  "setupFilesAfterEnv": ["../test/setup.ts"]
+  "passWithNoTests": true
 }
