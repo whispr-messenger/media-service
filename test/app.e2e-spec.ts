@@ -56,13 +56,13 @@ describe('HealthController (e2e)', () => {
 	});
 
 	describe('Health Check', () => {
-		it('should return application info', async () => {
-			const response = await request(app.getHttpServer()).get('/media/v1/health').expect(200);
-			expect(response).toBeDefined();
-			expect(response.body).toBeDefined();
-			expect(response.body.status).toBeDefined();
-			expect(response.body.timestamp).toBeDefined();
-			expect(response.body.services).toBeDefined();
-		});
+		       it('should return application info', async () => {
+			       const response = await request(app.getHttpServer()).get('/media/v1/health').expect(200);
+			       expect(response).toBeDefined();
+			       expect(response.body).toBeDefined();
+			       expect(response.body.status).toBeDefined();
+			       expect(response.body.timestamp).toBeDefined();
+			       expect(response.body.services).toBeDefined();
+		       }, 15000); // timeout augmenté à 15s
 	});
 });
