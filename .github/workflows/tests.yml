@@ -63,7 +63,7 @@ jobs:
       # Unit and E2E Tests
       ####################################################################################################
       - name: Run unit tests
-        run: npm run test:cov:docker:cleanup
+        run: npm run test
         env:
           DATABASE_URL: postgresql://test:test@localhost:5432/test_db
           REDIS_URL: redis://localhost:6379
