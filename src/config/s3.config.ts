@@ -8,7 +8,6 @@ function s3ModuleOptionsFactory(configService: ConfigService): S3ModuleOptions {
 				accessKeyId: configService.get('S3_ACCESS_KEY_ID'),
 				secretAccessKey: configService.get('S3_SECRET_ACCESS_KEY'),
 			},
-			region: configService.get('S3_REGION'),
 			endpoint: configService.get('S3_ENDPOINT'),
 			forcePathStyle: configService.get('S3_FORCE_PATH_STYLE', false),
 		},
