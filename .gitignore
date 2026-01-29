@@ -1,8 +1,8 @@
 # Dependencies
-node_modules/
+/node_modules
 
 # Build outputs
-dist/
+/dist
 build/
 
 # Testing
@@ -30,9 +30,6 @@ logs/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-
-# Prisma
-prisma/migrations/
 
 # MCP
 .mcp.json
