@@ -11,7 +11,7 @@ interface RequestOptions {
 const options: RequestOptions = {
   hostname: 'localhost',
   port: 3000,
-  path: '/health',
+  path: '/health/live',
   method: 'GET',
   timeout: 2000,
 };
