@@ -7,55 +7,39 @@
   - [1.2 Périmètre du Service](#12-périmètre-du-service)
   - [1.3 Relations avec les Autres Services](#13-relations-avec-les-autres-services)
 - [2. Architecture Globale](#2-architecture-globale)
-  - [2.1 Vue d'Ensemble de l'Architecture avec Istio Service Mesh](#21-vue-densemble-de-larchitecture-avec-istio-service-mesh)
+  - [2.1 Vue d'Ensemble](#21-vue-densemble)
   - [2.2 Principes Architecturaux](#22-principes-architecturaux)
 - [3. Choix Technologiques](#3-choix-technologiques)
   - [3.1 Stack Technique](#31-stack-technique)
   - [3.2 Infrastructure](#32-infrastructure)
 - [4. Composants Principaux](#4-composants-principaux)
-  - [4.1 Structure Express.js/TypeScript](#41-structure-expressjs-typescript)
+  - [4.1 Structure NestJS/TypeScript](#41-structure-nestjstypescript)
   - [4.2 Gestionnaire de Médias](#42-gestionnaire-de-médias)
-  - [4.3 Moteur de Chiffrement](#43-moteur-de-chiffrement)
-  - [4.4 Système de Modération](#44-système-de-modération)
-  - [4.5 Gestionnaire de Stockage](#45-gestionnaire-de-stockage)
-  - [4.6 Communication avec les autres services via Istio Service Mesh](#46-communication-avec-les-autres-services-via-istio-service-mesh)
-    - [4.6.1 Configuration Istio pour media-service](#461-configuration-istio-pour-media-service)
-  - [4.7 Configuration et Modules](#47-configuration-et-modules)
-- [5. Gestion des Médias](#5-gestion-des-médias)
-  - [5.1 Types de Médias Supportés](#51-types-de-médias-supportés)
-  - [5.2 Pipeline de Traitement](#52-pipeline-de-traitement)
-  - [5.3 Compression et Optimisation](#53-compression-et-optimisation)
-  - [5.4 Génération de Previews](#54-génération-de-previews)
-- [6. Sécurité et Chiffrement](#6-sécurité-et-chiffrement)
-  - [6.1 Chiffrement bout-en-bout](#61-chiffrement-bout-en-bout)
-  - [6.2 Hash de Modération](#62-hash-de-modération)
-  - [6.3 Validation des Fichiers](#63-validation-des-fichiers)
-- [7. Scaling et Performances](#7-scaling-et-performances)
-  - [7.1 Stratégie de Scaling](#71-stratégie-de-scaling)
-  - [7.2 Cache et Optimisations](#72-cache-et-optimisations)
-  - [7.3 Limites et Quotas avec Istio](#73-limites-et-quotas-avec-istio)
-- [8. Monitoring et Observabilité](#8-monitoring-et-observabilité)
-  - [8.1 Observabilité Istio](#81-observabilité-istio)
-  - [8.2 Logging](#82-logging)
-  - [8.3 Métriques](#83-métriques)
-  - [8.4 Alerting](#84-alerting)
-- [9. Gestion des Erreurs et Résilience](#9-gestion-des-erreurs-et-résilience)
-  - [9.1 Stratégie de Gestion des Erreurs](#91-stratégie-de-gestion-des-erreurs)
-  - [9.2 Résilience avec Istio](#92-résilience-avec-istio)
-  - [9.3 Plan de Reprise d'Activité](#93-plan-de-reprise-dactivité)
-- [10. Évolution et Maintenance](#10-évolution-et-maintenance)
-  - [10.1 Versionnement](#101-versionnement)
-  - [10.2 Mise à Jour et Déploiement](#102-mise-à-jour-et-déploiement)
-  - [10.3 Documentation Technique](#103-documentation-technique)
-- [11. Considérations Opérationnelles](#11-considérations-opérationnelles)
-  - [11.1 DevOps](#111-devops)
-  - [11.2 Environnements](#112-environnements)
-  - [11.3 Support](#113-support)
+  - [4.3 Gestionnaire de Stockage](#43-gestionnaire-de-stockage)
+  - [4.4 Politique d'Accès par Contexte](#44-politique-daccès-par-contexte)
+  - [4.5 Communication inter-services via Istio Service Mesh](#45-communication-inter-services-via-istio-service-mesh)
+- [5. Chiffrement E2E et Médias](#5-chiffrement-e2e-et-médias)
+  - [5.1 Modèle de Chiffrement Signal](#51-modèle-de-chiffrement-signal)
+  - [5.2 Ce que le Serveur Voit](#52-ce-que-le-serveur-voit)
+  - [5.3 Pipeline de Traitement Côté Client](#53-pipeline-de-traitement-côté-client)
+  - [5.4 Thumbnails et Previews](#54-thumbnails-et-previews)
+- [6. API](#6-api)
+  - [6.1 Endpoint d'Upload](#61-endpoint-dupload)
+  - [6.2 Autres Endpoints](#62-autres-endpoints)
+  - [6.3 Structure de Réponse](#63-structure-de-réponse)
+- [7. Modération](#7-modération)
+  - [7.1 Modération Embarquée Côté Client](#71-modération-embarquée-côté-client)
+  - [7.2 Ce que le Serveur Peut Vérifier](#72-ce-que-le-serveur-peut-vérifier)
+- [8. Scaling et Performances](#8-scaling-et-performances)
+  - [8.1 Stratégie de Scaling](#81-stratégie-de-scaling)
+  - [8.2 Cache et Optimisations](#82-cache-et-optimisations)
+  - [8.3 Limites et Quotas](#83-limites-et-quotas)
+- [9. Monitoring et Observabilité](#9-monitoring-et-observabilité)
+- [10. Gestion des Erreurs et Résilience](#10-gestion-des-erreurs-et-résilience)
+- [11. Évolution et Maintenance](#11-évolution-et-maintenance)
 - [Appendices](#appendices)
-  - [A. Métriques de Performance Cibles](#a-métriques-de-performance-cibles)
-  - [B. Estimation des Ressources](#b-estimation-des-ressources)
-  - [C. Configuration Istio Examples](#c-configuration-istio-examples)
-  - [D. Références](#d-références)
+
+---
 
 ## 1. Introduction
 
@@ -63,98 +47,80 @@
 Ce document décrit l'architecture et la conception technique du service de gestion des médias (`media-service`) de l'application Whispr. Il sert de référence pour l'équipe de développement et les parties prenantes du projet.
 
 ### 1.2 Périmètre du Service
-Le Media Service est responsable de la gestion complète des fichiers multimédias : upload, stockage sécurisé, chiffrement bout-en-bout, compression, génération de previews, et modération du contenu. Il maintient un système de quotas par utilisateur et coordonne avec les autres services pour la sécurité et la modération du contenu.
+Le Media Service est un **store-and-forward aveugle** : il reçoit, stocke et distribue des blobs chiffrés sans jamais accéder à leur contenu. Il est responsable de :
+
+- La réception et le stockage des blobs chiffrés (Signal Protocol)
+- Le contrôle d'accès aux médias via URLs signées
+- La gestion des quotas par utilisateur
+- La distribution des médias selon leur politique d'accès (`context`)
+
+Il n'est **pas** responsable de :
+- La compression ou le resize des médias (délégué au client)
+- La génération de previews/thumbnails côté serveur (délégué au client)
+- La modération du contenu (modèle embarqué dans l'app mobile)
+- Le scan antivirus du contenu (impossible sur des blobs chiffrés)
 
 ### 1.3 Relations avec les Autres Services
-Le Media Service interagit avec plusieurs autres microservices de l'écosystème Whispr via Istio Service Mesh :
-- **auth-service** : pour l'authentification et la validation des utilisateurs
-- **user-service** : pour les informations de profil et les quotas utilisateur
-- **messaging-service** : pour l'intégration des médias dans les conversations
-- **moderation-service** : pour la validation et modération du contenu multimédia
-- **notification-service** : pour les alertes liées aux médias
+Le Media Service interagit via Istio Service Mesh avec :
+- **auth-service** : validation des tokens JWT
+- **user-service** : informations de quota utilisateur
+
+Il n'a **pas** de dépendance vers le messaging-service. Les médias existent indépendamment des messages : c'est le messaging-service qui référence les `mediaId`, pas l'inverse.
+
+---
 
 ## 2. Architecture Globale
 
-### 2.1 Vue d'Ensemble de l'Architecture avec Istio Service Mesh
-
-Le service de gestion des médias fonctionne dans un service mesh Istio qui sécurise automatiquement toutes les communications inter-services :
+### 2.1 Vue d'Ensemble
 
 ```mermaid
 graph TD
     A[API Gateway + Istio Ingress] --> B[Media Service Pod]
-    
+
     subgraph "Kubernetes Cluster avec Istio Service Mesh"
         subgraph "media-service Pod"
-            B1[Media Container] 
+            B1[Media Container]
             B2[Envoy Sidecar]
         end
-        
+
         subgraph "auth-service Pod"
             C1[Auth Container]
             C2[Envoy Sidecar]
         end
-        
-        subgraph "moderation-service Pod"
-            D1[Moderation Container]
-            D2[Envoy Sidecar]
-        end
-        
+
         subgraph "user-service Pod"
             E1[User Container]
             E2[Envoy Sidecar]
         end
-        
-        B2 -.->|"mTLS gRPC<br/>ValidateUser<br/>GetUserQuota"| C2
-        B2 -.->|"mTLS gRPC<br/>CheckMediaContent<br/>GetModerationHash"| D2
-        B2 -.->|"mTLS gRPC<br/>UpdateStorageUsage"| E2
+
+        B2 -.->|"mTLS gRPC - ValidateToken"| C2
+        B2 -.->|"mTLS gRPC - GetUserQuota"| E2
     end
-    
+
     B --> F[(PostgreSQL Media)]
     B --> G[(Redis Cache)]
-    B --> H[Google Cloud Storage]
-    
-    subgraph "Istio Control Plane"
-        I[Istiod]
-        J[Certificate Authority]
-    end
-    
+    B --> H[MinIO / S3-compatible]
+
     subgraph "Media Service Container"
         K[NestJS Application] --> L[Media Module]
         L --> M[Upload Controller]
         M --> N[Media Service]
-        N --> O[Encryption Service]
-        O --> P[Storage Service]
-        N --> Q[Compression Service]
-        N --> R[Preview Service]
-        N --> S[Moderation Service]
-        P --> T[GCS Client]
-        S --> U[Hash Generator]
+        N --> O[Storage Service]
+        N --> P[Quota Service]
+        O --> Q[S3 Client]
     end
-    
-    I -.->|Manage| B2
-    I -.->|Manage| C2
-    I -.->|Manage| D2
-    I -.->|Manage| E2
-    J -.->|Auto TLS Certs| B2
-    
-    style B fill:#f9f,stroke:#333,stroke-width:2px
-    style B2 fill:#e1f5fe,stroke:#0277bd,stroke-width:2px
-    style C2 fill:#e1f5fe,stroke:#0277bd,stroke-width:2px
-    style D2 fill:#e1f5fe,stroke:#0277bd,stroke-width:2px
-    style E2 fill:#e1f5fe,stroke:#0277bd,stroke-width:2px
-    style H fill:#fff3e0,stroke:#f57c00,stroke-width:2px
 ```
 
 ### 2.2 Principes Architecturaux
 
-- **Sécurité by design** : Chiffrement bout-en-bout de tous les médias avant stockage
-- **Zero Trust Network** : Toutes les communications inter-services chiffrées et authentifiées via mTLS
-- **Service Mesh Security** : Sécurité implémentée au niveau infrastructure via Istio
-- **Modération préventive** : Analyse systématique du contenu avant stockage
-- **Performance optimisée** : Compression intelligente et génération de previews
-- **Quotas et limites** : Gestion stricte des ressources par utilisateur
-- **Scaling horizontal** : Architecture stateless pour faciliter la montée en charge
-- **Observabilité** : Logging structuré, métriques détaillées et tracing distribué via Istio
+- **Store-and-forward aveugle** : le serveur ne déchiffre jamais les blobs Signal
+- **Zero Trust Network** : communications inter-services chiffrées via mTLS Istio
+- **Namespacing par contexte** : politique d'accès déterminée par le `context` de l'upload
+- **Indépendance du messaging** : les médias n'ont pas de référence aux messages/conversations
+- **Scaling horizontal** : architecture stateless, aucun état local dans le service
+- **Quotas côté serveur** : la taille des blobs est connue même chiffrée, les quotas restent applicables
+
+---
 
 ## 3. Choix Technologiques
 
@@ -163,216 +129,129 @@ graph TD
 - **Langage** : TypeScript
 - **Runtime** : Node.js
 - **Framework** : NestJS
-- **Service Mesh** : Istio pour la sécurité et l'observabilité des communications inter-services
-- **Proxy Sidecar** : Envoy (injecté automatiquement par Istio)
-- **Sécurité Inter-Services** : mTLS automatique via Istio avec rotation de certificats
-- **Base de données** : PostgreSQL avec métadonnées des médias
-- **Cache** : Redis pour les métadonnées et quotas utilisateur
-- **Stockage** : Google Cloud Storage pour les fichiers chiffrés
-- **Communication inter-services** : gRPC over mTLS automatique via Istio Service Mesh
-- **ORM** : Prisma pour l'accès aux données
-- **API** : REST avec décorateurs NestJS et documentation Swagger automatique
-- **Chiffrement** : Node.js crypto pour le chiffrement AES-256-GCM
-- **Traitement d'images** : Sharp pour la compression et les previews
-- **Validation** : Joi pour la validation des inputs
-- **Testing** : Jest avec modules de test NestJS pour tests unitaires et d'intégration
+- **Service Mesh** : Istio (mTLS automatique, circuit breakers)
+- **Base de données** : PostgreSQL (métadonnées des médias, quotas)
+- **Cache** : Redis (métadonnées fréquentes, quotas, sessions d'upload)
+- **Stockage** : MinIO en dev, S3-compatible en prod
+- **ORM** : TypeORM
+- **API** : REST multipart avec documentation Swagger
+- **Testing** : Jest
 
 ### 3.2 Infrastructure
 
 - **Containerisation** : Docker
 - **Orchestration** : Kubernetes (GKE)
-- **Service Mesh** : Istio avec injection automatique de sidecars Envoy
-- **Security** : mTLS automatique, AuthorizationPolicies et NetworkPolicies Istio
+- **Service Mesh** : Istio avec sidecars Envoy
 - **CI/CD** : GitHub Actions
-- **Service Cloud** : Google Cloud Platform (GCP)
-- **Stockage Fichiers** : Google Cloud Storage avec chiffrement côté client
-- **Monitoring** : Prometheus + Grafana + Kiali (Istio service topology)
-- **Logging** : Loki + accès logs Envoy
-- **Tracing** : Jaeger (intégré avec Istio pour le tracing distribué)
-- **Certificate Management** : Istio CA pour la rotation automatique des certificats mTLS
-- **Secrets Management** : Google Secret Manager pour les clés de chiffrement
+- **Monitoring** : Prometheus + Grafana + Kiali
+- **Logging** : Loki + logs Envoy
+- **Tracing** : Jaeger
+
+---
 
 ## 4. Composants Principaux
 
 ### 4.1 Structure NestJS/TypeScript
 
-L'architecture NestJS du service est organisée comme suit :
-
 ```
 src/
-├── app.module.ts                    # Module racine de l'application
-├── main.ts                         # Point d'entrée Bootstrap NestJS
-├── config/                         # Configuration
-│   ├── database.config.ts          # Configuration PostgreSQL
-│   ├── storage.config.ts           # Configuration Google Cloud Storage
-│   ├── encryption.config.ts        # Configuration des clés de chiffrement
-│   └── redis.config.ts             # Configuration Redis
-├── modules/                        # Modules NestJS
-│   ├── media/                      # Module de gestion des médias
-│   │   ├── media.module.ts         # Module principal
+├── app.module.ts
+├── main.ts
+├── config/
+│   ├── database.config.ts
+│   ├── s3.config.ts
+│   └── redis.config.ts
+├── modules/
+│   ├── media/
+│   │   ├── media.module.ts
 │   │   ├── controllers/
-│   │   │   ├── upload.controller.ts      # Upload de médias
-│   │   │   ├── download.controller.ts    # Téléchargement de médias
-│   │   │   ├── preview.controller.ts     # Génération de previews
-│   │   │   └── quota.controller.ts       # Gestion des quotas
+│   │   │   ├── upload.controller.ts       # POST /media/v1/upload
+│   │   │   └── download.controller.ts     # GET /media/v1/:id
 │   │   ├── services/
-│   │   │   ├── media.service.ts          # Service principal des médias
-│   │   │   ├── encryption.service.ts     # Service de chiffrement
-│   │   │   ├── storage.service.ts        # Service de stockage GCS
-│   │   │   ├── compression.service.ts    # Service de compression
-│   │   │   ├── preview.service.ts        # Service de génération de previews
-│   │   │   └── moderation.service.ts     # Service de modération
+│   │   │   ├── media.service.ts           # Orchestration principale
+│   │   │   ├── storage.service.ts         # Interface S3/MinIO
+│   │   │   └── quota.service.ts           # Vérification et mise à jour des quotas
 │   │   ├── entities/
-│   │   │   ├── media.entity.ts           # Entité Media (Prisma)
-│   │   │   ├── quota.entity.ts           # Entité Quota
-│   │   │   └── preview.entity.ts         # Entité Preview
+│   │   │   └── media.entity.ts
 │   │   └── dto/
-│   │       ├── upload-media.dto.ts       # DTO pour upload
-│   │       ├── media-response.dto.ts     # DTO pour réponses
-│   │       └── quota.dto.ts              # DTO pour quotas
-│   ├── grpc/                       # Module gRPC
-│   │   ├── grpc.module.ts          # Module gRPC
+│   │       ├── upload-media.dto.ts
+│   │       └── media-response.dto.ts
+│   ├── grpc/
 │   │   └── clients/
-│   │       ├── auth.client.ts            # Client vers auth-service
-│   │       ├── user.client.ts            # Client vers user-service
-│   │       └── moderation.client.ts      # Client vers moderation-service
-│   ├── auth/                       # Module d'authentification
-│   │   ├── auth.module.ts          # Module auth local
-│   │   ├── guards/
-│   │   │   ├── jwt-auth.guard.ts         # Guard JWT
-│   │   │   └── roles.guard.ts            # Guard pour les rôles
-│   │   └── decorators/
-│   │       ├── current-user.decorator.ts # Décorateur utilisateur courant
-│   │       └── public.decorator.ts       # Décorateur pour routes publiques
-│   └── common/                     # Module commun
-│       ├── common.module.ts        # Module utilitaires communs
+│   │       ├── auth.client.ts
+│   │       └── user.client.ts
+│   ├── auth/
+│   │   └── guards/
+│   │       └── jwt-auth.guard.ts
+│   └── common/
 │       ├── filters/
-│       │   ├── http-exception.filter.ts  # Filtre d'exceptions
-│       │   └── validation.filter.ts      # Filtre de validation
-│       ├── interceptors/
-│       │   ├── logging.interceptor.ts    # Intercepteur de logs
-│       │   ├── transform.interceptor.ts  # Transformation réponses
-│       │   └── timeout.interceptor.ts    # Gestion des timeouts
-│       ├── pipes/
-│       │   ├── validation.pipe.ts        # Pipe de validation
-│       │   └── file-validation.pipe.ts   # Validation des fichiers
-│       └── utils/
-│           ├── hash.util.ts              # Génération de hash pour modération
-│           ├── file.util.ts              # Utilitaires fichiers
-│           └── metrics.util.ts           # Métriques custom
+│       │   └── http-exception.filter.ts
+│       └── interceptors/
+│           ├── logging.interceptor.ts
+│           └── timeout.interceptor.ts
 ```
+
+> Les services `compression.service.ts`, `preview.service.ts` et `moderation.service.ts` présents dans les versions précédentes ont été supprimés — ces responsabilités sont portées par le client mobile.
 
 ### 4.2 Gestionnaire de Médias
 
-Le gestionnaire central coordonne toutes les opérations sur les médias :
+Le flux d'upload est simplifié par rapport à une architecture sans E2E :
 
 ```mermaid
 sequenceDiagram
-    participant Client as Application Client
+    participant Client as Application Mobile
     participant MediaService as Media Service
     participant AuthService as Auth Service
-    participant ModerationService as Moderation Service
-    participant GCS as Google Cloud Storage
-    
-    Client->>MediaService: POST /api/v1/media/upload
-    MediaService->>AuthService: ValidateUser (gRPC over mTLS)
-    AuthService-->>MediaService: User validated
-    
-    MediaService->>MediaService: Validate file type and size
-    MediaService->>MediaService: Generate perceptual hash
-    
-    MediaService->>ModerationService: CheckContent (gRPC over mTLS)
-    ModerationService-->>MediaService: Content approved
-    
-    MediaService->>MediaService: Compress media
-    MediaService->>MediaService: Encrypt with AES-256-GCM
-    MediaService->>GCS: Store encrypted file
-    
-    MediaService->>MediaService: Generate preview
-    MediaService->>MediaService: Save metadata to PostgreSQL
-    
-    MediaService-->>Client: 201 Created (mediaId)
+    participant S3 as Object Store (MinIO/S3)
+
+    Client->>MediaService: POST /media/v1/upload (blob chiffré + metadata)
+    MediaService->>AuthService: ValidateToken (gRPC over mTLS)
+    AuthService-->>MediaService: Token valide, userId
+
+    MediaService->>MediaService: Vérifier quota utilisateur
+    MediaService->>MediaService: Valider taille blob (limites par context)
+    MediaService->>MediaService: Vérifier Content-Type déclaré vs magic bytes
+
+    MediaService->>S3: Stocker blob opaque
+    MediaService->>MediaService: Sauvegarder métadonnées (PostgreSQL)
+    MediaService->>MediaService: Mettre à jour quota utilisateur
+
+    MediaService-->>Client: 201 { mediaId, url, expiresAt }
 ```
 
-### 4.3 Moteur de Chiffrement
+### 4.3 Gestionnaire de Stockage
 
-Le système de chiffrement garantit la confidentialité des médias :
+- **Buckets/préfixes séparés par context** : `avatars/`, `messages/`, `group_icons/`
+- **Lifecycle policies** : expiration automatique des blobs `messages/` après TTL configurable
+- **Accès** : signed URLs pour `messages/` et `group_icons/`, URLs publiques pour `avatars/`
+- **Streaming** : upload/download en streaming pour limiter l'empreinte mémoire
 
-- **Algorithme** : AES-256-GCM pour le chiffrement authentifié
-- **Gestion des clés** : Clés dérivées par utilisateur via PBKDF2
-- **Intégrité** : Tag d'authentification pour vérifier l'intégrité
-- **Performance** : Chiffrement en streaming pour les gros fichiers
-- **Rotation** : Support de la rotation des clés de chiffrement
+### 4.4 Politique d'Accès par Contexte
 
-### 4.4 Système de Modération
+Le `context` passé à l'upload détermine la politique de stockage et d'accès :
 
-L'intégration avec le service de modération assure la sécurité du contenu :
+| context | Stockage | URL retournée | expiresAt | Audience |
+|---|---|---|---|---|
+| `message` | `messages/{userId}/{uuid}` | Signed URL (courte durée) | timestamp (ex: +7j) | Destinataires Signal |
+| `avatar` | `avatars/{userId}/{uuid}` | URL publique permanente | `null` | Public |
+| `group_icon` | `group_icons/{groupId}/{uuid}` | URL publique permanente | `null` | Membres du groupe |
 
-```mermaid
-graph LR
-    A[Upload Media] --> B[Generate Perceptual Hash]
-    B --> C[Check Against Known Bad Content]
-    C --> D{Content Safe?}
-    D -->|Yes| E[Process and Store]
-    D -->|No| F[Reject Upload]
-    E --> G[Generate Preview]
-    F --> H[Log Incident]
-```
+Les blobs `message` sont chiffrés Signal — l'URL expirante ajoute une couche de contrôle d'accès côté serveur, même si le contenu est déjà chiffré. Les blobs `avatar` et `group_icon` peuvent être chiffrés côté serveur (AES-256-GCM, clé serveur) ou en clair selon la politique de déploiement — ils ne sont pas des médias Signal.
 
-### 4.5 Gestionnaire de Stockage
-
-Le gestionnaire de stockage coordonne avec Google Cloud Storage :
-
-- **Buckets séparés** : Organisation par type de média et environnement
-- **Lifecycle policies** : Suppression automatique des fichiers temporaires
-- **Redundancy** : Stockage multi-régional pour la haute disponibilité
-- **Accès sécurisé** : Signed URLs pour l'accès temporaire
-- **Monitoring** : Surveillance de l'utilisation et des coûts
-
-### 4.6 Communication avec les autres services via Istio Service Mesh
+### 4.5 Communication inter-services via Istio Service Mesh
 
 **Interfaces gRPC consommées** :
-- **auth-service** :
-  - `ValidateToken`: validation des tokens d'authentification
-  - `GetUserInfo`: informations utilisateur pour la gestion des quotas
-- **moderation-service** :
-  - `CheckMediaContent`: validation du contenu multimédia
-  - `GetContentHash`: récupération de hash pour déduplication
-- **user-service** :
-  - `UpdateStorageUsage`: mise à jour de l'utilisation du stockage
-  - `GetUserQuotas`: récupération des limites utilisateur
+- **auth-service** : `ValidateToken`, `GetUserInfo`
+- **user-service** : `GetUserQuotas`, `UpdateStorageUsage`
 
 **Interfaces REST exposées** :
-- **Upload** : POST /api/v1/media/upload (multipart) avec @UseInterceptors(FileInterceptor)
-- **Download** : GET /api/v1/media/{mediaId} avec @UseGuards(JwtAuthGuard)
-- **Preview** : GET /api/v1/media/{mediaId}/preview avec cache headers
-- **Delete** : DELETE /api/v1/media/{mediaId} avec @UseGuards(RolesGuard)
-- **Hash Check** : POST /api/v1/media/hash-check avec @UsePipes(ValidationPipe)
-- **Storage Stats** : GET /api/v1/media/storage avec décorateur @CurrentUser()
-
-#### 4.6.1 Configuration Istio pour media-service
+- `POST /media/v1/upload` — upload multipart
+- `GET /media/v1/:id` — récupération métadonnées
+- `GET /media/v1/:id/blob` — téléchargement blob (redirect vers signed URL)
+- `DELETE /media/v1/:id` — suppression
+- `GET /media/v1/quota` — quota courant de l'utilisateur authentifié
 
 ```yaml
-# AuthorizationPolicy pour media-service vers moderation-service
-apiVersion: security.istio.io/v1beta1
-kind: AuthorizationPolicy
-metadata:
-  name: media-to-moderation
-  namespace: whispr
-spec:
-  selector:
-    matchLabels:
-      app: moderation-service
-  rules:
-  - from:
-    - source:
-        principals: ["cluster.local/ns/whispr/sa/media-service"]
-  - to:
-    - operation:
-        methods: ["POST"]
-        paths: ["/moderation.ModerationService/CheckMediaContent"]
-
----
 # AuthorizationPolicy pour clients vers media-service
 apiVersion: security.istio.io/v1beta1
 kind: AuthorizationPolicy
@@ -390,269 +269,242 @@ spec:
   - to:
     - operation:
         methods: ["GET", "POST", "DELETE"]
-        paths: ["/api/v1/media/*"]
+        paths: ["/media/v1/*"]
 ```
 
-### 4.7 Modules et Injection de Dépendances
+---
 
-- **MediaModule** : module principal avec controllers et services des médias
-- **GrpcModule** : module pour les clients gRPC vers autres microservices via Istio mTLS
-- **AuthModule** : module d'authentification avec guards et décorateurs
-- **CommonModule** : module partagé avec utilitaires, filters et interceptors
-- **ConfigModule** : gestion centralisée de la configuration avec validation
-- **DatabaseModule** : intégration PostgreSQL avec Prisma ORM
-- **HealthModule** : health checks pour Kubernetes et Istio via Terminus
+## 5. Chiffrement E2E et Médias
 
-## 5. Gestion des Médias
+### 5.1 Modèle de Chiffrement Signal
 
-### 5.1 Types de Médias Supportés
+Les médias de type `message` suivent le protocole Signal :
 
-| Type | Extensions | Taille Max | Compression | Preview |
-|------|------------|------------|-------------|---------|
-| Images | JPEG, PNG, WebP, HEIC | 25 MB | Oui | Oui |
-| Vidéos | MP4, MOV, AVI | 100 MB | Oui | Thumbnail |
-| Audio | MP3, WAV, AAC, OGG | 50 MB | Oui | Waveform |
-| Documents | PDF, DOC, DOCX, TXT | 25 MB | Non | Thumbnail |
-| Archives | ZIP, RAR | 50 MB | Non | Non |
+1. **Côté client expéditeur** : génération d'une clé symétrique aléatoire → chiffrement du fichier (AES-256-CBC + HMAC-SHA256, enveloppe Signal) → upload du blob opaque
+2. **Transmission de la clé** : la clé symétrique est transmise **dans le message Signal** (canal chiffré E2E), jamais via le media-service
+3. **Côté client destinataire** : récupération du blob via signed URL → déchiffrement local avec la clé reçue via Signal
 
-### 5.2 Pipeline de Traitement
+Le media-service ne voit jamais les clés de déchiffrement. Il est structurellement incapable de lire le contenu des médias `message`.
 
-```mermaid
-graph TD
-    A[File Upload] --> B[Validation]
-    B --> C[Hash Generation]
-    C --> D[Moderation Check]
-    D --> E{Content Safe?}
-    E -->|No| F[Reject & Log]
-    E -->|Yes| G[Compression]
-    G --> H[Encryption]
-    H --> I[Storage]
-    I --> J[Preview Generation]
-    J --> K[Metadata Save]
-    K --> L[Response]
+```
+Client A                      media-service                Client B
+   |                               |                           |
+   |  génère clé K                 |                           |
+   |  chiffre fichier → blob       |                           |
+   |  POST /upload (blob)  ------> |                           |
+   |                          stocke blob opaque               |
+   |  <-- { mediaId, url } ------- |                           |
+   |                               |                           |
+   |  Signal message: { mediaId, url, K } ------------------>  |
+   |                               |                           |
+   |                               | <-- GET /blob/:id ------- |
+   |                               | -- blob chiffré --------> |
+   |                               |              déchiffre avec K
 ```
 
-### 5.3 Compression et Optimisation
+### 5.2 Ce que le Serveur Voit
 
-- **Images** : Compression JPEG avec qualité adaptive (70-95%)
-- **Vidéos** : Réencodage H.264 avec résolution adaptative
-- **Audio** : Compression MP3 à 128kbps pour les fichiers > 10MB
-- **Algorithmes** : Sharp pour images, FFmpeg pour vidéo/audio
-- **Préservation qualité** : Algorithmes lossless pour documents importants
+Le media-service a uniquement accès aux métadonnées **non sensibles** fournies par le client :
 
-### 5.4 Génération de Previews
+| Donnée | Visible par le serveur | Note |
+|---|---|---|
+| Taille du blob | ✅ | Nécessaire pour les quotas |
+| Content-Type déclaré | ✅ | Vérifié via magic bytes sur le blob |
+| `context` | ✅ | Détermine la politique d'accès |
+| `ownerId` | ✅ | Propriétaire du média |
+| Contenu du fichier | ❌ | Chiffré, opaque |
+| Métadonnées EXIF | ❌ | Incluses dans le blob chiffré |
+| Thumbnail/preview | ❌ sauf si uploadé séparément | Voir §5.4 |
 
-- **Images** : Thumbnails en 3 tailles (64x64, 256x256, 512x512)
-- **Vidéos** : Frame à 1 seconde + métadonnées (durée, résolution)
-- **Audio** : Waveform visuelle + métadonnées (durée, format)
-- **Documents** : Première page en thumbnail
-- **Format** : WebP pour optimiser la bande passante
+### 5.3 Pipeline de Traitement Côté Client
 
-## 6. Sécurité et Chiffrement
+Toute la pipeline de traitement se fait **avant chiffrement, sur le device** :
 
-### 6.1 Chiffrement bout-en-bout
-
-- **Algorithme** : AES-256-GCM avec authentification intégrée
-- **Clés** : Dérivation PBKDF2 avec salt unique par utilisateur
-- **IV/Nonce** : Généré aléatoirement pour chaque fichier
-- **Intégrité** : Tag d'authentification GCM vérifié au déchiffrement
-- **Performance** : Streaming pour les fichiers > 10MB
-
-### 6.2 Hash de Modération
-
-- **Hash perceptuel** : Pour détecter les contenus similaires
-- **Algorithme** : pHash pour images, hash MD5 pour autres types
-- **Base de référence** : Coordination avec moderation-service
-- **Déduplication** : Éviter le stockage de contenus identiques
-- **Vérification** : Hash recalculé après compression
-
-### 6.3 Validation des Fichiers
-
-- **Magic bytes** : Vérification du type réel du fichier
-- **Taille** : Limites strictes par type de média
-- **Malware** : Scan antivirus via des APIs externes
-- **Metadata** : Extraction et validation des métadonnées EXIF
-- **Structure** : Validation de l'intégrité structurelle des fichiers
-
-## 7. Scaling et Performances
-
-### 7.1 Stratégie de Scaling
-
-- **Horizontal Pod Autoscaling** : Scaling basé sur CPU/mémoire et upload rate
-- **Istio Load Balancing** : Distribution intelligente avec session affinity
-- **Circuit Breakers** : Protection contre les services externes défaillants
-- **Instances spécialisées** : Pods dédiés pour le traitement vidéo lourd
-- **CDN Integration** : Distribution via CloudFlare pour les previews
-
-```mermaid
-graph TD
-    A[Istio Load Balancer] --> B[Media Service Node 1<br/>General Purpose]
-    A --> C[Media Service Node 2<br/>Image Processing]
-    A --> D[Media Service Node 3<br/>Video Processing]
-    
-    B --> E[PostgreSQL Primary]
-    C --> E
-    D --> E
-    
-    B --> F[Redis Cluster]
-    C --> F
-    D --> F
-    
-    B --> G[Google Cloud Storage]
-    C --> G
-    D --> G
-    
-    subgraph "Processing Workers"
-        C --> H[Sharp Workers]
-        D --> I[FFmpeg Workers]
-    end
-    
-    A --> J[CDN CloudFlare]
+```
+Fichier original
+      │
+      ▼
+Resize / compression (Sharp mobile / FFmpeg mobile)
+      │
+      ▼
+Génération thumbnail (si applicable)
+      │
+      ├──── Chiffrement thumbnail (clé K) ──────────────► upload blob thumbnail
+      │
+      ▼
+Chiffrement fichier principal (clé K, Signal envelope)
+      │
+      ▼
+Upload blob principal → media-service
 ```
 
-### 7.2 Cache et Optimisations
+La contrainte principale est la **consommation CPU/batterie** sur mobile pour les vidéos lourdes. L'application doit implémenter une compression agressive avant envoi (ex: résolution max 1080p, bitrate adaptatif).
 
-- **Metadata Cache** : Redis pour les informations fréquemment accédées
-- **Preview Cache** : Cache des thumbnails avec TTL de 24h
-- **Quota Cache** : Cache des limites utilisateur (TTL: 1h)
-- **Connection Pooling** : Pools vers PostgreSQL et GCS
-- **Streaming** : Upload/download en streaming pour les gros fichiers
-- **Compression HTTP** : Gzip pour les métadonnées JSON
+### 5.4 Thumbnails et Previews
 
-### 7.3 Limites et Quotas avec Istio
+Le client peut uploader un thumbnail chiffré séparément, lié au média principal :
 
-| Métrique | Limite | Contrôle |
-|----------|--------|----------|
-| Uploads par utilisateur/jour | 100 fichiers | Rate limiting Istio |
-| Taille totale par utilisateur | 1 GB | Application level |
-| Taille fichier unique | 100 MB | Validation |
+```
+POST /media/v1/upload
+Body:
+  file: <blob chiffré principal>
+  thumbnail: <blob chiffré thumbnail> (optionnel)
+  context: "message"
+  ownerId: <userId>
+```
+
+Le thumbnail est stocké sous `thumbnails/{mediaId}` et retourné dans la réponse :
+
+```json
+{
+  "mediaId": "uuid",
+  "url": "https://cdn.whispr.../messages/uuid",
+  "thumbnailUrl": "https://cdn.whispr.../thumbnails/uuid",
+  "expiresAt": "2026-03-20T00:00:00Z"
+}
+```
+
+Si aucun thumbnail n'est fourni, le client affiche une icône générique selon le type MIME déclaré.
+
+---
+
+## 6. API
+
+### 6.1 Endpoint d'Upload
+
+```
+POST /media/v1/upload
+Content-Type: multipart/form-data
+Authorization: Bearer <jwt>
+
+Champs:
+  file        (required)  blob chiffré principal
+  thumbnail   (optional)  blob chiffré thumbnail
+  context     (required)  "message" | "avatar" | "group_icon"
+  ownerId     (required)  userId ou groupId selon context
+```
+
+**Validations côté serveur** :
+- Taille max par context (voir §8.3)
+- Magic bytes : vérification que le Content-Type déclaré correspond aux premiers octets du blob
+- Quota utilisateur non dépassé
+- Token JWT valide
+
+### 6.2 Autres Endpoints
+
+```
+GET    /media/v1/:id           # Métadonnées du média
+GET    /media/v1/:id/blob      # Redirect vers signed URL du blob
+GET    /media/v1/:id/thumbnail # Redirect vers signed URL du thumbnail
+DELETE /media/v1/:id           # Suppression (propriétaire ou admin)
+GET    /media/v1/quota         # Quota courant de l'utilisateur
+```
+
+### 6.3 Structure de Réponse
+
+```json
+{
+  "mediaId": "550e8400-e29b-41d4-a716-446655440000",
+  "url": "https://cdn.whispr.epitech.beer/messages/uuid.bin?sig=...",
+  "thumbnailUrl": "https://cdn.whispr.epitech.beer/thumbnails/uuid.bin?sig=...",
+  "expiresAt": "2026-03-20T00:00:00Z",
+  "context": "message",
+  "size": 1048576
+}
+```
+
+`expiresAt` est `null` pour `avatar` et `group_icon`. Le `mediaId` est ensuite référencé dans le message Signal — le media-service est la source de vérité pour les URLs.
+
+---
+
+## 7. Modération
+
+### 7.1 Modération Embarquée Côté Client
+
+La modération de contenu est effectuée **sur le device**, par un modèle ML embarqué dans l'application mobile, **avant chiffrement**. Le serveur ne peut pas analyser le contenu des blobs Signal.
+
+Ce choix est cohérent avec le modèle de WhatsApp et Signal : la modération repose sur :
+1. L'analyse locale avant envoi (modèle embarqué)
+2. Le signalement post-factum par les destinataires
+
+Le `moderation-service` n'est **pas** appelé par le media-service.
+
+### 7.2 Ce que le Serveur Peut Vérifier
+
+Sans accès au contenu, le serveur peut uniquement vérifier :
+
+- **Taille et type MIME** : validation structurelle du blob
+- **Quotas** : protection contre l'abus de stockage
+- **Rate limiting** : protection contre le spam d'uploads
+- **Hash du blob chiffré** : déduplication des blobs identiques (même fichier re-uploadé à l'identique), mais pas de détection de contenu similaire
+
+> La table `MODERATION_HASHES` présente dans les anciennes versions de la doc a été supprimée — elle n'est plus pertinente avec ce modèle. Le cache de déduplication est géré en Redis avec TTL.
+
+---
+
+## 8. Scaling et Performances
+
+### 8.1 Stratégie de Scaling
+
+- **Horizontal Pod Autoscaling** : scaling sur CPU et taux d'upload
+- **Istio Load Balancing** : distribution intelligente
+- **Circuit Breakers** : protection contre auth-service et user-service défaillants
+- Pas de pods spécialisés pour le traitement image/vidéo (supprimés — traitement client)
+
+### 8.2 Cache et Optimisations
+
+- **Metadata Cache** : Redis TTL 30min pour les métadonnées fréquentes
+- **Quota Cache** : Redis TTL 1h pour les limites utilisateur
+- **Streaming** : upload/download en streaming, pas de buffering en mémoire
+- **Connection Pooling** : pools vers PostgreSQL et S3
+
+### 8.3 Limites et Quotas
+
+| Métrique | Limite | Contexte |
+|---|---|---|
+| Taille blob `message` | 100 MB | Vidéos, documents |
+| Taille blob `avatar` | 5 MB | Image compressée côté client |
+| Taille blob `group_icon` | 5 MB | Image compressée côté client |
+| Uploads par utilisateur/jour | 100 fichiers | Rate limiting |
+| Stockage total par utilisateur | 1 GB | Quota persistant |
 | Requêtes par minute | 60 | Rate limiting Istio |
-| Bande passante upload | 10 MB/s | Application level |
 | Concurrent uploads | 3 par utilisateur | Semaphore |
 
-## 8. Monitoring et Observabilité
+---
 
-### 8.1 Observabilité Istio
+## 9. Monitoring et Observabilité
 
-- **Kiali** : Visualisation des flux de données entre services
-- **Jaeger** : Tracing distribué pour les opérations de media
-- **Prometheus** : Métriques automatiques Istio + métriques custom
-- **Grafana** : Dashboards pour performance et usage
-- **Envoy Access Logs** : Logs détaillés des uploads/downloads
+- **Kiali** : visualisation flux inter-services
+- **Jaeger** : tracing distribué
+- **Prometheus** : métriques Istio + métriques custom
+- **Grafana** : dashboards
 
-### 8.2 Logging
+**Métriques métier** :
+- Débit d'upload par context
+- Taille moyenne des blobs par context
+- Utilisation stockage par utilisateur
+- Taux d'erreur upload / quota dépassé
+- Latence des appels gRPC vers auth-service et user-service
 
-- **NestJS Logger** : Logger intégré avec niveaux configurables
-- **Logging Interceptor** : Interception automatique des requêtes/réponses
-- **Structured Logging** : JSON avec correlation IDs et request context
-- **Upload Events** : Traçabilité complète des opérations avec @LogExecutionTime()
-- **Error Context** : Exception filters enrichis avec contexte utilisateur
-- **Performance Logs** : Durée de traitement par étape avec interceptors
-- **Security Logs** : Tentatives d'accès non autorisé via guards
+---
 
-### 8.3 Métriques
+## 10. Gestion des Erreurs et Résilience
 
-- **Métriques Istio automatiques** :
-  - Latence des requêtes vers moderation-service
-  - Taux de succès/erreur des appels gRPC
-  - Throughput des uploads/downloads
-  - Métriques de sécurité mTLS
+- **Exception Filters NestJS** : gestion centralisée des erreurs
+- **Circuit Breakers Istio** : protection contre auth-service défaillant (fallback sur cache JWT)
+- **Retry Policies** : retries automatiques avec backoff exponentiel vers user-service
+- **Graceful shutdown** : arrêt propre avec drain des connexions en cours
+- **RPO** : 5 minutes (métadonnées PostgreSQL)
+- **RTO** : 10 minutes
 
-- **Métriques métier personnalisées** :
-  - Débit d'upload par type de média
-  - Taux de compression par format
-  - Utilisation du stockage par utilisateur
-  - Taux de rejet par la modération
-  - Performance de génération de previews
+---
 
-### 8.4 Alerting
+## 11. Évolution et Maintenance
 
-- **Alertes Istio** :
-  - Dégradation connectivité vers moderation-service
-  - Échecs certificats mTLS
-  - Latence élevée service mesh
-
-- **Alertes business** :
-  - Taux d'erreur upload > 5%
-  - Espace disque GCS > 80%
-  - Temps traitement vidéo > 60s
-  - Quota utilisateur dépassé
-  - Service modération indisponible
-
-## 9. Gestion des Erreurs et Résilience
-
-### 9.1 Stratégie de Gestion des Erreurs
-
-- **Exception Filters NestJS** : Gestion centralisée des erreurs avec filtres personnalisés
-- **Interceptors** : Logging, transformation de réponses et gestion des timeouts
-- **Guards** : Protection des routes avec authentification et autorisation
-- **Pipes** : Validation des données d'entrée et transformation
-- **Graceful shutdown** : Arrêt propre de l'application NestJS
-
-### 9.2 Résilience avec Istio
-
-- **Circuit Breakers** : Protection contre moderation-service défaillant
-- **Timeout Management** : Timeouts granulaires par opération
-- **Retry Policies** : Retries automatiques avec backoff
-- **Bulkhead Pattern** : Isolation des ressources par type de traitement
-- **Health Checks** : Vérification continue de la santé du service
-
-### 9.3 Plan de Reprise d'Activité
-
-- **RPO** : 5 minutes maximum (métadonnées)
-- **RTO** : 10 minutes maximum
-- **Backup Strategy** : Sauvegarde continue vers autre région GCS
-- **Disaster Recovery** : Procédures de basculement automatisées
-- **Data Integrity** : Vérification de l'intégrité après récupération
-
-## 10. Évolution et Maintenance
-
-### 10.1 Versionnement
-
-- **API Versioning** : Versionnement sémantique des endpoints
-- **Backward Compatibility** : Support des anciens formats de média
-- **Migration Tools** : Scripts pour migration de données
-- **Feature Flags** : Déploiement progressif des nouvelles fonctionnalités
-
-### 10.2 Mise à Jour et Déploiement
-
-- **Blue/Green Deployment** : Déploiement sans interruption via Istio
-- **Canary Releases** : Tests progressifs sur un sous-ensemble de trafic
-- **Rolling Updates** : Mise à jour graduelle des instances
-- **Health Checks** : Validation automatique post-déploiement
-- **Rollback** : Retour arrière automatique en cas d'échec
-
-### 10.3 Documentation Technique
-
-- **API Documentation** : Swagger automatiquement générée via décorateurs @ApiOperation, @ApiResponse
-- **NestJS Documentation** : Documentation des modules, services et controllers
-- **Integration Guides** : Documentation pour l'intégration avec autres services
-- **Troubleshooting** : Guide de résolution des problèmes courants
-- **Architecture Decision Records** : Historique des décisions techniques
-
-## 11. Considérations Opérationnelles
-
-### 11.1 DevOps
-
-- **CI/CD Pipeline** : GitHub Actions avec build NestJS optimisé
-- **Nest Build** : Compilation TypeScript avec webpack pour optimisation
-- **Security Scanning** : Analyse des vulnérabilités dans les dépendances npm
-- **Performance Testing** : Tests de charge sur les endpoints d'upload
-- **Integration Testing** : Tests end-to-end avec TestingModule NestJS
-
-### 11.2 Environnements
-
-- **Development** : Environnement local avec MinIO pour le stockage
-- **Staging** : Environnement de test avec données anonymisées
-- **Production** : Environnement de production avec monitoring complet
-- **Isolation** : Séparation stricte entre environnements
-
-### 11.3 Support
-
-- **Log Analysis** : Outils pour analyser les problèmes d'upload
-- **Performance Monitoring** : Surveillance temps réel des performances
-- **User Support** : Outils pour diagnostiquer les problèmes utilisateur
-- **Capacity Planning** : Prévision des besoins en stockage
+- **API Versioning** : préfixe `/media/v1/` — la v2 pourra coexister
+- **Blue/Green Deployment** : via Istio, zéro downtime
+- **Canary Releases** : déploiement progressif sur sous-ensemble de trafic
+- **Migrations TypeORM** : zero-downtime, backward-compatible
 
 ---
 
@@ -660,63 +512,29 @@ graph TD
 
 ### A. Métriques de Performance Cibles
 
-| Métrique | Cible | Monitoring |
-|----------|-------|------------|
-| Temps upload image (< 5MB) | < 3s | Prometheus + Grafana |
-| Temps génération preview | < 2s | Custom metrics |
-| 99e percentile temps de réponse | < 10s | Istio + Jaeger |
-| Taux d'erreur upload | < 1% | Kiali + Prometheus |
-| Disponibilité | > 99.5% | Istio Health Checks |
-| Compression ratio images | > 30% | Custom metrics |
-| Débit de traitement vidéo | > 5 MB/s | FFmpeg metrics |
+| Métrique | Cible |
+|---|---|
+| Temps upload blob < 5MB | < 2s (hors transfert réseau) |
+| 99e percentile temps de réponse | < 5s |
+| Taux d'erreur upload | < 1% |
+| Disponibilité | > 99.5% |
 
 ### B. Estimation des Ressources
 
-| Ressource | Estimation Initiale | Istio Overhead |
-|-----------|---------------------|----------------|
-| Nœuds processing | 3 instances | + Envoy sidecars |
-| CPU par nœud | 4 vCPU | + 0.2 vCPU (Envoy) |
-| Mémoire par nœud | 8 GB RAM | + 200MB (Envoy) |
-| Stockage PostgreSQL | 20 GB initial | - |
-| Stockage Redis | 2 GB | - |
-| Stockage GCS | 100 GB initial | - |
-| Uploads par jour | 1,000 fichiers | - |
-| Bandwidth mensuel | 500 GB | + mTLS overhead (~5%) |
+| Ressource | Estimation |
+|---|---|
+| Pods media-service | 2-3 instances |
+| CPU par pod | 2 vCPU + 0.2 vCPU (Envoy) |
+| Mémoire par pod | 512 MB + 200 MB (Envoy) |
+| Stockage PostgreSQL | 10 GB initial (métadonnées uniquement) |
+| Stockage Redis | 1 GB |
+| Stockage objet (blobs) | 100 GB initial |
 
-### C. Configuration Istio Examples
+> La mémoire par pod est significativement réduite par rapport aux estimations précédentes : sans pipeline Sharp/FFmpeg, le service est principalement I/O-bound.
 
-```yaml
-# DestinationRule pour media-service avec circuit breaker
-apiVersion: networking.istio.io/v1beta1
-kind: DestinationRule
-metadata:
-  name: media-service-circuit-breaker
-  namespace: whispr
-spec:
-  host: media-service
-  trafficPolicy:
-    outlierDetection:
-      consecutiveErrors: 5
-      interval: 30s
-      baseEjectionTime: 30s
-    circuitBreaker:
-      maxConnections: 100
-      maxRequestsPerConnection: 10
-      maxRetries: 3
-    connectionPool:
-      http:
-        http1MaxPendingRequests: 50
-        maxRequestsPerConnection: 10
-```
+### C. Références
 
-### D. Références
-
-- [Google Cloud Storage Documentation](https://cloud.google.com/storage/docs)
-- [Sharp Image Processing](https://sharp.pixelplumbing.com/)
-- [FFmpeg Documentation](https://ffmpeg.org/documentation.html)
+- [MinIO Documentation](https://min.io/docs/)
 - [NestJS Documentation](https://docs.nestjs.com/)
-- [NestJS Security Best Practices](https://docs.nestjs.com/security/authentication)
-- [NestJS Microservices](https://docs.nestjs.com/microservices/basics)
-- [TypeScript Node.js Guidelines](https://github.com/microsoft/TypeScript-Node-Starter)
+- [Signal Protocol — Media Encryption](https://signal.org/docs/)
 - [Istio Security Best Practices](https://istio.io/latest/docs/ops/best-practices/security/)
-- [AES-GCM Encryption Best Practices](https://tools.ietf.org/html/rfc5116)
