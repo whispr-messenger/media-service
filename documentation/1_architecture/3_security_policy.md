@@ -3,673 +3,320 @@
 ## 0. Sommaire
 
 - [1. Introduction](#1-introduction)
-  - [1.1 Objectif du Document](#11-objectif-du-document)
-  - [1.2 Contexte et Importance](#12-contexte-et-importance)
-  - [1.3 Principes Fondamentaux](#13-principes-fondamentaux)
-- [2. Protection des Communications](#2-protection-des-communications)
-  - [2.1 Sécurité des Communications Externes](#21-sécurité-des-communications-externes)
-    - [2.1.1 Intégration Google Cloud Storage](#211-intégration-google-cloud-storage)
-    - [2.1.2 APIs de Traitement Multimédia](#212-apis-de-traitement-multimédia)
-    - [2.1.3 Protection des Uploads](#213-protection-des-uploads)
-  - [2.2 Sécurité des Communications Internes](#22-sécurité-des-communications-internes)
-    - [2.2.1 Communication gRPC Inter-Services](#221-communication-grpc-inter-services)
-    - [2.2.2 API REST NestJS](#222-api-rest-nestjs)
-- [3. Gestion des Fichiers et Chiffrement](#3-gestion-des-fichiers-et-chiffrement)
-  - [3.1 Chiffrement Bout-en-Bout](#31-chiffrement-bout-en-bout)
-    - [3.1.1 Algorithmes de Chiffrement](#311-algorithmes-de-chiffrement)
-    - [3.1.2 Gestion des Clés](#312-gestion-des-clés)
-    - [3.1.3 Intégrité des Fichiers](#313-intégrité-des-fichiers)
-  - [3.2 Stockage Sécurisé](#32-stockage-sécurisé)
-    - [3.2.1 Google Cloud Storage](#321-google-cloud-storage)
-    - [3.2.2 Organisation des Buckets](#322-organisation-des-buckets)
-    - [3.2.3 Accès et Autorisations](#323-accès-et-autorisations)
-  - [3.3 Métadonnées et Références](#33-métadonnées-et-références)
-    - [3.3.1 Protection des Métadonnées](#331-protection-des-métadonnées)
-    - [3.3.2 Anonymisation des Données EXIF](#332-anonymisation-des-données-exif)
-- [4. Validation et Modération de Contenu](#4-validation-et-modération-de-contenu)
-  - [4.1 Validation des Fichiers](#41-validation-des-fichiers)
-    - [4.1.1 Vérification des Types de Fichiers](#411-vérification-des-types-de-fichiers)
-    - [4.1.2 Détection de Malware](#412-détection-de-malware)
-    - [4.1.3 Validation de l'Intégrité](#413-validation-de-lintégrité)
-  - [4.2 Modération Préventive](#42-modération-préventive)
-    - [4.2.1 Hash de Modération](#421-hash-de-modération)
-    - [4.2.2 Intégration avec Moderation-Service](#422-intégration-avec-moderation-service)
-    - [4.2.3 Base de Données de Contenu Interdit](#423-base-de-données-de-contenu-interdit)
-  - [4.3 Gestion des Contenus Sensibles](#43-gestion-des-contenus-sensibles)
-    - [4.3.1 Classification Automatique](#431-classification-automatique)
-    - [4.3.2 Quarantaine et Révision](#432-quarantaine-et-révision)
-- [5. Contrôle d'Accès et Quotas](#5-contrôle-daccès-et-quotas)
-  - [5.1 Authentification et Autorisation](#51-authentification-et-autorisation)
-    - [5.1.1 Validation des Tokens](#511-validation-des-tokens)
-    - [5.1.2 Contrôle d'Accès par Fichier](#512-contrôle-daccès-par-fichier)
-    - [5.1.3 Permissions de Partage](#513-permissions-de-partage)
-  - [5.2 Gestion des Quotas](#52-gestion-des-quotas)
-    - [5.2.1 Quotas de Stockage](#521-quotas-de-stockage)
-    - [5.2.2 Limites d'Upload](#522-limites-dupload)
-    - [5.2.3 Rate Limiting](#523-rate-limiting)
-  - [5.3 Audit et Traçabilité](#53-audit-et-traçabilité)
-    - [5.3.1 Journalisation des Accès](#531-journalisation-des-accès)
-    - [5.3.2 Traçabilité des Modifications](#532-traçabilité-des-modifications)
-- [6. Protection Contre les Menaces](#6-protection-contre-les-menaces)
-  - [6.1 Détection des Abus](#61-détection-des-abus)
-    - [6.1.1 Monitoring Comportemental](#611-monitoring-comportemental)
-    - [6.1.2 Protection Anti-Spam](#612-protection-anti-spam)
-  - [6.2 Sécurité des APIs](#62-sécurité-des-apis)
-    - [6.2.1 Validation des Uploads](#621-validation-des-uploads)
-    - [6.2.2 Protection Contre les Attaques](#622-protection-contre-les-attaques)
-  - [6.3 Résilience Infrastructure](#63-résilience-infrastructure)
-    - [6.3.1 Protection DDoS](#631-protection-ddos)
-    - [6.3.2 Isolation des Processus](#632-isolation-des-processus)
-- [7. Intégration avec les Autres Services](#7-intégration-avec-les-autres-services)
-  - [7.1 Communication avec Auth Service](#71-communication-avec-auth-service)
-    - [7.1.1 Validation des Utilisateurs](#711-validation-des-utilisateurs)
-    - [7.1.2 Gestion des Sessions](#712-gestion-des-sessions)
-  - [7.2 Intégration avec Moderation Service](#72-intégration-avec-moderation-service)
-    - [7.2.1 Analyse de Contenu](#721-analyse-de-contenu)
-    - [7.2.2 Synchronisation des Politiques](#722-synchronisation-des-politiques)
-  - [7.3 Intégration avec User Service](#73-intégration-avec-user-service)
-    - [7.3.1 Gestion des Quotas](#731-gestion-des-quotas)
-    - [7.3.2 Préférences Utilisateur](#732-préférences-utilisateur)
-  - [7.4 Intégration avec Messaging Service](#74-intégration-avec-messaging-service)
-    - [7.4.1 Attachement de Médias](#741-attachement-de-médias)
-    - [7.4.2 Suppression Coordonnée](#742-suppression-coordonnée)
-- [8. Détection et Réponse aux Incidents](#8-détection-et-réponse-aux-incidents)
-  - [8.1 Monitoring et Alertes](#81-monitoring-et-alertes)
-    - [8.1.1 Métriques de Sécurité](#811-métriques-de-sécurité)
-    - [8.1.2 Détection d'Anomalies](#812-détection-danomalies)
-  - [8.2 Classification et Réponse aux Incidents](#82-classification-et-réponse-aux-incidents)
-    - [8.2.1 Niveaux de Gravité](#821-niveaux-de-gravité)
-    - [8.2.2 Procédures de Réponse](#822-procédures-de-réponse)
-  - [8.3 Forensique et Investigation](#83-forensique-et-investigation)
-    - [8.3.1 Conservation des Preuves](#831-conservation-des-preuves)
-    - [8.3.2 Analyse des Incidents](#832-analyse-des-incidents)
-- [9. Développement Sécurisé](#9-développement-sécurisé)
-  - [9.1 Pratiques de Développement](#91-pratiques-de-développement)
-    - [9.1.1 Code Sécurisé pour NestJS](#911-code-sécurisé-pour-nestjs)
-    - [9.1.2 Gestion des Secrets](#912-gestion-des-secrets)
-  - [9.2 Tests de Sécurité](#92-tests-de-sécurité)
-    - [9.2.1 Tests Automatisés](#921-tests-automatisés)
-    - [9.2.2 Revues de Sécurité](#922-revues-de-sécurité)
+- [2. Modèle de Chiffrement E2E Signal](#2-modèle-de-chiffrement-e2e-signal)
+  - [2.1 Médias de type `message`](#21-médias-de-type-message)
+  - [2.2 Médias de type `avatar` et `group_icon`](#22-médias-de-type-avatar-et-group_icon)
+  - [2.3 Ce que le Serveur ne Peut pas Faire](#23-ce-que-le-serveur-ne-peut-pas-faire)
+- [3. Contrôle d'Accès](#3-contrôle-daccès)
+  - [3.1 Authentification](#31-authentification)
+  - [3.2 Autorisation par Contexte](#32-autorisation-par-contexte)
+  - [3.3 Signed URLs](#33-signed-urls)
+- [4. Validation des Uploads](#4-validation-des-uploads)
+- [5. Quotas et Rate Limiting](#5-quotas-et-rate-limiting)
+- [6. Protection des Communications](#6-protection-des-communications)
+- [7. Modération](#7-modération)
+- [8. Stockage Sécurisé](#8-stockage-sécurisé)
+- [9. Audit et Traçabilité](#9-audit-et-traçabilité)
 - [10. Protection des Données Personnelles](#10-protection-des-données-personnelles)
-  - [10.1 Conformité RGPD](#101-conformité-rgpd)
-    - [10.1.1 Principes Appliqués](#1011-principes-appliqués)
-    - [10.1.2 Droits des Utilisateurs](#1012-droits-des-utilisateurs)
-  - [10.2 Transparence et Contrôle](#102-transparence-et-contrôle)
-    - [10.2.1 Gestion des Métadonnées](#1021-gestion-des-métadonnées)
-    - [10.2.2 Information des Utilisateurs](#1022-information-des-utilisateurs)
 - [11. Sauvegarde et Récupération](#11-sauvegarde-et-récupération)
-  - [11.1 Protection des Données Critiques](#111-protection-des-données-critiques)
-    - [11.1.1 Stratégie de Sauvegarde](#1111-stratégie-de-sauvegarde)
-    - [11.1.2 Rétention des Données](#1112-rétention-des-données)
-  - [11.2 Continuité de Service](#112-continuité-de-service)
-    - [11.2.1 Haute Disponibilité](#1121-haute-disponibilité)
-    - [11.2.2 Plan de Récupération d'Urgence](#1122-plan-de-récupération-durgence)
 - [Annexes](#annexes)
-  - [A. Matrice des Risques de Sécurité](#a-matrice-des-risques-de-sécurité)
-  - [B. Métriques de Sécurité](#b-métriques-de-sécurité)
-  - [C. Contacts d'Urgence](#c-contacts-durgence)
-  - [D. Références](#d-références)
+
+---
 
 ## 1. Introduction
 
-### 1.1 Objectif du Document
-Cette politique de sécurité définit les mesures techniques et pratiques à implémenter pour protéger le service de gestion des médias (Media Service) de l'application Whispr dans le cadre de notre projet de fin d'études.
-
-### 1.2 Contexte et Importance
-Le service de médias gère l'ensemble des fichiers multimédias partagés par les utilisateurs : images, vidéos, audio, documents. Il constitue un point critique pour la confidentialité des données personnelles et doit garantir le chiffrement bout-en-bout, l'intégrité des fichiers, la modération de contenu et la protection contre les abus.
-
-### 1.3 Principes Fondamentaux
-- **Chiffrement bout-en-bout** : Tous les médias chiffrés côté client avant stockage
-- **Modération préventive** : Validation obligatoire du contenu avant acceptation
-- **Séparation des privilèges** : Isolation stricte entre utilisateurs et leurs fichiers
-- **Quotas stricts** : Limitation des ressources pour prévenir les abus
-- **Traçabilité complète** : Audit de tous les accès et modifications
-- **Défense en profondeur** : Multiples couches de protection complémentaires
-- **Minimisation des données** : Collecte et stockage minimal d'informations personnelles
-
-## 2. Protection des Communications
-
-### 2.1 Sécurité des Communications Externes
-
-#### 2.1.1 Intégration Google Cloud Storage
-- Connexions TLS 1.3 obligatoires pour tous les accès GCS
-- Authentification via Service Account avec clés privées stockées dans Google Secret Manager
-- Signed URLs avec expiration courte (15 minutes max) pour l'accès temporaire
-- Validation des certificats SSL/TLS avec certificate pinning
-- Monitoring des accès via Cloud Audit Logs
-
-#### 2.1.2 APIs de Traitement Multimédia
-- Intégration sécurisée avec les APIs de traitement (Sharp, FFmpeg)
-- Sandboxing des processus de traitement multimédia
-- Validation stricte des paramètres de traitement
-- Timeout appropriés pour éviter les blocages
-- Isolation des ressources par type de traitement
-
-#### 2.1.3 Protection des Uploads
-- Upload multipart sécurisé avec validation par chunk
-- Chiffrement en streaming pour les gros fichiers
-- Vérification d'intégrité à chaque étape
-- Protection contre les uploads malveillants
-- Limitation de la bande passante par utilisateur
-
-### 2.2 Sécurité des Communications Internes
-
-#### 2.2.1 Communication gRPC Inter-Services
-- mTLS (TLS mutuel) pour toutes les communications gRPC via Istio
-- Certificats générés automatiquement par Istio service mesh
-- Validation des identités de service à chaque requête
-- Chiffrement des métadonnées sensibles dans les messages gRPC
-- Circuit breakers pour éviter les cascades de pannes
-
-#### 2.2.2 API REST NestJS
-- TLS 1.3 obligatoire pour toutes les connexions HTTP
-- Authentification JWT validée via Guards NestJS
-- Rate limiting par utilisateur et par endpoint via Interceptors
-- Validation stricte des inputs avec Pipes et DTOs
-- CORS configuré de manière restrictive
-- Protection CSRF via tokens pour uploads
-
-## 3. Gestion des Fichiers et Chiffrement
-
-### 3.1 Chiffrement Bout-en-Bout
-
-#### 3.1.1 Algorithmes de Chiffrement
-- **Chiffrement symétrique** : AES-256-GCM pour tous les fichiers
-- **Chiffrement authentifié** : Tag d'authentification GCM intégré
-- **IV/Nonce unique** : Généré aléatoirement pour chaque fichier
-- **Streaming encryption** : Chiffrement en chunks pour les gros fichiers
-- **Algorithmes approuvés** : Conformité aux standards NIST et ANSSI
-
-#### 3.1.2 Gestion des Clés
-- **Dérivation de clés** : PBKDF2 avec salt unique par utilisateur (100,000 itérations minimum)
-- **Clés maîtres** : Stockées uniquement côté client, jamais sur le serveur
-- **Hash des clés** : Stockage du hash SHA-256 de la clé pour validation
-- **Rotation des clés** : Support de la rotation avec migration progressive
-- **Escrow sécurisé** : Option de sauvegarde chiffrée des clés utilisateur
-
-#### 3.1.3 Intégrité des Fichiers
-- **Checksum** : SHA-256 calculé avant et après chiffrement
-- **Tag GCM** : Vérification de l'intégrité à chaque accès
-- **Détection de corruption** : Monitoring automatique de l'intégrité
-- **Réparation automatique** : Mécanismes de récupération depuis les sauvegardes
-- **Audit d'intégrité** : Vérification périodique de l'intégrité des fichiers
-
-### 3.2 Stockage Sécurisé
-
-#### 3.2.1 Google Cloud Storage
-- **Chiffrement au repos** : Chiffrement Google par défaut + chiffrement client
-- **Buckets privés** : Accès public désactivé sur tous les buckets
-- **Lifecycle policies** : Suppression automatique des fichiers temporaires
-- **Versioning** : Historique des versions pour récupération
-- **Access logs** : Journalisation complète des accès GCS
-
-#### 3.2.2 Organisation des Buckets
-- **Séparation par environnement** : Buckets séparés pour dev/staging/prod
-- **Segmentation par type** : Buckets dédiés par catégorie de média
-- **Isolation utilisateur** : Préfixes de chemin par utilisateur
-- **Région unique** : Stockage dans une région GCP pour conformité
-- **Backup cross-region** : Réplication dans une région secondaire
-
-#### 3.2.3 Accès et Autorisations
-- **IAM granulaire** : Permissions minimales par service
-- **Signed URLs** : Accès temporaire avec expiration automatique
-- **Audit complet** : Traçabilité de tous les accès via Cloud Audit Logs
-- **Network security** : VPC private Google Access pour sécurité réseau
-- **Monitoring** : Alertes sur accès anormaux ou volumes suspects
-
-### 3.3 Métadonnées et Références
-
-#### 3.3.1 Protection des Métadonnées
-- **Chiffrement base** : Base PostgreSQL chiffrée avec TDE
-- **Row Level Security** : Isolation des données par utilisateur
-- **Chiffrement colonnes** : Données EXIF chiffrées au niveau colonne
-- **Anonymisation** : Suppression des identifiants dans les logs
-- **Validation** : Contrôle strict des métadonnées avant stockage
-
-#### 3.3.2 Anonymisation des Données EXIF
-- **Suppression GPS** : Élimination automatique des coordonnées géographiques
-- **Anonymisation appareil** : Suppression des informations d'appareil
-- **Horodatage** : Conservation uniquement de l'année de prise de vue
-- **Métadonnées techniques** : Conservation des données nécessaires au traitement
-- **Audit EXIF** : Journalisation des données supprimées pour audit
-
-## 4. Validation et Modération de Contenu
-
-### 4.1 Validation des Fichiers
-
-#### 4.1.1 Vérification des Types de Fichiers
-- **Magic bytes** : Vérification du type réel via signature de fichier
-- **Extension** : Validation de l'extension par rapport au type détecté
-- **Whitelist** : Liste restrictive des types autorisés par catégorie
-- **Taille maximale** : Limites strictes par type de média
-- **Structure** : Validation de l'intégrité structurelle des fichiers
-
-#### 4.1.2 Détection de Malware
-- **Scan antivirus** : Intégration avec des services de scan externe
-- **Signatures** : Base de données de signatures malveillantes
-- **Heuristiques** : Détection de patterns suspects
-- **Sandboxing** : Exécution isolée pour analyse comportementale
-- **Quarantaine** : Isolation des fichiers suspects
-
-#### 4.1.3 Validation de l'Intégrité
-- **Checksum** : Vérification de l'intégrité lors de l'upload
-- **Taille déclarée** : Validation par rapport à la taille réelle
-- **Format** : Vérification de la conformité au format déclaré
-- **Corruption** : Détection de fichiers corrompus
-- **Reconstruction** : Tests d'ouverture/lecture des fichiers
-
-### 4.2 Modération Préventive
-
-#### 4.2.1 Hash de Modération
-- **Hash perceptuel** : Calcul de pHash pour images et vidéos
-- **Hash cryptographique** : SHA-256 pour fichiers non-médias
-- **Comparaison** : Vérification contre base de contenus interdits
-- **Similarité** : Détection de contenus similaires avec seuil
-- **Cache** : Stockage des résultats pour éviter recalculs
-
-#### 4.2.2 Intégration avec Moderation-Service
-- **API sécurisée** : Communication gRPC mTLS vers moderation-service
-- **Validation obligatoire** : Aucun fichier accepté sans validation
-- **Timeout** : Délais appropriés pour analyse
-- **Fallback** : Mode dégradé en cas d'indisponibilité
-- **Retry logic** : Retry automatique avec backoff exponentiel
-
-#### 4.2.3 Base de Données de Contenu Interdit
-- **Hash Database** : Base centralisée via moderation-service
-- **Mise à jour** : Synchronisation automatique des nouvelles signatures
-- **Catégorisation** : Classification par type de contenu interdit
-- **Révision** : Processus de révision pour faux positifs
-- **Audit** : Traçabilité des décisions de modération
-
-### 4.3 Gestion des Contenus Sensibles
-
-#### 4.3.1 Classification Automatique
-- **Analyse ML** : Classification automatique du contenu via moderation-service
-- **Niveaux de sensibilité** : Gradation des niveaux de contenu
-- **Métadonnées** : Enrichissement avec niveau de sensibilité
-- **Filtering** : Application de filtres selon profil utilisateur
-- **Age verification** : Vérification d'âge pour contenus sensibles
-
-#### 4.3.2 Quarantaine et Révision
-- **Quarantaine automatique** : Isolation des contenus douteux
-- **Révision humaine** : Process de révision pour cas complexes
-- **Délais** : Traitement dans les 24h maximum
-- **Appeals** : Processus d'appel pour utilisateurs
-- **Notifications** : Information des utilisateurs sur décisions
-
-## 5. Contrôle d'Accès et Quotas
-
-### 5.1 Authentification et Autorisation
-
-#### 5.1.1 Validation des Tokens
-- **JWT validation** : Vérification signature et expiration via Guards NestJS
-- **Token refresh** : Renouvellement automatique des tokens
-- **Blacklist** : Liste des tokens révoqués
-- **Rate limiting** : Limitation des tentatives d'authentification
-- **Multi-device** : Gestion des sessions multiples par utilisateur
-
-#### 5.1.2 Contrôle d'Accès par Fichier
-- **Propriétaire** : Contrôle strict de la propriété des fichiers
-- **Permissions** : Système de permissions granulaires (read, write, share)
-- **Sharing** : Gestion sécurisée du partage entre utilisateurs
-- **Expiration** : Liens d'accès avec expiration automatique
-- **Audit** : Journalisation de tous les accès aux fichiers
-
-#### 5.1.3 Permissions de Partage
-- **Niveaux** : View-only, download, full access
-- **Expiration** : Partages temporaires avec expiration
-- **Révocation** : Possibilité de révoquer les partages
-- **Notifications** : Alertes lors de partages et accès
-- **Limites** : Nombre maximum de partages par utilisateur
-
-### 5.2 Gestion des Quotas
-
-#### 5.2.1 Quotas de Stockage
-- **Limite par défaut** : 1GB par utilisateur (configurable)
-- **Monitoring temps réel** : Vérification avant chaque upload
-- **Alertes** : Notifications à 80% et 95% du quota
-- **Dépassement** : Blocage des uploads en cas de dépassement
-- **Cleanup** : Suggestions de nettoyage automatique
-
-#### 5.2.2 Limites d'Upload
-- **Quotas quotidiens** : 100 fichiers par jour par défaut
-- **Taille par fichier** : Limites selon le type de média
-- **Bande passante** : Limitation du débit d'upload
-- **Concurrent uploads** : Maximum 3 uploads simultanés
-- **Reset quotidien** : Remise à zéro automatique à minuit
-
-#### 5.2.3 Rate Limiting
-- **Global** : Limites par endpoint et par minute
-- **Par utilisateur** : Quotas personnalisés selon le profil
-- **Adaptive** : Ajustement selon comportement et historique
-- **Burst mode** : Pics temporaires autorisés
-- **Penalties** : Ralentissement pour utilisateurs abusifs
-
-### 5.3 Audit et Traçabilité
-
-#### 5.3.1 Journalisation des Accès
-- **Accès complet** : Tous les accès aux fichiers loggés
-- **Métadonnées** : IP, User-Agent, timestamp, action
-- **Corrélation** : Liens avec sessions et utilisateurs
-- **Retention** : Conservation 90 jours pour investigations
-- **Anonymisation** : Données personnelles anonymisées après délai
-
-#### 5.3.2 Traçabilité des Modifications
-- **Historique** : Suivi de toutes les modifications de fichiers
-- **Versioning** : Conservation des versions précédentes
-- **Checkpoints** : Points de restauration automatiques
-- **Integrity** : Vérification d'intégrité sur toute la chaîne
-- **Forensics** : Données pour investigations de sécurité
-
-## 6. Protection Contre les Menaces
-
-### 6.1 Détection des Abus
-
-#### 6.1.1 Monitoring Comportemental
-- **Patterns anormaux** : Détection d'uploads massifs ou suspects
-- **Analyse temporelle** : Identification de pics d'activité anormaux
-- **Géolocalisation** : Détection d'accès depuis locations suspectes
-- **Correlation** : Liens entre utilisateurs pour détecter coordinations
-- **ML Detection** : Algorithmes d'apprentissage pour détection d'abus
-
-#### 6.1.2 Protection Anti-Spam
-- **Duplicate detection** : Identification de fichiers identiques
-- **Content similarity** : Détection de contenus similaires répétitifs
-- **Rate limiting intelligent** : Adaptation selon comportement
-- **Reputation system** : Score de réputation par utilisateur
-- **Community reporting** : Système de signalement utilisateur
-
-### 6.2 Sécurité des APIs
-
-#### 6.2.1 Validation des Uploads
-- **Input validation** : Validation stricte via DTOs NestJS
-- **File size limits** : Contrôles multiples de taille
-- **Content-Type validation** : Vérification headers vs contenu réel
-- **Path traversal** : Protection contre attaques de traversée
-- **Injection prevention** : Sanitisation des noms de fichiers
-
-#### 6.2.2 Protection Contre les Attaques
-- **CSRF protection** : Tokens CSRF pour operations sensibles
-- **XSS prevention** : Sanitisation de tous les inputs utilisateur
-- **SQL injection** : Utilisation exclusive de requêtes paramétrées (Prisma)
-- **Path traversal** : Validation stricte des chemins de fichiers
-- **Timing attacks** : Normalisation des temps de réponse
-
-### 6.3 Résilience Infrastructure
-
-#### 6.3.1 Protection DDoS
-- **Rate limiting** : Limitation agressive en cas de pic
-- **Geographic filtering** : Blocage par région si nécessaire
-- **Load balancing** : Répartition intelligente via Istio
-- **Circuit breakers** : Protection des services en aval
-- **Blacklisting** : Blocage automatique d'IPs malveillantes
-
-#### 6.3.2 Isolation des Processus
-- **Containerisation** : Isolation via Docker et Kubernetes
-- **Resource limits** : Quotas CPU/mémoire stricts
-- **Network policies** : Isolation réseau via Istio
-- **Sandboxing** : Traitement multimédia isolé
-- **Privilege dropping** : Exécution avec privilèges minimaux
-
-## 7. Intégration avec les Autres Services
-
-### 7.1 Communication avec Auth Service
-
-#### 7.1.1 Validation des Utilisateurs
-- **Token validation** : Vérification JWT via gRPC mTLS
-- **User existence** : Validation existence utilisateur avant upload
-- **Session management** : Coordination des sessions multi-appareils
-- **Permission checks** : Vérification des autorisations spécifiques
-- **Account status** : Vérification statut compte (actif, suspendu)
-
-#### 7.1.2 Gestion des Sessions
-- **Session sync** : Synchronisation avec auth-service
-- **Logout propagation** : Invalidation coordonnée des sessions
-- **Security events** : Propagation des événements de sécurité
-- **Multi-device** : Gestion cohérente multi-appareils
-- **Session hijacking** : Détection de détournements de session
-
-### 7.2 Intégration avec Moderation Service
-
-#### 7.2.1 Analyse de Contenu
-- **Content scanning** : Analyse obligatoire avant acceptation
-- **ML models** : Utilisation des modèles de moderation-service
-- **Hash verification** : Vérification contre base de contenus interdits
-- **Real-time analysis** : Analyse en temps réel des uploads
-- **Batch processing** : Traitement différé pour optimisation
-
-#### 7.2.2 Synchronisation des Politiques
-- **Policy updates** : Synchronisation des règles de modération
-- **Threshold adjustment** : Adaptation des seuils de détection
-- **Model updates** : Mise à jour des modèles ML
-- **Feedback loop** : Retour d'information pour amélioration
-- **Appeals process** : Processus d'appel via moderation-service
-
-### 7.3 Intégration avec User Service
-
-#### 7.3.1 Gestion des Quotas
-- **Quota sync** : Synchronisation des limites utilisateur
-- **Usage reporting** : Rapport d'utilisation vers user-service
-- **Plan management** : Gestion des plans et upgrades
-- **Billing integration** : Intégration pour facturation du stockage
-- **Fair usage** : Application des politiques d'usage équitable
-
-#### 7.3.2 Préférences Utilisateur
-- **Privacy settings** : Respect des préférences de confidentialité
-- **Sharing preferences** : Application des règles de partage
-- **Content filtering** : Filtrage selon préférences utilisateur
-- **Notification settings** : Coordination des notifications
-- **Accessibility** : Support des préférences d'accessibilité
-
-### 7.4 Intégration avec Messaging Service
-
-#### 7.4.1 Attachement de Médias
-- **Message linking** : Liaison sécurisée médias-messages
-- **Access control** : Contrôle d'accès selon conversation
-- **Preview generation** : Génération de previews pour messages
-- **Encryption sync** : Coordination chiffrement médias-messages
-- **Group permissions** : Gestion des permissions de groupe
-
-#### 7.4.2 Suppression Coordonnée
-- **Cascade deletion** : Suppression coordonnée médias-messages
-- **Retention policies** : Application des politiques de rétention
-- **Recovery** : Procédures de récupération coordonnées
-- **Audit sync** : Synchronisation des logs d'audit
-- **Backup coordination** : Sauvegardes coordonnées
-
-## 8. Détection et Réponse aux Incidents
-
-### 8.1 Monitoring et Alertes
-
-#### 8.1.1 Métriques de Sécurité
-- **Échecs d'authentification** : Taux et patterns des échecs
-- **Uploads suspects** : Détection de comportements anormaux
-- **Violations de quotas** : Tentatives de dépassement
-- **Accès non autorisés** : Tentatives d'accès illégitimes
-- **Corruption de fichiers** : Détection d'intégrité compromise
-
-#### 8.1.2 Détection d'Anomalies
-- **Baseline establishment** : Établissement de comportements normaux
-- **Statistical analysis** : Détection d'écarts statistiques significatifs
-- **Pattern recognition** : Reconnaissance de signatures d'attaque
-- **Correlation** : Corrélation d'événements entre services
-- **Real-time alerting** : Alertes instantanées sur incidents critiques
-
-### 8.2 Classification et Réponse aux Incidents
-
-#### 8.2.1 Niveaux de Gravité
-- **Critique** : Compromission de chiffrement ou accès massif non autorisé
-- **Élevé** : Upload de malware ou contenu illégal détecté
-- **Moyen** : Violations répétées de quotas ou tentatives d'intrusion
-- **Faible** : Erreurs mineures n'affectant pas la sécurité
-
-#### 8.2.2 Procédures de Réponse
-- **Escalation automatique** : Selon gravité et impact
-- **Quarantaine** : Isolation automatique des fichiers suspects
-- **Account suspension** : Suspension temporaire des comptes compromis
-- **Communication** : Coordination avec équipes de sécurité
-- **Recovery** : Procédures de récupération standardisées
-
-### 8.3 Forensique et Investigation
-
-#### 8.3.1 Conservation des Preuves
-- **Log preservation** : Protection contre altération des logs
-- **Snapshot** : Capture d'état système lors d'incidents
-- **Chain of custody** : Procédures légales pour preuves numériques
-- **Timeline reconstruction** : Reconstruction chronologique des événements
-- **Evidence integrity** : Garantie d'intégrité des preuves
-
-#### 8.3.2 Analyse des Incidents
-- **Root cause analysis** : Identification des causes profondes
-- **Impact assessment** : Évaluation de l'impact sur utilisateurs
-- **Attack vector analysis** : Compréhension des vecteurs d'attaque
-- **Remediation planning** : Plans de remédiation et amélioration
-- **Lessons learned** : Documentation et apprentissage
-
-## 9. Développement Sécurisé
-
-### 9.1 Pratiques de Développement
-
-#### 9.1.1 Code Sécurisé pour NestJS
-- **Guards and Interceptors** : Utilisation systématique pour sécurité
-- **DTO validation** : Validation stricte avec class-validator
-- **Prisma ORM** : Prévention des injections SQL via ORM
-- **Error handling** : Gestion sécurisée des erreurs sans fuite d'info
-- **Security headers** : Headers de sécurité via Helmet.js
-
-#### 9.1.2 Gestion des Secrets
-- **Google Secret Manager** : Stockage centralisé des secrets
-- **Environment isolation** : Séparation des secrets par environnement
-- **Rotation automatique** : Renouvellement automatique des secrets
-- **Access control** : Accès minimal et auditabilité
-- **Secret scanning** : Détection de secrets dans le code
-
-### 9.2 Tests de Sécurité
-
-#### 9.2.1 Tests Automatisés
-- **Unit tests** : Tests de sécurité dans les tests unitaires
-- **Integration tests** : Validation des flux de sécurité complets
-- **SAST** : Analyse statique automatisée du code
-- **Dependency scanning** : Scan des vulnérabilités dans dépendances
-- **Container scanning** : Analyse de sécurité des images Docker
-
-#### 9.2.2 Revues de Sécurité
-- **Code review** : Revue obligatoire des fonctions sensibles
-- **Security checklist** : Liste de vérification sécurité
-- **Threat modeling** : Modélisation des menaces pour nouvelles fonctionnalités
-- **Penetration testing** : Tests d'intrusion périodiques
-- **Security audit** : Audits de sécurité trimestriels
+### 1.1 Objectif
+Cette politique définit les mesures de sécurité du media-service de Whispr, dans le cadre d'une architecture de messagerie chiffrée de bout en bout basée sur le protocole Signal.
+
+### 1.2 Principes Fondamentaux
+
+- **Store-and-forward aveugle** : le serveur stocke des blobs opaques qu'il ne peut pas déchiffrer
+- **Confidentialité par construction** : les clés Signal ne transitent jamais par le media-service
+- **Contrôle d'accès par contexte** : politique d'accès différenciée selon le type de média (`message`, `avatar`, `group_icon`)
+- **Quotas et rate limiting** : protection contre les abus sans analyse du contenu
+- **Modération côté client** : modèle ML embarqué dans l'application mobile
+- **Traçabilité des accès** : audit complet des opérations sur les métadonnées
+
+---
+
+## 2. Modèle de Chiffrement E2E Signal
+
+### 2.1 Médias de type `message`
+
+Les médias attachés aux messages suivent le protocole Signal de bout en bout :
+
+```
+Device A                      media-service                Device B
+   |                               |                           |
+   |  1. Génère clé K aléatoire    |                           |
+   |  2. Chiffre fichier → blob    |                           |
+   |     (AES-256-CBC + HMAC-SHA256, enveloppe Signal)         |
+   |  3. POST /upload (blob) ----> |                           |
+   |                          stocke blob opaque               |
+   |  <-- { mediaId, url } ------> |                           |
+   |                               |                           |
+   |  4. Canal Signal: { mediaId, url, K } ----------------->  |
+   |                               |                           |
+   |                               | <-- GET /blob/:id ------- |
+   |                               | -- blob opaque ---------> |
+   |                               |        5. Déchiffre avec K
+```
+
+**Garanties** :
+- La clé K ne transite jamais par le media-service
+- Le serveur stocke un blob qu'il ne peut pas déchiffrer
+- Même en cas de compromission du stockage, les médias restent illisibles sans K
+- L'expiration de la signed URL révoque l'accès réseau, indépendamment du chiffrement
+
+### 2.2 Médias de type `avatar` et `group_icon`
+
+Ces ressources sont semi-publiques : elles n'ont pas de destinataire Signal spécifique et doivent être accessibles à des utilisateurs multiples sans échange de clés préalable.
+
+- Chiffrés côté serveur au repos (AES-256-GCM, clé serveur stockée dans le Secret Manager)
+- Exposés via URL publique permanente (`expiresAt: null`)
+- Le contenu est accessible au serveur — ces fichiers peuvent potentiellement passer par une compression côté serveur si nécessaire à l'avenir
+
+### 2.3 Ce que le Serveur ne Peut pas Faire
+
+Du fait du chiffrement E2E sur les médias `message`, le serveur est structurellement dans l'impossibilité de :
+
+| Opération | Possible | Raison |
+|---|---|---|
+| Lire le contenu d'un média `message` | ❌ | Blob chiffré Signal, clé inconnue |
+| Resize / compression côté serveur | ❌ | Contenu illisible |
+| Générer des previews/thumbnails | ❌ | Délégué au client |
+| Scanner pour malware | ❌ | Blob opaque |
+| Modération de contenu automatisée | ❌ | Délégué au modèle embarqué mobile |
+| Déduplication par similarité perceptuelle | ❌ | Impossible sur blob chiffré |
+
+---
+
+## 3. Contrôle d'Accès
+
+### 3.1 Authentification
+
+- **JWT validation** : chaque requête est authentifiée via le auth-service (gRPC mTLS)
+- Le JWT contient le `userId` — utilisé pour vérifier la propriété des ressources
+- Blacklist des tokens révoqués gérée par le auth-service
+
+### 3.2 Autorisation par Contexte
+
+| Action | `message` | `avatar` | `group_icon` |
+|---|---|---|---|
+| Upload | Authentifié | Authentifié | Authentifié |
+| Download blob | Signed URL (propriétaire ou destinataire Signal) | URL publique | URL publique |
+| Delete | Propriétaire uniquement | Propriétaire uniquement | Admin groupe |
+| Accès métadonnées | Propriétaire uniquement | Public | Membres groupe |
+
+Pour les médias `message`, le contrôle d'accès est double :
+1. **Côté serveur** : signed URL expirante — empêche l'accès après expiration même avec le `mediaId`
+2. **Côté contenu** : chiffrement Signal — même avec l'URL, le blob est illisible sans la clé K
+
+### 3.3 Signed URLs
+
+- **`message`** : durée configurable (défaut : 7 jours), renouvelable si le média est encore actif
+- **`avatar` / `group_icon`** : URL publique permanente, pas de signature
+- Les signed URLs sont générées par le storage service (MinIO presigned URLs ou S3 presigned URLs)
+- Paramètres de signature : `X-Amz-Expires`, `X-Amz-Signature`, `X-Amz-Credential`
+
+---
+
+## 4. Validation des Uploads
+
+Le serveur valide ce qu'il peut voir sur le blob, sans accéder à son contenu déchiffré :
+
+### 4.1 Vérification Structurelle
+
+- **Magic bytes** : les premiers octets du blob sont vérifiés pour correspondre au `Content-Type` déclaré (ex: un blob déclaré `image/jpeg` doit commencer par `FF D8 FF`)
+- Pour les blobs Signal (`message`), le format de l'enveloppe Signal est validé
+- **Taille** : vérification que `blob_size` correspond à la taille réelle reçue
+- **Limites par context** : rejet des blobs dépassant les limites définies (voir §5)
+
+### 4.2 Validation des Métadonnées
+
+- `context` : doit être `message`, `avatar`, ou `group_icon`
+- `ownerId` : doit correspondre au `userId` du token JWT (pour `message` et `avatar`) ou à un groupe dont l'utilisateur est admin (pour `group_icon`)
+- Nettoyage des noms de fichiers : sanitisation pour prévenir les path traversal
+
+---
+
+## 5. Quotas et Rate Limiting
+
+### 5.1 Quotas de Stockage
+
+| Limite | Valeur par défaut | Scope |
+|---|---|---|
+| Stockage total | 1 GB | Par utilisateur |
+| Fichiers actifs | 1000 | Par utilisateur |
+| Uploads/jour | 100 | Par utilisateur |
+| Taille blob `message` | 100 MB | Par fichier |
+| Taille blob `avatar` | 5 MB | Par fichier |
+| Taille blob `group_icon` | 5 MB | Par fichier |
+
+- Le quota est vérifié **avant** d'accepter le blob
+- Mis à jour **après** stockage réussi
+- Notifications à 80% et 95% du quota (via notification-service)
+
+### 5.2 Rate Limiting
+
+- **60 requêtes/minute** par utilisateur (Istio rate limiting)
+- **3 uploads simultanés** par utilisateur (semaphore applicatif)
+- **10 MB/s** débit upload maximum (application level)
+
+---
+
+## 6. Protection des Communications
+
+### 6.1 Communications Internes (inter-services)
+
+- **mTLS automatique** via Istio pour toutes les communications gRPC
+- Identité de service via SPIFFE (rotation automatique des certificats)
+- AuthorizationPolicies Istio : seul l'api-gateway peut appeler le media-service
+
+### 6.2 Communications Externes (stockage objet)
+
+- **TLS 1.3** obligatoire vers MinIO/S3
+- Authentification via credentials IAM ou Service Account (stockés dans Secret Manager)
+- Validation des certificats SSL
+- Buckets privés — aucun accès public direct, uniquement via signed URLs
+
+### 6.3 API REST
+
+- TLS 1.3 via Istio Ingress
+- Headers de sécurité via Helmet.js (`X-Content-Type-Options`, `X-Frame-Options`, etc.)
+- CORS configuré de manière restrictive (origines whitlistées uniquement)
+- Validation stricte des inputs via DTOs NestJS + class-validator
+
+---
+
+## 7. Modération
+
+### 7.1 Architecture de Modération
+
+La modération de contenu est effectuée **sur le device mobile**, avant chiffrement, via un modèle ML embarqué dans l'application. Ce modèle est la première et principale ligne de défense.
+
+Le media-service **ne fait pas appel** au moderation-service pour l'analyse de contenu — il est structurellement incapable d'analyser des blobs chiffrés.
+
+### 7.2 Mesures Côté Serveur
+
+Sans accès au contenu, le serveur contribue à la sécurité via :
+
+- **Quotas et rate limiting** : prévention de l'abus de stockage
+- **Signalement post-factum** : les destinataires peuvent signaler un média via l'application, ce signalement est traité par le moderation-service en dehors du media-service
+- **Déduplication de blobs** : un blob identique déjà signalé peut être bloqué via son hash SHA-256 (hash du blob chiffré, pas du contenu — protection limitée mais non nulle)
+
+### 7.3 Limites Assumées
+
+Ce modèle de modération est un choix architectural cohérent avec la confidentialité E2E. Il est identique à celui de Signal et WhatsApp. Les limites sont connues et assumées :
+- Un client modifié peut contourner la modération embarquée
+- La détection de contenu similaire (perceptual hashing) est impossible côté serveur
+
+---
+
+## 8. Stockage Sécurisé
+
+### 8.1 Organisation des Buckets/Préfixes
+
+```
+bucket-whispr/
+├── messages/
+│   └── {userId}/
+│       └── {mediaId}.bin      # blob Signal chiffré
+├── avatars/
+│   └── {userId}/
+│       └── {mediaId}.webp     # image (chiffrement serveur)
+├── group_icons/
+│   └── {groupId}/
+│       └── {mediaId}.webp     # image (chiffrement serveur)
+└── thumbnails/
+    └── {mediaId}.bin          # thumbnail chiffré Signal (si fourni)
+```
+
+### 8.2 Politiques de Rétention
+
+- **`message`** : TTL configurable (défaut : 30 jours après `expires_at`)
+- **`avatar` / `group_icon`** : pas d'expiration automatique, suppression sur action utilisateur
+- **Logs d'accès** : 90 jours
+
+### 8.3 Chiffrement au Repos
+
+| Type | Chiffrement blob | Chiffrement DB | Qui peut déchiffrer |
+|---|---|---|---|
+| `message` | AES-256-CBC Signal (clé client) | TDE | Personne côté serveur |
+| `avatar` | AES-256-GCM (clé serveur) | TDE | Le service via Secret Manager |
+| `group_icon` | AES-256-GCM (clé serveur) | TDE | Le service via Secret Manager |
+
+---
+
+## 9. Audit et Traçabilité
+
+- Tous les accès (upload, download, delete) loggés dans `MEDIA_ACCESS_LOGS`
+- Logs structurés JSON avec `userId`, `mediaId`, `action`, `client_ip`, `timestamp`
+- **Pas** de log du contenu ou des métadonnées EXIF (incluses dans les blobs chiffrés, inaccessibles)
+- Rétention 90 jours
+- Protection contre l'altération des logs (append-only via partitionnement PostgreSQL)
+
+---
 
 ## 10. Protection des Données Personnelles
 
-### 10.1 Conformité RGPD
+### 10.1 Minimisation par Construction
 
-#### 10.1.1 Principes Appliqués
-- **Minimisation** : Collecte strictement nécessaire de métadonnées
-- **Finalité** : Usage clairement défini pour chaque donnée collectée
-- **Conservation limitée** : Rétention selon politiques définies
-- **Pseudonymisation** : Anonymisation des données dans logs
-- **Consentement** : Accord explicite pour traitements optionnels
+Le chiffrement E2E Signal impose une minimisation des données par construction :
+- Les données EXIF (géolocalisation, appareil) sont incluses dans les blobs chiffrés — inaccessibles au serveur
+- Le serveur ne stocke que : taille du blob, type MIME déclaré, context, owner, dates
 
-#### 10.1.2 Droits des Utilisateurs
-- **Accès** : Consultation de tous leurs fichiers et métadonnées
-- **Rectification** : Modification des métadonnées modifiables
-- **Effacement** : Suppression complète des fichiers et métadonnées
-- **Portabilité** : Export de tous leurs médias avec métadonnées
-- **Opposition** : Refus de traitement pour certaines finalités
+### 10.2 Conformité RGPD
 
-### 10.2 Transparence et Contrôle
+- **Droit d'accès** : liste de tous les médias et métadonnées via `GET /media/v1/my-media`
+- **Droit à l'effacement** : `DELETE /media/v1/:id` + suppression physique du blob dans les 30 jours
+- **Portabilité** : export des blobs et métadonnées sur demande
+- **Consentement** : les politiques de rétention sont présentées lors de l'inscription
 
-#### 10.2.1 Gestion des Métadonnées
-- **Transparence** : Information sur métadonnées collectées et utilisées
-- **Contrôle utilisateur** : Options de gestion des métadonnées
-- **EXIF management** : Contrôle sur données EXIF conservées/supprimées
-- **Location data** : Gestion spécifique des données de géolocalisation
-- **Analytics opt-out** : Option de refus pour analyses statistiques
-
-#### 10.2.2 Information des Utilisateurs
-- **Documentation claire** : Transparence sur traitement des médias
-- **Notifications** : Alertes sur modifications de politiques
-- **Incident notification** : Information sur incidents de sécurité
-- **Rights exercising** : Facilitation de l'exercice des droits
-- **Data lifecycle** : Information sur cycle de vie des données
+---
 
 ## 11. Sauvegarde et Récupération
 
-### 11.1 Protection des Données Critiques
+### 11.1 Stratégie de Sauvegarde
 
-#### 11.1.1 Stratégie de Sauvegarde
-- **Multi-region** : Sauvegardes dans plusieurs régions GCP
-- **Frequency** : Sauvegardes continues pour métadonnées, quotidiennes pour fichiers
-- **Encryption** : Sauvegardes chiffrées avec clés séparées
-- **Testing** : Tests de restauration mensuels
-- **Versioning** : Conservation de plusieurs versions
+- **Métadonnées PostgreSQL** : sauvegardes continues, rétention 2 ans
+- **Blobs `message`** : pas de sauvegarde (conformité E2E — une sauvegarde serait de toute façon inutile sans les clés Signal)
+- **Blobs `avatar` / `group_icon`** : sauvegarde quotidienne cross-region
 
-#### 11.1.2 Rétention des Données
-- **Métadonnées** : Conservation jusqu'à suppression compte
-- **Fichiers** : Conservation selon préférences utilisateur
-- **Logs d'accès** : 90 jours pour investigations
-- **Logs de sécurité** : 1 an pour audit et conformité
-- **Sauvegardes** : 2 ans pour récupération d'urgence
+### 11.2 Objectifs de Reprise
 
-### 11.2 Continuité de Service
-
-#### 11.2.1 Haute Disponibilité
-- **Multi-zone** : Déploiement dans plusieurs zones GCP
-- **Load balancing** : Répartition automatique via Istio
-- **Auto-scaling** : Montée en charge automatique
-- **Health checks** : Monitoring continu de la santé
-- **Failover** : Basculement automatique en cas de panne
-
-#### 11.2.2 Plan de Récupération d'Urgence
-- **RTO** : Recovery Time Objective < 1 heure
-- **RPO** : Recovery Point Objective < 15 minutes
-- **Disaster scenarios** : Plans pour différents types de sinistres
-- **Communication plan** : Communication avec utilisateurs en cas d'incident
-- **Business continuity** : Maintien des fonctions critiques
+- **RPO** : 5 minutes (métadonnées)
+- **RTO** : 10 minutes
 
 ---
 
 ## Annexes
 
-### A. Matrice des Risques de Sécurité
+### A. Matrice des Risques
 
-| Risque | Probabilité | Impact | Mesures de Contrôle |
-|--------|-------------|--------|---------------------|
-| Compromission clés chiffrement | Très faible | Critique | Chiffrement côté client, pas de stockage clés serveur |
-| Upload de malware | Moyenne | Élevé | Scan antivirus, sandboxing, validation stricte |
-| Dépassement de quotas massif | Moyenne | Élevé | Rate limiting, monitoring, alertes automatiques |
-| Accès non autorisé aux fichiers | Faible | Élevé | Authentification forte, RLS, audit complet |
-| Corruption de fichiers | Faible | Moyen | Checksums, monitoring intégrité, sauvegardes |
-| Attaque DDoS sur uploads | Moyenne | Moyen | Rate limiting, circuit breakers, load balancing |
+| Risque | Probabilité | Impact | Mesure de Contrôle |
+|---|---|---|---|
+| Compromission du stockage objet | Faible | Faible (blobs chiffrés) | Chiffrement E2E Signal sur `message` |
+| Abus de stockage / spam | Moyenne | Moyen | Quotas + rate limiting |
+| Accès non autorisé aux blobs | Faible | Faible (chiffrés) | Signed URLs + auth JWT |
+| Client modifié contournant la modération | Moyenne | Élevé | Signalement post-factum, rate limiting |
+| Compromission clé serveur (avatar/group_icon) | Très faible | Élevé | Secret Manager + rotation |
+| DDoS sur l'endpoint d'upload | Moyenne | Moyen | Rate limiting Istio + circuit breakers |
 
-### B. Métriques de Sécurité
+### B. Contacts d'Urgence
 
-| Métrique | Objectif | Fréquence de Mesure |
-|----------|----------|---------------------|
-| Taux de détection malware | 100% des malwares connus | Temps réel |
-| Temps de validation fichier | < 5 secondes | Temps réel |
-| Disponibilité du service | > 99.5% | Mensuelle |
-| Taux d'intégrité des fichiers | 100% | Quotidienne |
-| Couverture tests de sécurité | > 95% du code critique | Par release |
-| Temps de réponse incidents | < 15 minutes | Par incident |
+| Rôle | Responsabilité |
+|---|---|
+| Responsable Sécurité (David) | Coordination incidents sécurité |
+| DevSecOps (Tudy) | Infrastructure et déploiement |
+| Lead Développeur | Correctifs d'urgence |
+| Chef de Projet (Agnes) | Coordination générale |
 
-### C. Contacts d'Urgence
+### C. Références
 
-| Rôle | Responsabilité | Contact |
-|------|----------------|---------|
-| Responsable Sécurité (David) | Coordination incidents sécurité | [Email sécurisé] |
-| DevSecOps (Tudy) | Infrastructure et déploiement | [Contact d'astreinte] |
-| Lead Développeur | Correctifs d'urgence | [Contact technique] |
-| Chef de Projet (Agnes) | Coordination générale | [Contact projet] |
-
-### D. Références
-
-- Google Cloud Storage Security Best Practices
-- OWASP Secure File Upload Guidelines
-- NIST Cryptographic Standards (SP 800-57)
-- RGPD - Règlement Général sur la Protection des Données
-- NestJS Security Best Practices
-- Sharp.js Security Considerations
-- FFmpeg Security Guidelines
-- Istio Security Documentation
+- [Signal Protocol — Sealed Sender & Attachments](https://signal.org/docs/)
+- [OWASP Secure File Upload Guidelines](https://owasp.org/www-community/vulnerabilities/Unrestricted_File_Upload)
+- [NIST SP 800-57 — Key Management](https://csrc.nist.gov/publications/detail/sp/800-57-part-1/rev-5/final)
+- [RGPD — Règlement Général sur la Protection des Données](https://gdpr.eu/)
+- [NestJS Security Best Practices](https://docs.nestjs.com/security/authentication)
+- [Istio Security Documentation](https://istio.io/latest/docs/ops/best-practices/security/)
