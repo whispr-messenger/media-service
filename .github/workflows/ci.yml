@@ -2,9 +2,9 @@ name: 🚀 CI Pipeline
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, deploy/avant-preprod, deploy/preprod]
   pull_request:
-    branches: [main, develop]
+    branches: [main, develop, deploy/avant-preprod, deploy/preprod]
 
 permissions:
   contents: read
