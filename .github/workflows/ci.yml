@@ -48,8 +48,8 @@ jobs:
   # ================================
   docker:
     name: 📦 Container Registry
-    needs: [tests, security]
-    if: success()
+    needs: [security]
+    if: ${{ needs.security.result == 'success' }}
     uses: ./.github/workflows/docker.yml
     with:
       ref: ${{ github.ref }}
