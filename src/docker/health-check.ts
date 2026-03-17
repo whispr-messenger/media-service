@@ -14,8 +14,8 @@ const timestamp = () => new Date().toISOString();
 
 const options: RequestOptions = {
 	hostname: 'localhost',
-	port: 3001,
-	path: '/health/ready',
+	port: parseInt(process.env.HTTP_PORT || '3012', 10),
+	path: '/media/v1/health/ready',
 	method: 'GET',
 	timeout: 3000,
 };
