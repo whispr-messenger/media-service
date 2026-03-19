@@ -1,4 +1,4 @@
-import { Controller, Get, Inject, Logger } from '@nestjs/common';
+import { Controller, Get, HttpException, HttpStatus, Inject, Logger } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { DataSource } from 'typeorm';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
@@ -99,7 +99,10 @@ export class HealthController {
 			await this.s3.listBuckets();
 			return { status: 'ready' };
 		} catch (error) {
-			return { status: 'not ready', error: error.message };
+			throw new HttpException(
+				{ status: 'not ready', error: error.message },
+				HttpStatus.SERVICE_UNAVAILABLE
+			);
 		}
 	}
 
