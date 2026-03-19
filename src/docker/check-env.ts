@@ -50,7 +50,6 @@ export default function runEnvChecks(): void {
 	checkRequired('DB_NAME');
 
 	// JWT
-	checkRequired('JWT_PRIVATE_KEY');
 	checkRequired('JWT_PUBLIC_KEY');
 
 	// Redis
@@ -65,10 +64,10 @@ export default function runEnvChecks(): void {
 	checkRequired('USER_SERVICE_GRPC_URL');
 	checkRequired('MEDIA_SERVICE_GRPC_URL');
 
-	// Twilio
-	checkRequired('TWILIO_ACCOUNT_SID');
-	checkRequired('TWILIO_AUTH_TOKEN');
-	checkRequired('TWILIO_FROM_NUMBER');
+	// S3 / MinIO
+	checkRequired('S3_ACCESS_KEY_ID');
+	checkRequired('S3_SECRET_ACCESS_KEY');
+	checkRequired('S3_ENDPOINT');
 
 	console.log('\nChecking OPTIONAL environment variables...');
 
