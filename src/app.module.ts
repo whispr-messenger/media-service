@@ -7,6 +7,7 @@ import { cacheModuleAsyncOptions } from './config/cache.config';
 import { typeOrmModuleAsyncOptions } from './config/typeorm.config';
 import { s3ModuleAsyncOptions } from './config/s3.config';
 import { HealthModule } from './modules/health/health.module';
+import { MediaModule } from './modules/media/media.module';
 
 @Module({
 	imports: [
@@ -18,6 +19,7 @@ import { HealthModule } from './modules/health/health.module';
 		CacheModule.registerAsync(cacheModuleAsyncOptions),
 		S3Module.forRootAsync(s3ModuleAsyncOptions),
 		HealthModule,
+		MediaModule,
 	],
 })
 export class AppModule {}
