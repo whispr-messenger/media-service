@@ -1,17 +1,14 @@
 import { ApiProperty } from '@nestjs/swagger';
 
 export class UploadMediaResponseDto {
-	@ApiProperty({ description: 'Unique identifier of the uploaded media file' })
+	@ApiProperty({ description: 'Unique identifier of the uploaded media' })
 	id: string;
 
-	@ApiProperty({ description: 'Original filename' })
-	filename: string;
-
 	@ApiProperty({ description: 'MIME type of the file' })
-	mimeType: string;
+	contentType: string;
 
 	@ApiProperty({ description: 'File size in bytes' })
-	size: number;
+	blobSize: number;
 
 	@ApiProperty({ description: 'Creation timestamp' })
 	createdAt: Date;
