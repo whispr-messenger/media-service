@@ -42,13 +42,10 @@ describe('check-env', () => {
 		DB_USERNAME: 'user',
 		DB_PASSWORD: 'password',
 		DB_NAME: 'media_db',
-		JWT_PUBLIC_KEY: 'public-key',
+		JWT_JWKS_URL: 'https://auth-service/.well-known/jwks.json',
 		REDIS_HOST: 'localhost',
 		REDIS_PORT: '6379',
 		HTTP_PORT: '3001',
-		GRPC_PORT: '50051',
-		USER_SERVICE_GRPC_URL: 'localhost:50052',
-		MEDIA_SERVICE_GRPC_URL: 'localhost:50053',
 		S3_ACCESS_KEY_ID: 'minio-access-key',
 		S3_SECRET_ACCESS_KEY: 'minio-secret-key',
 		S3_ENDPOINT: 'http://localhost:9000',
@@ -88,13 +85,10 @@ describe('check-env', () => {
 				'DB_USERNAME',
 				'DB_PASSWORD',
 				'DB_NAME',
-				'JWT_PUBLIC_KEY',
+				'JWT_JWKS_URL',
 				'REDIS_HOST',
 				'REDIS_PORT',
 				'HTTP_PORT',
-				'GRPC_PORT',
-				'USER_SERVICE_GRPC_URL',
-				'MEDIA_SERVICE_GRPC_URL',
 				'S3_ACCESS_KEY_ID',
 				'S3_SECRET_ACCESS_KEY',
 				'S3_ENDPOINT',
@@ -182,14 +176,14 @@ describe('check-env', () => {
 			);
 		});
 
-		it('should throw error when JWT_PUBLIC_KEY is missing', () => {
+		it('should throw error when JWT_JWKS_URL is missing', () => {
 			setAllRequired();
-			delete process.env.JWT_PUBLIC_KEY;
+			delete process.env.JWT_JWKS_URL;
 
 			expect(() => runEnvChecks()).toThrow('Missing required environment variables');
 
 			expect(consoleErrorSpy).toHaveBeenCalledWith(
-				expect.stringContaining('JWT_PUBLIC_KEY is NOT set (REQUIRED)')
+				expect.stringContaining('JWT_JWKS_URL is NOT set (REQUIRED)')
 			);
 		});
 
@@ -208,33 +202,14 @@ describe('check-env', () => {
 			);
 		});
 
-		it('should throw error when port variables are missing', () => {
+		it('should throw error when HTTP_PORT is missing', () => {
 			setAllRequired();
 			delete process.env.HTTP_PORT;
-			delete process.env.GRPC_PORT;
 
 			expect(() => runEnvChecks()).toThrow('Missing required environment variables');
 
 			expect(consoleErrorSpy).toHaveBeenCalledWith(
 				expect.stringContaining('HTTP_PORT is NOT set (REQUIRED)')
-			);
-			expect(consoleErrorSpy).toHaveBeenCalledWith(
-				expect.stringContaining('GRPC_PORT is NOT set (REQUIRED)')
-			);
-		});
-
-		it('should throw error when gRPC service URLs are missing', () => {
-			setAllRequired();
-			delete process.env.USER_SERVICE_GRPC_URL;
-			delete process.env.MEDIA_SERVICE_GRPC_URL;
-
-			expect(() => runEnvChecks()).toThrow('Missing required environment variables');
-
-			expect(consoleErrorSpy).toHaveBeenCalledWith(
-				expect.stringContaining('USER_SERVICE_GRPC_URL is NOT set (REQUIRED)')
-			);
-			expect(consoleErrorSpy).toHaveBeenCalledWith(
-				expect.stringContaining('MEDIA_SERVICE_GRPC_URL is NOT set (REQUIRED)')
 			);
 		});
 

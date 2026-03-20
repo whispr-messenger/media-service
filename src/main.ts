@@ -1,7 +1,8 @@
 import { NestFactory } from '@nestjs/core';
-import { Logger, VersioningType } from '@nestjs/common';
+import { Logger, ValidationPipe, VersioningType } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { ConfigService } from '@nestjs/config';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { createSwaggerDocumentation } from './swagger';
 import { LoggingInterceptor } from './interceptors';
@@ -12,6 +13,10 @@ async function bootstrap() {
 	const logger = new Logger('Bootstrap');
 	const port = configService.get<number>('HTTP_PORT', 3002);
 	const globalPrefix = 'media';
+
+	app.use(helmet());
+
+	app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
 
 	app.setGlobalPrefix(globalPrefix);
 
@@ -24,6 +29,8 @@ async function bootstrap() {
 	createSwaggerDocumentation(app, port, configService, globalPrefix);
 
 	app.useGlobalInterceptors(new LoggingInterceptor());
+
+	app.enableShutdownHooks();
 
 	await app.listen(port);
 
