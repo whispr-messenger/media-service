@@ -3,7 +3,6 @@ import * as Joi from 'joi';
 export const envValidationSchema = Joi.object({
 	NODE_ENV: Joi.string().valid('development', 'production', 'test').required(),
 	HTTP_PORT: Joi.number().port().required(),
-	GRPC_PORT: Joi.number().port().required(),
 	DB_HOST: Joi.string().required(),
 	DB_PORT: Joi.number().port().required(),
 	DB_USERNAME: Joi.string().required(),
@@ -16,11 +15,9 @@ export const envValidationSchema = Joi.object({
 	REDIS_HOST: Joi.string().required(),
 	REDIS_PORT: Joi.number().port().required(),
 	REDIS_PASSWORD: Joi.string().optional().allow(''),
-	JWT_PUBLIC_KEY: Joi.string().required(),
+	JWT_JWKS_URL: Joi.string().uri().required(),
 	S3_ACCESS_KEY_ID: Joi.string().required(),
 	S3_SECRET_ACCESS_KEY: Joi.string().required(),
 	S3_ENDPOINT: Joi.string().required(),
 	S3_REGION: Joi.string().optional().default('us-east-1'),
-	USER_SERVICE_GRPC_URL: Joi.string().required(),
-	MEDIA_SERVICE_GRPC_URL: Joi.string().required(),
 }).options({ allowUnknown: true });

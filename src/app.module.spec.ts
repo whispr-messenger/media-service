@@ -3,7 +3,6 @@ import { envValidationSchema } from './config/env-validation.schema';
 const validEnv = {
 	NODE_ENV: 'test',
 	HTTP_PORT: 3002,
-	GRPC_PORT: 5002,
 	DB_HOST: 'localhost',
 	DB_PORT: 5432,
 	DB_USERNAME: 'postgres',
@@ -11,12 +10,10 @@ const validEnv = {
 	DB_NAME: 'media',
 	REDIS_HOST: 'redis',
 	REDIS_PORT: 6379,
-	JWT_PUBLIC_KEY: 'some-public-key',
+	JWT_JWKS_URL: 'https://auth-service/.well-known/jwks.json',
 	S3_ACCESS_KEY_ID: 'access-key',
 	S3_SECRET_ACCESS_KEY: 'secret-key',
 	S3_ENDPOINT: 'https://minio:9000',
-	USER_SERVICE_GRPC_URL: 'user-service:5001',
-	MEDIA_SERVICE_GRPC_URL: 'media-service:5002',
 };
 
 describe('AppModule env validation schema', () => {
@@ -85,13 +82,22 @@ describe('AppModule env validation schema', () => {
 		expect(error!.details.some((d) => d.path.includes('REDIS_HOST'))).toBe(true);
 	});
 
-	it('should fail when JWT_PUBLIC_KEY is missing', () => {
+	it('should fail when JWT_JWKS_URL is missing', () => {
 		const { error } = envValidationSchema.validate(
-			{ ...validEnv, JWT_PUBLIC_KEY: undefined },
+			{ ...validEnv, JWT_JWKS_URL: undefined },
 			{ abortEarly: false }
 		);
 		expect(error).toBeDefined();
-		expect(error!.details.some((d) => d.path.includes('JWT_PUBLIC_KEY'))).toBe(true);
+		expect(error!.details.some((d) => d.path.includes('JWT_JWKS_URL'))).toBe(true);
+	});
+
+	it('should fail when JWT_JWKS_URL is not a valid URI', () => {
+		const { error } = envValidationSchema.validate(
+			{ ...validEnv, JWT_JWKS_URL: 'not-a-url' },
+			{ abortEarly: false }
+		);
+		expect(error).toBeDefined();
+		expect(error!.details.some((d) => d.path.includes('JWT_JWKS_URL'))).toBe(true);
 	});
 
 	it('should fail when S3_ENDPOINT is missing', () => {
@@ -121,7 +127,7 @@ describe('AppModule env validation schema', () => {
 
 	it('should fail when multiple required vars are missing', () => {
 		const { error } = envValidationSchema.validate(
-			{ ...validEnv, DB_HOST: undefined, REDIS_HOST: undefined, JWT_PUBLIC_KEY: undefined },
+			{ ...validEnv, DB_HOST: undefined, REDIS_HOST: undefined, JWT_JWKS_URL: undefined },
 			{ abortEarly: false }
 		);
 		expect(error).toBeDefined();
