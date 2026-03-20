@@ -61,7 +61,9 @@ export class MediaController {
 	@ApiResponse({ status: 404, description: 'File not found' })
 	async download(@Param('id') id: string, @Res() res: Response): Promise<void> {
 		const { stream, contentType } = await this.mediaService.getStream(id);
+		const filename = encodeURIComponent(id);
 		res.setHeader('Content-Type', contentType);
+		res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
 		stream.pipe(res);
 	}
 

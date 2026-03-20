@@ -118,6 +118,34 @@ describe('MediaService', () => {
 		});
 	});
 
+	describe('getStream', () => {
+		it('should return stream and contentType for an existing media', async () => {
+			const media = new Media();
+			media.id = 'media-uuid-1';
+			media.storagePath = 'user-1/media-uuid-1.jpg';
+			media.contentType = 'image/jpeg';
+			mockMediaRepository.findById.mockResolvedValue(media);
+
+			const fakeStream = {};
+			mockS3.getObject.mockResolvedValue({ Body: fakeStream });
+
+			const result = await service.getStream('media-uuid-1');
+
+			expect(mockMediaRepository.findById).toHaveBeenCalledWith('media-uuid-1');
+			expect(mockS3.getObject).toHaveBeenCalledWith(
+				expect.objectContaining({ Bucket: 'test-bucket', Key: media.storagePath })
+			);
+			expect(result.contentType).toBe('image/jpeg');
+			expect(result.stream).toBe(fakeStream);
+		});
+
+		it('should throw NotFoundException when media does not exist', async () => {
+			mockMediaRepository.findById.mockResolvedValue(null);
+
+			await expect(service.getStream('missing-id')).rejects.toThrow(NotFoundException);
+		});
+	});
+
 	describe('delete', () => {
 		it('should soft-delete and remove from S3 when requester is owner', async () => {
 			const media = new Media();

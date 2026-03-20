@@ -20,7 +20,14 @@ export class Media {
 	@Column({ name: 'content_type', type: 'varchar', length: 128 })
 	contentType: string;
 
-	@Column({ name: 'blob_size', type: 'bigint' })
+	@Column({
+		name: 'blob_size',
+		type: 'bigint',
+		transformer: {
+			to: (value: number): number => value,
+			from: (value: string): number => Number(value),
+		},
+	})
 	blobSize: number;
 
 	@Column({ name: 'expires_at', type: 'timestamptz', nullable: true })

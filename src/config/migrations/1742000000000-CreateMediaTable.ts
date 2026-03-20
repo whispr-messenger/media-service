@@ -4,6 +4,7 @@ export class CreateMediaTable1742000000000 implements MigrationInterface {
 	name = 'CreateMediaTable1742000000000';
 
 	public async up(queryRunner: QueryRunner): Promise<void> {
+		await queryRunner.query(`CREATE EXTENSION IF NOT EXISTS "pgcrypto"`);
 		await queryRunner.query(`CREATE SCHEMA IF NOT EXISTS "media"`);
 
 		await queryRunner.query(`

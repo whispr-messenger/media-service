@@ -91,6 +91,10 @@ describe('MediaController', () => {
 			await controller.download('media-uuid-1', res);
 
 			expect(setHeader).toHaveBeenCalledWith('Content-Type', 'image/jpeg');
+			expect(setHeader).toHaveBeenCalledWith(
+				'Content-Disposition',
+				'attachment; filename="media-uuid-1"'
+			);
 			expect(pipe).toHaveBeenCalledWith(res);
 		});
 	});
