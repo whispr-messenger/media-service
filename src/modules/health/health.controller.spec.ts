@@ -90,4 +90,100 @@ describe('HealthController', () => {
 			expect(result.uptime).toBeDefined();
 		});
 	});
+
+	describe('check()', () => {
+		it('should return status ok with all services healthy when all dependencies succeed', async () => {
+			mockDataSource.query.mockResolvedValue([{ '?column?': 1 }]);
+			mockCacheManager.set.mockResolvedValue(undefined);
+			mockCacheManager.get.mockResolvedValue(undefined);
+			mockS3.listBuckets.mockResolvedValue({ Buckets: [] });
+
+			const result = await controller.check();
+
+			expect(result.status).toBe('ok');
+			expect(result.services).toEqual({
+				database: 'healthy',
+				cache: 'healthy',
+				minio: 'healthy',
+			});
+		});
+
+		it('should return status error with database unhealthy when database fails', async () => {
+			mockDataSource.query.mockRejectedValue(new Error('Connection refused'));
+			mockCacheManager.set.mockResolvedValue(undefined);
+			mockCacheManager.get.mockResolvedValue(undefined);
+			mockS3.listBuckets.mockResolvedValue({ Buckets: [] });
+
+			const result = await controller.check();
+
+			expect(result.status).toBe('error');
+			expect(result.services).toEqual({
+				database: 'unhealthy',
+				cache: 'healthy',
+				minio: 'healthy',
+			});
+		});
+
+		it('should return status error with cache unhealthy when cache fails', async () => {
+			mockDataSource.query.mockResolvedValue([{ '?column?': 1 }]);
+			mockCacheManager.set.mockRejectedValue(new Error('Redis unavailable'));
+			mockCacheManager.get.mockResolvedValue(undefined);
+			mockS3.listBuckets.mockResolvedValue({ Buckets: [] });
+
+			const result = await controller.check();
+
+			expect(result.status).toBe('error');
+			expect(result.services).toEqual({
+				database: 'healthy',
+				cache: 'unhealthy',
+				minio: 'healthy',
+			});
+		});
+
+		it('should return status error with minio unhealthy when S3 fails', async () => {
+			mockDataSource.query.mockResolvedValue([{ '?column?': 1 }]);
+			mockCacheManager.set.mockResolvedValue(undefined);
+			mockCacheManager.get.mockResolvedValue(undefined);
+			mockS3.listBuckets.mockRejectedValue(new Error('MinIO unreachable'));
+
+			const result = await controller.check();
+
+			expect(result.status).toBe('error');
+			expect(result.services).toEqual({
+				database: 'healthy',
+				cache: 'healthy',
+				minio: 'unhealthy',
+			});
+		});
+
+		it('should return status error with all services unhealthy when all dependencies fail', async () => {
+			mockDataSource.query.mockRejectedValue(new Error('DB down'));
+			mockCacheManager.set.mockRejectedValue(new Error('Cache down'));
+			mockCacheManager.get.mockResolvedValue(undefined);
+			mockS3.listBuckets.mockRejectedValue(new Error('S3 down'));
+
+			const result = await controller.check();
+
+			expect(result.status).toBe('error');
+			expect(result.services).toEqual({
+				database: 'unhealthy',
+				cache: 'unhealthy',
+				minio: 'unhealthy',
+			});
+		});
+
+		it('should always include timestamp, uptime, memory, and version in the response', async () => {
+			mockDataSource.query.mockResolvedValue([{ '?column?': 1 }]);
+			mockCacheManager.set.mockResolvedValue(undefined);
+			mockCacheManager.get.mockResolvedValue(undefined);
+			mockS3.listBuckets.mockResolvedValue({ Buckets: [] });
+
+			const result = await controller.check();
+
+			expect(result.timestamp).toBeDefined();
+			expect(result.uptime).toBeDefined();
+			expect(result.memory).toBeDefined();
+			expect(result.version).toBeDefined();
+		});
+	});
 });

@@ -62,8 +62,8 @@ jobs:
       ####################################################################################################
       # Unit and E2E Tests
       ####################################################################################################
-      - name: Run unit tests
-        run: npm run test
+      - name: Run unit tests with coverage
+        run: npm run test:cov
         env:
           DATABASE_URL: postgresql://test:test@localhost:5432/test_db
           REDIS_URL: redis://localhost:6379
@@ -72,7 +72,7 @@ jobs:
       #   run: npm run test:e2e
 
       ####################################################################################################
-      # SonarQube Analysis (conditional on should_deploy and secrets availability)
+      # SonarQube Analysis (runs on all branches when secrets are available)
       ####################################################################################################
       - name: Check SonarQube secrets
         id: check-secrets
@@ -85,7 +85,7 @@ jobs:
           fi
 
       - name: SonarQube Analysis
-        if: ${{ inputs.should_deploy == 'true' && steps.check-secrets.outputs.secrets-available == 'true' }}
+        if: ${{ steps.check-secrets.outputs.secrets-available == 'true' }}
         uses: sonarsource/sonarqube-scan-action@v6.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -93,7 +93,7 @@ jobs:
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
 
       - name: SonarQube Quality Gate
-        if: ${{ inputs.should_deploy == 'true' && steps.check-secrets.outputs.secrets-available == 'true' }}
+        if: ${{ steps.check-secrets.outputs.secrets-available == 'true' }}
         uses: sonarsource/sonarqube-quality-gate-action@v1.2.0
         timeout-minutes: 5
         env:

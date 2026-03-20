@@ -49,8 +49,8 @@ export default function runEnvChecks(): void {
 	checkRequired('DB_PASSWORD');
 	checkRequired('DB_NAME');
 
-	// JWT
-	checkRequired('JWT_PUBLIC_KEY');
+	// Auth
+	checkRequired('JWT_JWKS_URL');
 
 	// Redis
 	checkRequired('REDIS_HOST');
@@ -58,11 +58,6 @@ export default function runEnvChecks(): void {
 
 	// Ports
 	checkRequired('HTTP_PORT');
-	checkRequired('GRPC_PORT');
-
-	// gRPC URLs
-	checkRequired('USER_SERVICE_GRPC_URL');
-	checkRequired('MEDIA_SERVICE_GRPC_URL');
 
 	// S3 / MinIO
 	checkRequired('S3_ACCESS_KEY_ID');
