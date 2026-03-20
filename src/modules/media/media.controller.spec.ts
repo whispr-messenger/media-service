@@ -25,7 +25,7 @@ describe('MediaController', () => {
 	});
 
 	describe('upload()', () => {
-		it('should return UploadMediaResponseDto shape when file and uploaderId are provided', async () => {
+		it('should return UploadMediaResponseDto shape when file and ownerId are provided', async () => {
 			const file = {
 				originalname: 'photo.jpg',
 				mimetype: 'image/jpeg',
@@ -34,23 +34,21 @@ describe('MediaController', () => {
 			} as Express.Multer.File;
 
 			const createdAt = new Date();
-			const mediaFile = {
-				id: 'file-uuid-1',
-				filename: 'photo.jpg',
-				mimeType: 'image/jpeg',
-				size: 2048,
+			const media = {
+				id: 'media-uuid-1',
+				contentType: 'image/jpeg',
+				blobSize: 2048,
 				createdAt,
 			};
 
-			mockMediaService.upload.mockResolvedValue(mediaFile);
+			mockMediaService.upload.mockResolvedValue(media);
 
 			const result = await controller.upload('user-uuid-1', file);
 
 			expect(result).toEqual({
-				id: 'file-uuid-1',
-				filename: 'photo.jpg',
-				mimeType: 'image/jpeg',
-				size: 2048,
+				id: 'media-uuid-1',
+				contentType: 'image/jpeg',
+				blobSize: 2048,
 				createdAt,
 			});
 		});
@@ -61,7 +59,7 @@ describe('MediaController', () => {
 			).rejects.toThrow(new BadRequestException('No file provided'));
 		});
 
-		it('should throw BadRequestException when uploaderId header is missing', async () => {
+		it('should throw BadRequestException when ownerId header is missing', async () => {
 			const file = {
 				originalname: 'photo.jpg',
 				mimetype: 'image/jpeg',
@@ -76,13 +74,12 @@ describe('MediaController', () => {
 	});
 
 	describe('download()', () => {
-		it('should set correct headers and pipe stream to response', async () => {
+		it('should set correct Content-Type header and pipe stream to response', async () => {
 			const stream = new Readable({ read() {} });
 
 			mockMediaService.getStream.mockResolvedValue({
 				stream,
-				mimeType: 'image/jpeg',
-				filename: 'photo.jpg',
+				contentType: 'image/jpeg',
 			});
 
 			const setHeader = jest.fn();
@@ -91,17 +88,20 @@ describe('MediaController', () => {
 				.mockImplementation(() => stream as unknown as NodeJS.WritableStream);
 			const res = { setHeader, pipe } as unknown as import('express').Response;
 
-			await controller.download('file-uuid-1', res);
+			await controller.download('media-uuid-1', res);
 
 			expect(setHeader).toHaveBeenCalledWith('Content-Type', 'image/jpeg');
-			expect(setHeader).toHaveBeenCalledWith('Content-Disposition', 'attachment; filename="photo.jpg"');
+			expect(setHeader).toHaveBeenCalledWith(
+				'Content-Disposition',
+				'attachment; filename="media-uuid-1"'
+			);
 			expect(pipe).toHaveBeenCalledWith(res);
 		});
 	});
 
 	describe('delete()', () => {
 		it('should throw BadRequestException when requesterId header is missing', async () => {
-			await expect(controller.delete('file-uuid-1', undefined as unknown as string)).rejects.toThrow(
+			await expect(controller.delete('media-uuid-1', undefined as unknown as string)).rejects.toThrow(
 				new BadRequestException('Missing x-user-id header')
 			);
 		});
@@ -109,9 +109,9 @@ describe('MediaController', () => {
 		it('should call mediaService.delete and return void when requesterId is provided', async () => {
 			mockMediaService.delete.mockResolvedValue(undefined);
 
-			const result = await controller.delete('file-uuid-1', 'user-uuid-1');
+			const result = await controller.delete('media-uuid-1', 'user-uuid-1');
 
-			expect(mockMediaService.delete).toHaveBeenCalledWith('file-uuid-1', 'user-uuid-1');
+			expect(mockMediaService.delete).toHaveBeenCalledWith('media-uuid-1', 'user-uuid-1');
 			expect(result).toBeUndefined();
 		});
 	});
