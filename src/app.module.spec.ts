@@ -1,29 +1,4 @@
-import * as Joi from 'joi';
-
-const envValidationSchema = Joi.object({
-	NODE_ENV: Joi.string().valid('development', 'production', 'test').required(),
-	HTTP_PORT: Joi.number().port().required(),
-	GRPC_PORT: Joi.number().port().required(),
-	DB_HOST: Joi.string().required(),
-	DB_PORT: Joi.number().port().required(),
-	DB_USERNAME: Joi.string().required(),
-	DB_PASSWORD: Joi.string().required(),
-	DB_NAME: Joi.string().required(),
-	DB_URL: Joi.string().optional(),
-	DB_LOGGING: Joi.string().valid('true', 'false').default('false'),
-	DB_MIGRATIONS_RUN: Joi.string().valid('true', 'false').default('false'),
-	DB_SYNCHRONIZE: Joi.string().valid('true', 'false').default('false'),
-	REDIS_HOST: Joi.string().required(),
-	REDIS_PORT: Joi.number().port().required(),
-	REDIS_PASSWORD: Joi.string().optional().allow(''),
-	JWT_PUBLIC_KEY: Joi.string().required(),
-	S3_ACCESS_KEY_ID: Joi.string().required(),
-	S3_SECRET_ACCESS_KEY: Joi.string().required(),
-	S3_ENDPOINT: Joi.string().required(),
-	S3_REGION: Joi.string().optional().default('us-east-1'),
-	USER_SERVICE_GRPC_URL: Joi.string().required(),
-	MEDIA_SERVICE_GRPC_URL: Joi.string().required(),
-}).options({ allowUnknown: true });
+import { envValidationSchema } from './config/env-validation.schema';
 
 const validEnv = {
 	NODE_ENV: 'test',
@@ -39,7 +14,7 @@ const validEnv = {
 	JWT_PUBLIC_KEY: 'some-public-key',
 	S3_ACCESS_KEY_ID: 'access-key',
 	S3_SECRET_ACCESS_KEY: 'secret-key',
-	S3_ENDPOINT: 'http://minio:9000',
+	S3_ENDPOINT: 'https://minio:9000',
 	USER_SERVICE_GRPC_URL: 'user-service:5001',
 	MEDIA_SERVICE_GRPC_URL: 'media-service:5002',
 };
