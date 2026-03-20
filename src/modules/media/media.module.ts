@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { ScheduleModule } from '@nestjs/schedule';
 import { Media } from './entities/media.entity';
 import { UserQuota } from './entities/user-quota.entity';
 import { MediaAccessLog } from './entities/media-access-log.entity';
@@ -10,7 +9,7 @@ import { MediaController } from './media.controller';
 import { MediaAccessLogPartitionService } from './media-access-log-partition.service';
 
 @Module({
-	imports: [TypeOrmModule.forFeature([Media, UserQuota, MediaAccessLog]), ScheduleModule.forRoot()],
+	imports: [TypeOrmModule.forFeature([Media, UserQuota, MediaAccessLog])],
 	providers: [MediaRepository, MediaService, MediaAccessLogPartitionService],
 	controllers: [MediaController],
 })

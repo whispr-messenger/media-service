@@ -5,7 +5,7 @@ export class MediaAccessLog {
 	@PrimaryColumn({ name: 'accessed_at', type: 'timestamptz' })
 	accessedAt: Date;
 
-	@PrimaryColumn({ type: 'uuid' })
+	@PrimaryColumn({ type: 'uuid', generated: 'uuid' })
 	id: string;
 
 	@Column({ name: 'media_id', type: 'uuid' })

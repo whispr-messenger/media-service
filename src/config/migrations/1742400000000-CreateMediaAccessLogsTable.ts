@@ -27,17 +27,24 @@ export class CreateMediaAccessLogsTable1742400000000 implements MigrationInterfa
 		await queryRunner.query(`
 			CREATE TABLE "media"."media_access_logs_2026_03"
 			PARTITION OF "media"."media_access_logs"
-			FOR VALUES FROM ('2026-03-01') TO ('2026-04-01')
+			FOR VALUES FROM ('2026-03-01 00:00:00+00') TO ('2026-04-01 00:00:00+00')
 		`);
 
 		await queryRunner.query(`
 			CREATE TABLE "media"."media_access_logs_2026_04"
 			PARTITION OF "media"."media_access_logs"
-			FOR VALUES FROM ('2026-04-01') TO ('2026-05-01')
+			FOR VALUES FROM ('2026-04-01 00:00:00+00') TO ('2026-05-01 00:00:00+00')
+		`);
+
+		await queryRunner.query(`
+			CREATE TABLE "media"."media_access_logs_default"
+			PARTITION OF "media"."media_access_logs"
+			DEFAULT
 		`);
 	}
 
 	public async down(queryRunner: QueryRunner): Promise<void> {
+		await queryRunner.query(`DROP TABLE IF EXISTS "media"."media_access_logs_default"`);
 		await queryRunner.query(`DROP TABLE IF EXISTS "media"."media_access_logs_2026_04"`);
 		await queryRunner.query(`DROP TABLE IF EXISTS "media"."media_access_logs_2026_03"`);
 		await queryRunner.query(`DROP INDEX IF EXISTS "media"."IDX_media_access_logs_accessor_id"`);
