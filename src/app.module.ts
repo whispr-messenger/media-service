@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { CacheModule } from '@nestjs/cache-manager';
+import { ScheduleModule } from '@nestjs/schedule';
 import { S3Module } from 'nestjs-s3';
 import { envValidationSchema } from './config/env-validation.schema';
 import { cacheModuleAsyncOptions } from './config/cache.config';
@@ -20,6 +21,7 @@ import { MediaModule } from './modules/media/media.module';
 		}),
 		TypeOrmModule.forRootAsync(typeOrmModuleAsyncOptions),
 		CacheModule.registerAsync(cacheModuleAsyncOptions),
+		ScheduleModule.forRoot(),
 		S3Module.forRootAsync(s3ModuleAsyncOptions),
 		HealthModule,
 		MediaModule,
