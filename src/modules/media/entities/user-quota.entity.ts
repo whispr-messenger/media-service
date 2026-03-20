@@ -45,7 +45,7 @@ export class UserQuota {
 	dailyUploadLimit: number;
 
 	@Column({ name: 'quota_date', type: 'date' })
-	quotaDate: Date;
+	quotaDate: string;
 
 	@UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
 	updatedAt: Date;

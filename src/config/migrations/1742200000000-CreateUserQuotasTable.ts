@@ -32,9 +32,18 @@ export class CreateUserQuotasTable1742200000000 implements MigrationInterface {
 			BEFORE UPDATE ON "media"."user_quotas"
 			FOR EACH ROW EXECUTE FUNCTION "media".set_updated_at()
 		`);
+
+		await queryRunner.query(`ALTER TABLE "media"."user_quotas" ENABLE ROW LEVEL SECURITY`);
+
+		await queryRunner.query(`
+			CREATE POLICY "user_quotas_owner_policy" ON "media"."user_quotas"
+			USING ("user_id" = current_setting('app.current_user_id', TRUE)::UUID)
+		`);
 	}
 
 	public async down(queryRunner: QueryRunner): Promise<void> {
+		await queryRunner.query(`DROP POLICY IF EXISTS "user_quotas_owner_policy" ON "media"."user_quotas"`);
+		await queryRunner.query(`ALTER TABLE "media"."user_quotas" DISABLE ROW LEVEL SECURITY`);
 		await queryRunner.query(
 			`DROP TRIGGER IF EXISTS "trg_user_quotas_updated_at" ON "media"."user_quotas"`
 		);
