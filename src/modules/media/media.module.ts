@@ -7,10 +7,11 @@ import { MediaRepository } from './repositories/media.repository';
 import { MediaService } from './media.service';
 import { MediaController } from './media.controller';
 import { MediaAccessLogPartitionService } from './media-access-log-partition.service';
+import { StorageService } from './storage.service';
 
 @Module({
 	imports: [TypeOrmModule.forFeature([Media, UserQuota, MediaAccessLog])],
-	providers: [MediaRepository, MediaService, MediaAccessLogPartitionService],
+	providers: [MediaRepository, StorageService, MediaService, MediaAccessLogPartitionService],
 	controllers: [MediaController],
 })
 export class MediaModule {}
