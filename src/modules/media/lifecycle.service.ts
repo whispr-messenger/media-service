@@ -41,9 +41,7 @@ export class LifecycleService implements OnApplicationBootstrap {
 			await this.ensureLifecyclePolicies();
 		} catch (error) {
 			// Non-fatal: lifecycle policies are best-effort at startup.
-			this.logger.warn(
-				`Failed to configure S3 lifecycle policies: ${(error as Error).message}`
-			);
+			this.logger.warn(`Failed to configure S3 lifecycle policies: ${(error as Error).message}`);
 		}
 	}
 

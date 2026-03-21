@@ -45,11 +45,10 @@ describe('LifecycleService', () => {
 		const ids = rules.map((r) => r.ID);
 		expect(ids).toContain('messages-expiry');
 		expect(ids).toContain('thumbnails-expiry');
-		rules.forEach((r) => {
-			if (r.ID === 'messages-expiry' || r.ID === 'thumbnails-expiry') {
-				expect(r.Expiration.Days).toBe(30);
-			}
-		});
+		const messagesRule = rules.find((r) => r.ID === 'messages-expiry');
+		const thumbnailsRule = rules.find((r) => r.ID === 'thumbnails-expiry');
+		expect(messagesRule?.Expiration.Days).toBe(30);
+		expect(thumbnailsRule?.Expiration.Days).toBe(30);
 	});
 
 	it('skips PUT when both rules already exist', async () => {
