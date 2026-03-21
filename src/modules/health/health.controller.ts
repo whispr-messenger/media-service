@@ -5,7 +5,9 @@ import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Cache } from 'cache-manager';
 import { InjectS3, S3 } from 'nestjs-s3';
 import { JwksService } from '../jwks/jwks.service';
+import { Public } from '../auth/public.decorator';
 
+@Public()
 @ApiTags('Health')
 @Controller('health')
 export class HealthController {

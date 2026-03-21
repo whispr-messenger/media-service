@@ -1,12 +1,13 @@
 import { ExecutionContext, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { Reflector } from '@nestjs/core';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Test, TestingModule } from '@nestjs/testing';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { JwksService } from '../jwks/jwks.service';
 
 const mockJwksService = {
-	getPublicKey: jest.fn(),
+	getPublicKeyPem: jest.fn(),
 };
 
 const mockJwtService = {
@@ -17,9 +18,11 @@ const mockCacheManager = {
 	get: jest.fn(),
 };
 
-const MOCK_PUBLIC_KEY = {
-	export: jest.fn().mockReturnValue('-----BEGIN PUBLIC KEY-----\nMOCK\n-----END PUBLIC KEY-----'),
+const mockReflector = {
+	getAllAndOverride: jest.fn(),
 };
+
+const MOCK_PUBLIC_KEY_PEM = '-----BEGIN PUBLIC KEY-----\nMOCK\n-----END PUBLIC KEY-----';
 
 const VALID_PAYLOAD = {
 	sub: 'user-uuid-1',
@@ -28,15 +31,16 @@ const VALID_PAYLOAD = {
 	fingerprint: 'fp-abc',
 };
 
-function buildContext(authHeader?: string): ExecutionContext {
-	const request = {
+function buildContext(authHeader?: string, handler = {}, cls = {}): ExecutionContext {
+	const request: { headers: Record<string, string>; user?: unknown } = {
 		headers: authHeader ? { authorization: authHeader } : {},
-		user: undefined as unknown,
 	};
 	return {
 		switchToHttp: () => ({
 			getRequest: () => request,
 		}),
+		getHandler: () => handler,
+		getClass: () => cls,
 	} as unknown as ExecutionContext;
 }
 
@@ -45,15 +49,17 @@ describe('JwtAuthGuard', () => {
 
 	beforeEach(async () => {
 		jest.clearAllMocks();
-		mockJwksService.getPublicKey.mockReturnValue(MOCK_PUBLIC_KEY);
+		mockJwksService.getPublicKeyPem.mockReturnValue(MOCK_PUBLIC_KEY_PEM);
 		mockJwtService.verifyAsync.mockResolvedValue(VALID_PAYLOAD);
 		mockCacheManager.get.mockResolvedValue(null);
+		mockReflector.getAllAndOverride.mockReturnValue(false);
 
 		const module: TestingModule = await Test.createTestingModule({
 			providers: [
 				JwtAuthGuard,
 				{ provide: JwksService, useValue: mockJwksService },
 				{ provide: JwtService, useValue: mockJwtService },
+				{ provide: Reflector, useValue: mockReflector },
 				{ provide: CACHE_MANAGER, useValue: mockCacheManager },
 			],
 		}).compile();
@@ -67,10 +73,21 @@ describe('JwtAuthGuard', () => {
 		expect(result).toBe(true);
 	});
 
+	it('should skip auth and return true for @Public() routes', async () => {
+		mockReflector.getAllAndOverride.mockReturnValue(true);
+		const ctx = buildContext(undefined);
+		const result = await guard.canActivate(ctx);
+		expect(result).toBe(true);
+	});
+
 	it('should inject user context into the request', async () => {
-		const request = { headers: { authorization: 'Bearer valid-token' }, user: undefined as unknown };
+		const request: { headers: Record<string, string>; user?: unknown } = {
+			headers: { authorization: 'Bearer valid-token' },
+		};
 		const ctx = {
 			switchToHttp: () => ({ getRequest: () => request }),
+			getHandler: () => ({}),
+			getClass: () => ({}),
 		} as unknown as ExecutionContext;
 
 		await guard.canActivate(ctx);
@@ -94,7 +111,7 @@ describe('JwtAuthGuard', () => {
 	});
 
 	it('should throw 401 when public key is not loaded', async () => {
-		mockJwksService.getPublicKey.mockReturnValue(null);
+		mockJwksService.getPublicKeyPem.mockReturnValue(null);
 		const ctx = buildContext('Bearer valid-token');
 		await expect(guard.canActivate(ctx)).rejects.toThrow(UnauthorizedException);
 	});
@@ -135,5 +152,13 @@ describe('JwtAuthGuard', () => {
 
 		expect(mockCacheManager.get).toHaveBeenCalledWith(`revoked:${VALID_PAYLOAD.jti}`);
 		expect(mockCacheManager.get).toHaveBeenCalledWith(`revoked_device:${VALID_PAYLOAD.deviceId}`);
+	});
+
+	it('should allow when fingerprint is absent from payload', async () => {
+		const { fingerprint: _fp, ...payloadWithoutFingerprint } = VALID_PAYLOAD;
+		mockJwtService.verifyAsync.mockResolvedValue(payloadWithoutFingerprint);
+		const ctx = buildContext('Bearer valid-token');
+		const result = await guard.canActivate(ctx);
+		expect(result).toBe(true);
 	});
 });
