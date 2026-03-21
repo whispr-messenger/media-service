@@ -10,12 +10,24 @@ export type StorageContext = 'messages' | 'avatars' | 'group_icons' | 'thumbnail
 export class StorageService {
 	private readonly logger = new Logger(StorageService.name);
 	readonly bucket: string;
+	private readonly forcePathStyle: boolean;
+	private readonly endpoint: string;
 
 	constructor(
 		@InjectS3() private readonly s3: S3,
 		private readonly configService: ConfigService
 	) {
 		this.bucket = this.configService.get<string>('S3_BUCKET', 'whispr-media');
+		this.forcePathStyle = this.configService.get<boolean>('S3_FORCE_PATH_STYLE', false);
+		this.endpoint = this.configService.get<string>('S3_ENDPOINT', '');
+	}
+
+	getPublicUrl(storagePath: string): string {
+		if (this.forcePathStyle) {
+			return `${this.endpoint}/${this.bucket}/${storagePath}`;
+		}
+		const url = new URL(this.endpoint);
+		return `${url.protocol}//${this.bucket}.${url.host}/${storagePath}`;
 	}
 
 	buildPath(context: StorageContext, ownerId: string, objectId: string): string {

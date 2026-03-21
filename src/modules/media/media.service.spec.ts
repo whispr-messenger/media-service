@@ -14,12 +14,14 @@ jest.mock('@aws-sdk/s3-request-presigner', () => ({
 const mockMediaRepository = {
 	save: jest.fn(),
 	findById: jest.fn(),
+	updateSignedUrlExpiry: jest.fn(),
 	softDelete: jest.fn(),
 };
 
 const mockStorageService = {
 	bucket: 'test-bucket',
 	buildPath: jest.fn(),
+	getPublicUrl: jest.fn((path: string) => `http://minio:9000/test-bucket/${path}`),
 	upload: jest.fn().mockResolvedValue(undefined),
 	download: jest.fn(),
 	delete: jest.fn().mockResolvedValue(undefined),
@@ -34,7 +36,7 @@ const mockS3 = {
 const mockConfigService = {
 	get: jest.fn((key: string, defaultValue?: unknown) => {
 		const config: Record<string, unknown> = {
-			PRESIGNED_URL_TTL_SECONDS: 3600,
+			SIGNED_URL_EXPIRY_SECONDS: 604800,
 		};
 		return config[key] ?? defaultValue;
 	}),
@@ -134,16 +136,80 @@ describe('MediaService', () => {
 	});
 
 	describe('getDownloadUrl', () => {
-		it('should return a presigned URL for an existing media', async () => {
+		it('should return a public URL for avatar context', async () => {
 			const media = new Media();
 			media.id = 'media-uuid-1';
-			media.storagePath = 'messages/user-1/media-uuid-1.bin';
+			media.storagePath = 'avatars/user-1/media-uuid-1';
+			media.context = 'avatars';
+			media.signedUrlExpiresAt = null;
 			mockMediaRepository.findById.mockResolvedValue(media);
 
 			const url = await service.getDownloadUrl('media-uuid-1');
 
+			expect(mockStorageService.getPublicUrl).toHaveBeenCalledWith('avatars/user-1/media-uuid-1');
+			expect(url).toBe('http://minio:9000/test-bucket/avatars/user-1/media-uuid-1');
+			expect(mockMediaRepository.updateSignedUrlExpiry).not.toHaveBeenCalled();
+		});
+
+		it('should return a public URL for group_icons context', async () => {
+			const media = new Media();
+			media.id = 'media-uuid-2';
+			media.storagePath = 'group_icons/user-1/media-uuid-2';
+			media.context = 'group_icons';
+			media.signedUrlExpiresAt = null;
+			mockMediaRepository.findById.mockResolvedValue(media);
+
+			const url = await service.getDownloadUrl('media-uuid-2');
+
+			expect(mockStorageService.getPublicUrl).toHaveBeenCalledWith('group_icons/user-1/media-uuid-2');
+			expect(url).toBe('http://minio:9000/test-bucket/group_icons/user-1/media-uuid-2');
+		});
+
+		it('should generate a presigned URL and persist expiry for messages context when no cached expiry', async () => {
+			const media = new Media();
+			media.id = 'media-uuid-3';
+			media.storagePath = 'messages/user-1/media-uuid-3.bin';
+			media.context = 'messages';
+			media.signedUrlExpiresAt = null;
+			mockMediaRepository.findById.mockResolvedValue(media);
+			mockMediaRepository.updateSignedUrlExpiry.mockResolvedValue(undefined);
+
+			const url = await service.getDownloadUrl('media-uuid-3');
+
 			expect(url).toBe('https://presigned.url/file');
-			expect(mockMediaRepository.findById).toHaveBeenCalledWith('media-uuid-1');
+			expect(mockMediaRepository.updateSignedUrlExpiry).toHaveBeenCalledWith(
+				'media-uuid-3',
+				expect.any(Date)
+			);
+		});
+
+		it('should re-generate presigned URL when signedUrlExpiresAt is in the past', async () => {
+			const media = new Media();
+			media.id = 'media-uuid-4';
+			media.storagePath = 'messages/user-1/media-uuid-4.bin';
+			media.context = 'messages';
+			media.signedUrlExpiresAt = new Date(Date.now() - 1000);
+			mockMediaRepository.findById.mockResolvedValue(media);
+			mockMediaRepository.updateSignedUrlExpiry.mockResolvedValue(undefined);
+
+			const url = await service.getDownloadUrl('media-uuid-4');
+
+			expect(url).toBe('https://presigned.url/file');
+			expect(mockMediaRepository.updateSignedUrlExpiry).toHaveBeenCalled();
+		});
+
+		it('should generate presigned URL without updating expiry when signedUrlExpiresAt is still valid', async () => {
+			const media = new Media();
+			media.id = 'media-uuid-5';
+			media.storagePath = 'messages/user-1/media-uuid-5.bin';
+			media.context = 'messages';
+			media.signedUrlExpiresAt = new Date(Date.now() + 60 * 60 * 1000);
+			mockMediaRepository.findById.mockResolvedValue(media);
+
+			const url = await service.getDownloadUrl('media-uuid-5');
+
+			expect(url).toBe('https://presigned.url/file');
+			expect(mockMediaRepository.updateSignedUrlExpiry).not.toHaveBeenCalled();
 		});
 
 		it('should throw NotFoundException when media does not exist', async () => {

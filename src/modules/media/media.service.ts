@@ -9,10 +9,12 @@ import { Media } from './entities/media.entity';
 import { MediaRepository } from './repositories/media.repository';
 import { StorageService, StorageContext } from './storage.service';
 
+const PUBLIC_CONTEXTS = new Set(['avatars', 'group_icons']);
+
 @Injectable()
 export class MediaService {
 	private readonly logger = new Logger(MediaService.name);
-	private readonly presignedUrlTtl: number;
+	private readonly signedUrlExpirySeconds: number;
 
 	constructor(
 		private readonly mediaRepository: MediaRepository,
@@ -20,7 +22,10 @@ export class MediaService {
 		@InjectS3() private readonly s3: S3,
 		private readonly configService: ConfigService
 	) {
-		this.presignedUrlTtl = this.configService.get<number>('PRESIGNED_URL_TTL_SECONDS', 3600);
+		this.signedUrlExpirySeconds = this.configService.get<number>(
+			'SIGNED_URL_EXPIRY_SECONDS',
+			7 * 24 * 60 * 60
+		);
 	}
 
 	async upload(ownerId: string, file: Express.Multer.File, context: string): Promise<Media> {
@@ -53,12 +58,29 @@ export class MediaService {
 			throw new NotFoundException(`Media ${id} not found`);
 		}
 
+		if (PUBLIC_CONTEXTS.has(media.context)) {
+			return this.storageService.getPublicUrl(media.storagePath);
+		}
+
+		const now = new Date();
+		if (media.signedUrlExpiresAt && media.signedUrlExpiresAt > now) {
+			const remainingSeconds = Math.floor((media.signedUrlExpiresAt.getTime() - now.getTime()) / 1000);
+			return this.generatePresignedUrl(media.storagePath, remainingSeconds);
+		}
+
+		const expiresAt = new Date(now.getTime() + this.signedUrlExpirySeconds * 1000);
+		const url = await this.generatePresignedUrl(media.storagePath, this.signedUrlExpirySeconds);
+		await this.mediaRepository.updateSignedUrlExpiry(id, expiresAt);
+
+		return url;
+	}
+
+	private generatePresignedUrl(storagePath: string, expiresIn: number): Promise<string> {
 		const command = new GetObjectCommand({
 			Bucket: this.storageService.bucket,
-			Key: media.storagePath,
+			Key: storagePath,
 		});
-
-		return getSignedUrl(this.s3 as never, command, { expiresIn: this.presignedUrlTtl });
+		return getSignedUrl(this.s3 as never, command, { expiresIn });
 	}
 
 	async getStream(id: string): Promise<{ stream: Readable; contentType: string }> {
