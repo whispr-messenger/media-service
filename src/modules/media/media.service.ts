@@ -30,7 +30,7 @@ export class MediaService {
 
 		this.logger.debug(`Uploading file ${file.originalname} to ${storagePath}`);
 
-		const stream = Readable.from(file.buffer);
+		const stream: Readable = file.stream ?? Readable.from(file.buffer);
 		await this.storageService.upload(storagePath, stream, file.mimetype, file.size);
 
 		const media = new Media();

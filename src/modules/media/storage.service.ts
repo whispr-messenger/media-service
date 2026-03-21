@@ -28,6 +28,8 @@ export class StorageService {
 				return `group_icons/${ownerId}/${objectId}`;
 			case 'thumbnails':
 				return `thumbnails/${objectId}.bin`;
+			default:
+				throw new Error(`Unknown storage context: ${context as string}`);
 		}
 	}
 
