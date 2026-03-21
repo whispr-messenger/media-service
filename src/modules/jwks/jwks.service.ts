@@ -85,6 +85,11 @@ export class JwksService implements OnModuleInit {
 		return this.publicKey;
 	}
 
+	getPublicKeyPem(): string | null {
+		if (!this.publicKey) return null;
+		return this.publicKey.export({ type: 'spki', format: 'pem' }) as string;
+	}
+
 	isReady(): boolean {
 		return this.publicKey !== null;
 	}

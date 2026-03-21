@@ -11,6 +11,7 @@ import { s3ModuleAsyncOptions } from './config/s3.config';
 import { HealthModule } from './modules/health/health.module';
 import { MediaModule } from './modules/media/media.module';
 import { JwksModule } from './modules/jwks/jwks.module';
+import { AuthModule } from './modules/auth/auth.module';
 
 @Module({
 	imports: [
@@ -25,6 +26,7 @@ import { JwksModule } from './modules/jwks/jwks.module';
 		ScheduleModule.forRoot(),
 		S3Module.forRootAsync(s3ModuleAsyncOptions),
 		JwksModule,
+		AuthModule,
 		HealthModule,
 		MediaModule,
 	],
