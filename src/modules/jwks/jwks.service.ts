@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createPublicKey, KeyObject } from 'crypto';
+import { createPublicKey, KeyObject } from 'node:crypto';
 
 const FETCH_TIMEOUT_MS = 5000;
 
