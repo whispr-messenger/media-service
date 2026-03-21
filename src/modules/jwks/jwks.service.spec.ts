@@ -56,10 +56,44 @@ describe('JwksService', () => {
 			expect(service.getPublicKey()).not.toBeNull();
 		});
 
+		it('should accept a key with only use=sig (no alg field)', async () => {
+			const keyWithUseSig = { ...ES256_JWK, alg: undefined };
+			jest.spyOn(globalThis, 'fetch').mockResolvedValue({
+				ok: true,
+				json: jest.fn().mockResolvedValue({ keys: [keyWithUseSig] }),
+			} as unknown as Response);
+
+			await service.loadPublicKey();
+
+			expect(service.isReady()).toBe(true);
+		});
+
+		it('should accept a key with only alg=ES256 (no use field)', async () => {
+			const keyWithAlgOnly = { ...ES256_JWK, use: undefined };
+			jest.spyOn(globalThis, 'fetch').mockResolvedValue({
+				ok: true,
+				json: jest.fn().mockResolvedValue({ keys: [keyWithAlgOnly] }),
+			} as unknown as Response);
+
+			await service.loadPublicKey();
+
+			expect(service.isReady()).toBe(true);
+		});
+
 		it('should throw when fetch fails with a network error', async () => {
 			jest.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Network error'));
 
 			await expect(service.loadPublicKey()).rejects.toThrow('JWKS fetch failed: Network error');
+			expect(service.isReady()).toBe(false);
+		});
+
+		it('should throw when the fetch times out', async () => {
+			const abortError = Object.assign(new Error('The operation was aborted'), { name: 'AbortError' });
+			jest.spyOn(globalThis, 'fetch').mockRejectedValue(abortError);
+
+			await expect(service.loadPublicKey()).rejects.toThrow(
+				'JWKS fetch failed: timed out after 5000ms'
+			);
 			expect(service.isReady()).toBe(false);
 		});
 
@@ -83,6 +117,30 @@ describe('JwksService', () => {
 				'No ES256 (EC P-256) key found in JWKS document'
 			);
 			expect(service.isReady()).toBe(false);
+		});
+
+		it('should throw when the EC key has no use or alg field', async () => {
+			const keyNoUseOrAlg = { kty: 'EC', crv: 'P-256', x: ES256_JWK.x, y: ES256_JWK.y };
+			jest.spyOn(globalThis, 'fetch').mockResolvedValue({
+				ok: true,
+				json: jest.fn().mockResolvedValue({ keys: [keyNoUseOrAlg] }),
+			} as unknown as Response);
+
+			await expect(service.loadPublicKey()).rejects.toThrow(
+				'No ES256 (EC P-256) key found in JWKS document'
+			);
+		});
+
+		it('should throw when the EC key is missing x/y coordinates', async () => {
+			const keyMissingCoords = { kty: 'EC', use: 'sig', alg: 'ES256', crv: 'P-256' };
+			jest.spyOn(globalThis, 'fetch').mockResolvedValue({
+				ok: true,
+				json: jest.fn().mockResolvedValue({ keys: [keyMissingCoords] }),
+			} as unknown as Response);
+
+			await expect(service.loadPublicKey()).rejects.toThrow(
+				'ES256 (EC P-256) key in JWKS is missing required coordinates (x/y)'
+			);
 		});
 
 		it('should throw when the JWKS document has an empty keys array', async () => {
@@ -113,6 +171,13 @@ describe('JwksService', () => {
 			await service.onModuleInit();
 
 			expect(spy).toHaveBeenCalledTimes(1);
+		});
+
+		it('should not throw when loadPublicKey fails — keeps publicKey null', async () => {
+			jest.spyOn(service, 'loadPublicKey').mockRejectedValue(new Error('JWKS unreachable'));
+
+			await expect(service.onModuleInit()).resolves.toBeUndefined();
+			expect(service.isReady()).toBe(false);
 		});
 	});
 });

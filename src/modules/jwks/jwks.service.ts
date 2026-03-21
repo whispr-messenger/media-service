@@ -2,6 +2,8 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createPublicKey, KeyObject } from 'crypto';
 
+const FETCH_TIMEOUT_MS = 5000;
+
 interface JwkKey {
 	kty: string;
 	use?: string;
@@ -23,18 +25,29 @@ export class JwksService implements OnModuleInit {
 	constructor(private readonly configService: ConfigService) {}
 
 	async onModuleInit(): Promise<void> {
-		await this.loadPublicKey();
+		try {
+			await this.loadPublicKey();
+		} catch (error) {
+			this.logger.error(`Failed to load ES256 public key at startup: ${error.message}`);
+		}
 	}
 
 	async loadPublicKey(): Promise<void> {
 		const jwksUri = this.configService.getOrThrow<string>('JWT_JWKS_URL');
 
+		const controller = new AbortController();
+		const timeout = globalThis.setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
 		let response: Response;
 		try {
-			response = await fetch(jwksUri);
+			response = await fetch(jwksUri, { signal: controller.signal });
 		} catch (error) {
-			this.logger.error(`Failed to fetch JWKS from ${jwksUri}: ${error.message}`);
-			throw new Error(`JWKS fetch failed: ${error.message}`);
+			const reason =
+				error.name === 'AbortError' ? `timed out after ${FETCH_TIMEOUT_MS}ms` : error.message;
+			this.logger.error(`Failed to fetch JWKS: ${reason}`);
+			throw new Error(`JWKS fetch failed: ${reason}`);
+		} finally {
+			globalThis.clearTimeout(timeout);
 		}
 
 		if (!response.ok) {
@@ -48,9 +61,15 @@ export class JwksService implements OnModuleInit {
 			throw new Error(`Failed to parse JWKS response: ${error.message}`);
 		}
 
-		const ecKey = document.keys?.find((k) => k.kty === 'EC' && k.crv === 'P-256');
+		const ecKey = document.keys?.find(
+			(k) => k.kty === 'EC' && k.crv === 'P-256' && (k.use === 'sig' || k.alg === 'ES256')
+		);
 		if (!ecKey) {
 			throw new Error('No ES256 (EC P-256) key found in JWKS document');
+		}
+
+		if (!ecKey.x || !ecKey.y) {
+			throw new Error('ES256 (EC P-256) key in JWKS is missing required coordinates (x/y)');
 		}
 
 		try {
