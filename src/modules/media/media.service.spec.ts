@@ -1,5 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ForbiddenException, HttpException, NotFoundException, PayloadTooLargeException } from '@nestjs/common';
+import {
+	ForbiddenException,
+	HttpException,
+	NotFoundException,
+	PayloadTooLargeException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
@@ -176,9 +181,7 @@ describe('MediaService', () => {
 			mockCache.get.mockResolvedValue(null);
 			mockMediaRepository.findById.mockResolvedValue(null);
 
-			await expect(service.getMetadata('missing', 'user-uuid-1')).rejects.toThrow(
-				NotFoundException
-			);
+			await expect(service.getMetadata('missing', 'user-uuid-1')).rejects.toThrow(NotFoundException);
 		});
 
 		it('throws ForbiddenException when non-owner requests message media', async () => {
@@ -216,9 +219,7 @@ describe('MediaService', () => {
 			const media = makeMedia({ ownerId: 'owner-1' });
 			mockMediaRepository.findById.mockResolvedValue(media);
 
-			await expect(service.delete('media-uuid-1', 'other-user')).rejects.toThrow(
-				ForbiddenException
-			);
+			await expect(service.delete('media-uuid-1', 'other-user')).rejects.toThrow(ForbiddenException);
 		});
 
 		it('throws NotFoundException when media does not exist', async () => {

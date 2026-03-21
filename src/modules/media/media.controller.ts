@@ -5,7 +5,6 @@ import {
 	Delete,
 	Param,
 	Headers,
-	UploadedFile,
 	UploadedFiles,
 	UseInterceptors,
 	Res,
@@ -16,15 +15,8 @@ import {
 	Logger,
 	Body,
 } from '@nestjs/common';
-import { FileInterceptor, FileFieldsInterceptor } from '@nestjs/platform-express';
-import {
-	ApiTags,
-	ApiOperation,
-	ApiResponse,
-	ApiConsumes,
-	ApiHeader,
-	ApiBody,
-} from '@nestjs/swagger';
+import { FileFieldsInterceptor } from '@nestjs/platform-express';
+import { ApiTags, ApiOperation, ApiResponse, ApiConsumes, ApiHeader, ApiBody } from '@nestjs/swagger';
 import { Response, Request } from 'express';
 import { MediaService } from './media.service';
 import {

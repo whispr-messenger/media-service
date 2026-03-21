@@ -129,10 +129,7 @@ export class MediaService {
 			media.thumbnailPath = thumbnailPath;
 			media.contentType = file.mimetype;
 			media.blobSize = file.size;
-			media.expiresAt =
-				context === MediaContext.MESSAGE
-					? this.computeExpiresAt()
-					: null;
+			media.expiresAt = context === MediaContext.MESSAGE ? this.computeExpiresAt() : null;
 			media.isActive = true;
 
 			await this.mediaRepository.save(media);
@@ -246,12 +243,7 @@ export class MediaService {
 	// DELETE /media/v1/:id — WHISPR-367
 	// =========================================================================
 
-	async delete(
-		id: string,
-		requesterId: string,
-		ipAddress?: string,
-		userAgent?: string
-	): Promise<void> {
+	async delete(id: string, requesterId: string, ipAddress?: string, userAgent?: string): Promise<void> {
 		const media = await this.mediaRepository.findById(id);
 		if (!media) {
 			throw new NotFoundException(`Media ${id} not found`);
@@ -310,11 +302,7 @@ export class MediaService {
 		void ownerId; // used in validation above
 	}
 
-	private enforceReadAccess(
-		context: MediaContext,
-		ownerId: string,
-		requesterId: string
-	): void {
+	private enforceReadAccess(context: MediaContext, ownerId: string, requesterId: string): void {
 		if (!PUBLIC_CONTEXTS.has(context) && ownerId !== requesterId) {
 			throw new ForbiddenException('Access denied');
 		}
@@ -355,9 +343,7 @@ export class MediaService {
 
 		const now = new Date();
 		if (media.signedUrlExpiresAt && media.signedUrlExpiresAt > now) {
-			const remaining = Math.floor(
-				(media.signedUrlExpiresAt.getTime() - now.getTime()) / 1000
-			);
+			const remaining = Math.floor((media.signedUrlExpiresAt.getTime() - now.getTime()) / 1000);
 			return this.generatePresignedUrl(media.storagePath, remaining);
 		}
 
@@ -396,9 +382,7 @@ export class MediaService {
 		return {
 			mediaId: media.id,
 			url: media.storagePath ? this.storageService.getPublicUrl(media.storagePath) : null,
-			thumbnailUrl: media.thumbnailPath
-				? this.storageService.getPublicUrl(media.thumbnailPath)
-				: null,
+			thumbnailUrl: media.thumbnailPath ? this.storageService.getPublicUrl(media.thumbnailPath) : null,
 			expiresAt: media.expiresAt,
 			context: media.context,
 			size: media.blobSize,

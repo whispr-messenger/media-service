@@ -48,44 +48,36 @@ describe('MediaController', () => {
 			};
 			mockMediaService.upload.mockResolvedValue(expected);
 
-			const result = await controller.upload(
-				'user-uuid-1',
-				{ file: [file], thumbnail: [] },
-				dto
-			);
+			const result = await controller.upload('user-uuid-1', { file: [file], thumbnail: [] }, dto);
 
 			expect(result).toEqual(expected);
 		});
 
 		it('throws BadRequestException when no file is provided', async () => {
-			await expect(
-				controller.upload('user-uuid-1', { file: [], thumbnail: [] }, dto)
-			).rejects.toThrow(BadRequestException);
+			await expect(controller.upload('user-uuid-1', { file: [], thumbnail: [] }, dto)).rejects.toThrow(
+				BadRequestException
+			);
 		});
 
 		it('throws BadRequestException when x-user-id header is missing', async () => {
 			await expect(
-				controller.upload(
-					undefined as unknown as string,
-					{ file: [file], thumbnail: [] },
-					dto
-				)
+				controller.upload(undefined as unknown as string, { file: [file], thumbnail: [] }, dto)
 			).rejects.toThrow(BadRequestException);
 		});
 
 		it('throws BadRequestException when ownerId does not match header', async () => {
 			const mismatchDto: UploadMediaDto = { context: MediaContext.MESSAGE, ownerId: 'other-user' };
-			await expect(
-				controller.upload('user-uuid-1', { file: [file] }, mismatchDto)
-			).rejects.toThrow(BadRequestException);
+			await expect(controller.upload('user-uuid-1', { file: [file] }, mismatchDto)).rejects.toThrow(
+				BadRequestException
+			);
 		});
 	});
 
 	describe('getMetadata()', () => {
 		it('throws BadRequestException when x-user-id is missing', async () => {
-			await expect(
-				controller.getMetadata('media-id', undefined as unknown as string)
-			).rejects.toThrow(BadRequestException);
+			await expect(controller.getMetadata('media-id', undefined as unknown as string)).rejects.toThrow(
+				BadRequestException
+			);
 		});
 
 		it('returns metadata on success', async () => {
@@ -136,9 +128,9 @@ describe('MediaController', () => {
 	describe('delete()', () => {
 		it('throws BadRequestException when x-user-id is missing', async () => {
 			const req = { headers: {}, socket: {} } as Request;
-			await expect(
-				controller.delete('media-id', undefined as unknown as string, req)
-			).rejects.toThrow(BadRequestException);
+			await expect(controller.delete('media-id', undefined as unknown as string, req)).rejects.toThrow(
+				BadRequestException
+			);
 		});
 
 		it('calls mediaService.delete and returns void', async () => {
