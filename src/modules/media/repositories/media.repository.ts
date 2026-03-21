@@ -15,6 +15,10 @@ export class MediaRepository {
 		return this.repo.findOne({ where: { id, isActive: true } });
 	}
 
+	async updateSignedUrlExpiry(id: string, signedUrlExpiresAt: Date): Promise<void> {
+		await this.repo.update(id, { signedUrlExpiresAt });
+	}
+
 	async softDelete(id: string): Promise<void> {
 		await this.repo.update(id, { isActive: false });
 	}

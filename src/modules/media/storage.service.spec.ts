@@ -13,6 +13,8 @@ const mockConfigService = {
 	get: jest.fn((key: string, defaultValue?: unknown) => {
 		const config: Record<string, unknown> = {
 			S3_BUCKET: 'test-bucket',
+			S3_FORCE_PATH_STYLE: true,
+			S3_ENDPOINT: 'http://minio:9000',
 		};
 		return config[key] ?? defaultValue;
 	}),
@@ -33,6 +35,14 @@ describe('StorageService', () => {
 		}).compile();
 
 		service = module.get<StorageService>(StorageService);
+	});
+
+	describe('getPublicUrl', () => {
+		it('should return path-style URL when S3_FORCE_PATH_STYLE is true', () => {
+			expect(service.getPublicUrl('avatars/user-1/uuid-1')).toBe(
+				'http://minio:9000/test-bucket/avatars/user-1/uuid-1'
+			);
+		});
 	});
 
 	describe('buildPath', () => {

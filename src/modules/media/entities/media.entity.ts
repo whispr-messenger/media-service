@@ -33,6 +33,9 @@ export class Media {
 	@Column({ name: 'expires_at', type: 'timestamptz', nullable: true })
 	expiresAt: Date | null;
 
+	@Column({ name: 'signed_url_expires_at', type: 'timestamptz', nullable: true })
+	signedUrlExpiresAt: Date | null;
+
 	@Column({ name: 'is_active', type: 'boolean', default: true })
 	isActive: boolean;
 
