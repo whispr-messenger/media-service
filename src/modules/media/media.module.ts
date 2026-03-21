@@ -13,13 +13,7 @@ import { QuotaService } from './quota.service';
 
 @Module({
 	imports: [TypeOrmModule.forFeature([Media, UserQuota, MediaAccessLog]), ScheduleModule.forRoot()],
-	providers: [
-		MediaRepository,
-		StorageService,
-		MediaService,
-		MediaAccessLogPartitionService,
-		QuotaService,
-	],
+	providers: [MediaRepository, StorageService, MediaService, MediaAccessLogPartitionService, QuotaService],
 	controllers: [MediaController],
 	exports: [QuotaService],
 })

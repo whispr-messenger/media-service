@@ -19,7 +19,7 @@ const makeQuota = (overrides: Partial<UserQuota> = {}): UserQuota =>
 		quotaDate: '2026-03-21',
 		updatedAt: new Date(),
 		...overrides,
-	} as UserQuota);
+	}) as UserQuota;
 
 const mockQuotaRepo = {
 	findOne: jest.fn(),
@@ -98,9 +98,7 @@ describe('QuotaService', () => {
 			mockCache.get.mockResolvedValue(null);
 			const quota = makeQuota();
 			// findOne returns null first (upsert path), then the created row
-			mockQuotaRepo.findOne
-				.mockResolvedValueOnce(null)
-				.mockResolvedValueOnce(quota);
+			mockQuotaRepo.findOne.mockResolvedValueOnce(null).mockResolvedValueOnce(quota);
 
 			const qb = {
 				insert: jest.fn().mockReturnThis(),
@@ -116,11 +114,7 @@ describe('QuotaService', () => {
 
 			expect(result.allowed).toBe(true);
 			expect(qb.insert).toHaveBeenCalled();
-			expect(mockCache.set).toHaveBeenCalledWith(
-				'quota:user:user-1',
-				quota,
-				expect.any(Number)
-			);
+			expect(mockCache.set).toHaveBeenCalledWith('quota:user:user-1', quota, expect.any(Number));
 		});
 	});
 
@@ -132,9 +126,7 @@ describe('QuotaService', () => {
 
 		it('throws PayloadTooLargeException (413) when quota is exceeded', async () => {
 			mockCache.get.mockResolvedValue(makeQuota({ storageUsed: 1073741824 }));
-			await expect(service.enforceQuota('user-1', 1)).rejects.toThrow(
-				PayloadTooLargeException
-			);
+			await expect(service.enforceQuota('user-1', 1)).rejects.toThrow(PayloadTooLargeException);
 		});
 	});
 
@@ -183,7 +175,9 @@ describe('QuotaService', () => {
 				set: jest.fn().mockReturnThis(),
 				where: jest.fn().mockReturnThis(),
 				returning: jest.fn().mockReturnThis(),
-				execute: jest.fn().mockResolvedValue({ affected: 2, raw: [{ user_id: 'u1' }, { user_id: 'u2' }] }),
+				execute: jest
+					.fn()
+					.mockResolvedValue({ affected: 2, raw: [{ user_id: 'u1' }, { user_id: 'u2' }] }),
 			};
 			mockQuotaRepo.createQueryBuilder.mockReturnValue(qb);
 			mockCache.del.mockResolvedValue(undefined);
