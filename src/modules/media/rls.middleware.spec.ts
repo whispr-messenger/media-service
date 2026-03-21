@@ -40,12 +40,10 @@ describe('RlsMiddleware', () => {
 		const next = jest.fn() as NextFunction;
 
 		let capturedUserId: string | null = null;
-		const runSpy = jest
-			.spyOn(rlsContext, 'run')
-			.mockImplementation(<T>(id: string, fn: () => T): T => {
-				capturedUserId = id;
-				return fn();
-			});
+		const runSpy = jest.spyOn(rlsContext, 'run').mockImplementation(<T>(id: string, fn: () => T): T => {
+			capturedUserId = id;
+			return fn();
+		});
 
 		middleware.use(makeReq(userId) as Request, {} as Response, next);
 

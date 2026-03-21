@@ -1,11 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
-import {
-	DataSource,
-	EntitySubscriberInterface,
-	EventSubscriber,
-	TransactionStartEvent,
-} from 'typeorm';
+import { DataSource, EntitySubscriberInterface, EventSubscriber, TransactionStartEvent } from 'typeorm';
 import { RlsContextService } from './rls-context.service';
 
 /**
