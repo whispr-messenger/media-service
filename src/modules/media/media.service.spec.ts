@@ -21,6 +21,7 @@ const mockMediaRepository = {
 const mockStorageService = {
 	bucket: 'test-bucket',
 	buildPath: jest.fn(),
+	getPublicUrl: jest.fn((path: string) => `http://minio:9000/test-bucket/${path}`),
 	upload: jest.fn().mockResolvedValue(undefined),
 	download: jest.fn(),
 	delete: jest.fn().mockResolvedValue(undefined),
@@ -36,7 +37,6 @@ const mockConfigService = {
 	get: jest.fn((key: string, defaultValue?: unknown) => {
 		const config: Record<string, unknown> = {
 			SIGNED_URL_EXPIRY_SECONDS: 604800,
-			S3_ENDPOINT: 'http://minio:9000',
 		};
 		return config[key] ?? defaultValue;
 	}),
@@ -146,6 +146,7 @@ describe('MediaService', () => {
 
 			const url = await service.getDownloadUrl('media-uuid-1');
 
+			expect(mockStorageService.getPublicUrl).toHaveBeenCalledWith('avatars/user-1/media-uuid-1');
 			expect(url).toBe('http://minio:9000/test-bucket/avatars/user-1/media-uuid-1');
 			expect(mockMediaRepository.updateSignedUrlExpiry).not.toHaveBeenCalled();
 		});
@@ -160,6 +161,7 @@ describe('MediaService', () => {
 
 			const url = await service.getDownloadUrl('media-uuid-2');
 
+			expect(mockStorageService.getPublicUrl).toHaveBeenCalledWith('group_icons/user-1/media-uuid-2');
 			expect(url).toBe('http://minio:9000/test-bucket/group_icons/user-1/media-uuid-2');
 		});
 

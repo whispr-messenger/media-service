@@ -59,27 +59,28 @@ export class MediaService {
 		}
 
 		if (PUBLIC_CONTEXTS.has(media.context)) {
-			return `${this.configService.get<string>('S3_ENDPOINT')}/${this.storageService.bucket}/${media.storagePath}`;
+			return this.storageService.getPublicUrl(media.storagePath);
 		}
 
 		const now = new Date();
 		if (media.signedUrlExpiresAt && media.signedUrlExpiresAt > now) {
-			return this.generatePresignedUrl(media.storagePath);
+			const remainingSeconds = Math.floor((media.signedUrlExpiresAt.getTime() - now.getTime()) / 1000);
+			return this.generatePresignedUrl(media.storagePath, remainingSeconds);
 		}
 
-		const url = await this.generatePresignedUrl(media.storagePath);
 		const expiresAt = new Date(now.getTime() + this.signedUrlExpirySeconds * 1000);
+		const url = await this.generatePresignedUrl(media.storagePath, this.signedUrlExpirySeconds);
 		await this.mediaRepository.updateSignedUrlExpiry(id, expiresAt);
 
 		return url;
 	}
 
-	private generatePresignedUrl(storagePath: string): Promise<string> {
+	private generatePresignedUrl(storagePath: string, expiresIn: number): Promise<string> {
 		const command = new GetObjectCommand({
 			Bucket: this.storageService.bucket,
 			Key: storagePath,
 		});
-		return getSignedUrl(this.s3 as never, command, { expiresIn: this.signedUrlExpirySeconds });
+		return getSignedUrl(this.s3 as never, command, { expiresIn });
 	}
 
 	async getStream(id: string): Promise<{ stream: Readable; contentType: string }> {
