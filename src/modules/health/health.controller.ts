@@ -4,6 +4,7 @@ import { DataSource } from 'typeorm';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Cache } from 'cache-manager';
 import { InjectS3, S3 } from 'nestjs-s3';
+import { JwksService } from '../jwks/jwks.service';
 
 @ApiTags('Health')
 @Controller('health')
@@ -12,7 +13,8 @@ export class HealthController {
 	constructor(
 		private readonly dataSource: DataSource,
 		@Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
-		@InjectS3() private readonly s3: S3
+		@InjectS3() private readonly s3: S3,
+		private readonly jwksService: JwksService
 	) {}
 
 	@Get()
@@ -35,6 +37,7 @@ export class HealthController {
 				database: 'unknown',
 				cache: 'unknown',
 				minio: 'unknown',
+				jwks: 'unknown',
 			},
 		};
 
@@ -81,6 +84,14 @@ export class HealthController {
 			health.status = 'error';
 		}
 
+		// Check JWKS public key availability
+		if (this.jwksService.isReady()) {
+			health.services.jwks = 'healthy';
+		} else {
+			health.services.jwks = 'unhealthy';
+			health.status = 'error';
+		}
+
 		this.logger.debug('Health check completed:', health);
 		return health;
 	}
@@ -97,6 +108,9 @@ export class HealthController {
 			await this.dataSource.query('SELECT 1');
 			await this.cacheManager.set('readiness-check', 'ok', 1000);
 			await this.s3.listBuckets();
+			if (!this.jwksService.isReady()) {
+				throw new Error('ES256 public key not loaded');
+			}
 			return { status: 'ready' };
 		} catch (error) {
 			throw new HttpException(
