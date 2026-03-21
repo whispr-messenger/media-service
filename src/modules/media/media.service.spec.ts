@@ -1,15 +1,37 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
+import { ForbiddenException, HttpException, NotFoundException, PayloadTooLargeException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { getRepositoryToken } from '@nestjs/typeorm';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { getS3ConnectionToken } from 'nestjs-s3';
 import { MediaService } from './media.service';
 import { MediaRepository } from './repositories/media.repository';
 import { StorageService } from './storage.service';
+import { QuotaService } from './quota.service';
+import { MediaAccessLog } from './entities/media-access-log.entity';
 import { Media } from './entities/media.entity';
+import { MediaContext } from './dto/upload-media.dto';
 
 jest.mock('@aws-sdk/s3-request-presigner', () => ({
 	getSignedUrl: jest.fn().mockResolvedValue('https://presigned.url/file'),
 }));
+
+const makeMedia = (overrides: Partial<Media> = {}): Media =>
+	Object.assign(new Media(), {
+		id: 'media-uuid-1',
+		ownerId: 'user-uuid-1',
+		context: MediaContext.MESSAGE,
+		contentType: 'image/jpeg',
+		blobSize: 1024,
+		storagePath: 'messages/user-uuid-1/media-uuid-1.bin',
+		thumbnailPath: null,
+		expiresAt: null,
+		signedUrlExpiresAt: null,
+		isActive: true,
+		createdAt: new Date(),
+		updatedAt: new Date(),
+		...overrides,
+	} as Media);
 
 const mockMediaRepository = {
 	save: jest.fn(),
@@ -20,11 +42,27 @@ const mockMediaRepository = {
 
 const mockStorageService = {
 	bucket: 'test-bucket',
-	buildPath: jest.fn(),
+	buildPath: jest.fn().mockReturnValue('messages/user-uuid-1/id.bin'),
 	getPublicUrl: jest.fn((path: string) => `http://minio:9000/test-bucket/${path}`),
 	upload: jest.fn().mockResolvedValue(undefined),
 	download: jest.fn(),
 	delete: jest.fn().mockResolvedValue(undefined),
+};
+
+const mockQuotaService = {
+	enforceQuota: jest.fn().mockResolvedValue(undefined),
+	recordUpload: jest.fn().mockResolvedValue(undefined),
+	recordDelete: jest.fn().mockResolvedValue(undefined),
+};
+
+const mockCache = {
+	get: jest.fn().mockResolvedValue(null),
+	set: jest.fn().mockResolvedValue(undefined),
+	del: jest.fn().mockResolvedValue(undefined),
+};
+
+const mockAccessLogRepo = {
+	save: jest.fn().mockResolvedValue(undefined),
 };
 
 const mockS3 = {
@@ -37,10 +75,14 @@ const mockConfigService = {
 	get: jest.fn((key: string, defaultValue?: unknown) => {
 		const config: Record<string, unknown> = {
 			SIGNED_URL_EXPIRY_SECONDS: 604800,
+			MESSAGE_BLOB_TTL_DAYS: 30,
 		};
 		return config[key] ?? defaultValue;
 	}),
 };
+
+// A minimal JPEG buffer (just the magic bytes)
+const jpegBuffer = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46]);
 
 describe('MediaService', () => {
 	let service: MediaService;
@@ -53,225 +95,177 @@ describe('MediaService', () => {
 				MediaService,
 				{ provide: MediaRepository, useValue: mockMediaRepository },
 				{ provide: StorageService, useValue: mockStorageService },
+				{ provide: QuotaService, useValue: mockQuotaService },
 				{ provide: getS3ConnectionToken('default'), useValue: mockS3 },
 				{ provide: ConfigService, useValue: mockConfigService },
+				{ provide: CACHE_MANAGER, useValue: mockCache },
+				{ provide: getRepositoryToken(MediaAccessLog), useValue: mockAccessLogRepo },
 			],
 		}).compile();
 
 		service = module.get<MediaService>(MediaService);
 	});
 
-	describe('upload', () => {
-		it('should upload file via StorageService and persist a Media record', async () => {
-			const ownerId = 'user-uuid-1';
-			const file = {
-				originalname: 'photo.jpg',
-				mimetype: 'image/jpeg',
-				size: 1024,
-				buffer: Buffer.from('data'),
-			} as Express.Multer.File;
+	describe('upload()', () => {
+		const file: Express.Multer.File = {
+			originalname: 'photo.jpg',
+			mimetype: 'image/jpeg',
+			size: 1024,
+			buffer: jpegBuffer,
+		} as unknown as Express.Multer.File;
 
-			mockStorageService.buildPath.mockReturnValue('messages/user-uuid-1/media-uuid-1.bin');
+		it('should upload file and return UploadMediaResponseDto', async () => {
+			const media = makeMedia();
+			mockMediaRepository.save.mockResolvedValue(media);
 
-			const saved = new Media();
-			saved.id = 'media-uuid-1';
-			saved.ownerId = ownerId;
-			saved.context = 'messages';
-			saved.contentType = file.mimetype;
-			saved.blobSize = file.size;
-			saved.storagePath = 'messages/user-uuid-1/media-uuid-1.bin';
-			saved.thumbnailPath = null;
-			saved.expiresAt = null;
-			saved.isActive = true;
-			saved.createdAt = new Date();
-			saved.updatedAt = new Date();
+			const result = await service.upload('user-uuid-1', file, MediaContext.MESSAGE);
 
-			mockMediaRepository.save.mockResolvedValue(saved);
-
-			const result = await service.upload(ownerId, file, 'messages');
-
-			expect(mockStorageService.buildPath).toHaveBeenCalledWith(
-				'messages',
-				ownerId,
-				expect.any(String)
-			);
-			expect(mockStorageService.upload).toHaveBeenCalledWith(
-				'messages/user-uuid-1/media-uuid-1.bin',
-				expect.any(Object),
-				'image/jpeg',
-				1024
-			);
-			expect(mockMediaRepository.save).toHaveBeenCalledWith(
-				expect.objectContaining({
-					ownerId,
-					context: 'messages',
-					contentType: 'image/jpeg',
-					blobSize: 1024,
-					storagePath: 'messages/user-uuid-1/media-uuid-1.bin',
-				})
-			);
-			expect(result).toBe(saved);
+			expect(mockQuotaService.enforceQuota).toHaveBeenCalledWith('user-uuid-1', 1024);
+			expect(mockStorageService.upload).toHaveBeenCalled();
+			expect(mockMediaRepository.save).toHaveBeenCalled();
+			expect(mockQuotaService.recordUpload).toHaveBeenCalled();
+			expect(result).toHaveProperty('mediaId');
 		});
 
-		it('should default to messages context for unknown context values', async () => {
-			const ownerId = 'user-uuid-1';
-			const file = {
-				originalname: 'file.bin',
-				mimetype: 'application/octet-stream',
-				size: 512,
-				buffer: Buffer.from('data'),
-			} as Express.Multer.File;
+		it('throws 429 HttpException when semaphore is at max', async () => {
+			// Simulate 3 concurrent uploads already in progress
+			mockCache.get.mockResolvedValue(3);
 
-			mockStorageService.buildPath.mockReturnValue('messages/user-uuid-1/some-id.bin');
-			mockMediaRepository.save.mockResolvedValue(new Media());
+			await expect(service.upload('user-uuid-1', file, MediaContext.MESSAGE)).rejects.toThrow(
+				HttpException
+			);
+		});
 
-			await service.upload(ownerId, file, 'unknown');
+		it('returns existing media on dedup cache hit', async () => {
+			mockCache.get
+				.mockResolvedValueOnce(0) // semaphore
+				.mockResolvedValueOnce('existing-media-id'); // dedup hit
 
-			expect(mockStorageService.buildPath).toHaveBeenCalledWith(
-				'messages',
-				ownerId,
-				expect.any(String)
+			const existingMedia = makeMedia({ id: 'existing-media-id' });
+			mockMediaRepository.findById.mockResolvedValue(existingMedia);
+
+			const result = await service.upload('user-uuid-1', file, MediaContext.MESSAGE);
+
+			expect(result.mediaId).toBe('existing-media-id');
+			expect(mockStorageService.upload).not.toHaveBeenCalled();
+		});
+
+		it('throws PayloadTooLargeException when quota is exceeded', async () => {
+			// semaphore is fine (0), but quota check fails
+			mockCache.get.mockResolvedValueOnce(0); // semaphore
+			mockQuotaService.enforceQuota.mockRejectedValue(new PayloadTooLargeException('quota exceeded'));
+
+			await expect(service.upload('user-uuid-1', file, MediaContext.MESSAGE)).rejects.toThrow(
+				PayloadTooLargeException
 			);
 		});
 	});
 
-	describe('getDownloadUrl', () => {
-		it('should return a public URL for avatar context', async () => {
-			const media = new Media();
-			media.id = 'media-uuid-1';
-			media.storagePath = 'avatars/user-1/media-uuid-1';
-			media.context = 'avatars';
-			media.signedUrlExpiresAt = null;
+	describe('getMetadata()', () => {
+		it('returns media metadata for the owner', async () => {
+			const media = makeMedia({ ownerId: 'user-uuid-1' });
+			mockCache.get.mockResolvedValue(null); // no cache
 			mockMediaRepository.findById.mockResolvedValue(media);
 
-			const url = await service.getDownloadUrl('media-uuid-1');
+			const result = await service.getMetadata('media-uuid-1', 'user-uuid-1');
 
-			expect(mockStorageService.getPublicUrl).toHaveBeenCalledWith('avatars/user-1/media-uuid-1');
-			expect(url).toBe('http://minio:9000/test-bucket/avatars/user-1/media-uuid-1');
-			expect(mockMediaRepository.updateSignedUrlExpiry).not.toHaveBeenCalled();
+			expect(result.id).toBe('media-uuid-1');
 		});
 
-		it('should return a public URL for group_icons context', async () => {
-			const media = new Media();
-			media.id = 'media-uuid-2';
-			media.storagePath = 'group_icons/user-1/media-uuid-2';
-			media.context = 'group_icons';
-			media.signedUrlExpiresAt = null;
-			mockMediaRepository.findById.mockResolvedValue(media);
-
-			const url = await service.getDownloadUrl('media-uuid-2');
-
-			expect(mockStorageService.getPublicUrl).toHaveBeenCalledWith('group_icons/user-1/media-uuid-2');
-			expect(url).toBe('http://minio:9000/test-bucket/group_icons/user-1/media-uuid-2');
-		});
-
-		it('should generate a presigned URL and persist expiry for messages context when no cached expiry', async () => {
-			const media = new Media();
-			media.id = 'media-uuid-3';
-			media.storagePath = 'messages/user-1/media-uuid-3.bin';
-			media.context = 'messages';
-			media.signedUrlExpiresAt = null;
-			mockMediaRepository.findById.mockResolvedValue(media);
-			mockMediaRepository.updateSignedUrlExpiry.mockResolvedValue(undefined);
-
-			const url = await service.getDownloadUrl('media-uuid-3');
-
-			expect(url).toBe('https://presigned.url/file');
-			expect(mockMediaRepository.updateSignedUrlExpiry).toHaveBeenCalledWith(
-				'media-uuid-3',
-				expect.any(Date)
-			);
-		});
-
-		it('should re-generate presigned URL when signedUrlExpiresAt is in the past', async () => {
-			const media = new Media();
-			media.id = 'media-uuid-4';
-			media.storagePath = 'messages/user-1/media-uuid-4.bin';
-			media.context = 'messages';
-			media.signedUrlExpiresAt = new Date(Date.now() - 1000);
-			mockMediaRepository.findById.mockResolvedValue(media);
-			mockMediaRepository.updateSignedUrlExpiry.mockResolvedValue(undefined);
-
-			const url = await service.getDownloadUrl('media-uuid-4');
-
-			expect(url).toBe('https://presigned.url/file');
-			expect(mockMediaRepository.updateSignedUrlExpiry).toHaveBeenCalled();
-		});
-
-		it('should generate presigned URL without updating expiry when signedUrlExpiresAt is still valid', async () => {
-			const media = new Media();
-			media.id = 'media-uuid-5';
-			media.storagePath = 'messages/user-1/media-uuid-5.bin';
-			media.context = 'messages';
-			media.signedUrlExpiresAt = new Date(Date.now() + 60 * 60 * 1000);
-			mockMediaRepository.findById.mockResolvedValue(media);
-
-			const url = await service.getDownloadUrl('media-uuid-5');
-
-			expect(url).toBe('https://presigned.url/file');
-			expect(mockMediaRepository.updateSignedUrlExpiry).not.toHaveBeenCalled();
-		});
-
-		it('should throw NotFoundException when media does not exist', async () => {
+		it('throws NotFoundException for non-existent media', async () => {
+			mockCache.get.mockResolvedValue(null);
 			mockMediaRepository.findById.mockResolvedValue(null);
 
-			await expect(service.getDownloadUrl('missing-id')).rejects.toThrow(NotFoundException);
+			await expect(service.getMetadata('missing', 'user-uuid-1')).rejects.toThrow(
+				NotFoundException
+			);
+		});
+
+		it('throws ForbiddenException when non-owner requests message media', async () => {
+			const media = makeMedia({ ownerId: 'owner-1', context: MediaContext.MESSAGE });
+			mockCache.get.mockResolvedValue(null);
+			mockMediaRepository.findById.mockResolvedValue(media);
+
+			await expect(service.getMetadata('media-uuid-1', 'other-user')).rejects.toThrow(
+				ForbiddenException
+			);
+		});
+
+		it('allows any user to read avatar metadata', async () => {
+			const media = makeMedia({ ownerId: 'owner-1', context: MediaContext.AVATAR });
+			mockCache.get.mockResolvedValue(null);
+			mockMediaRepository.findById.mockResolvedValue(media);
+
+			await expect(service.getMetadata('media-uuid-1', 'any-user')).resolves.toBeDefined();
 		});
 	});
 
-	describe('getStream', () => {
-		it('should return stream and contentType for an existing media', async () => {
-			const media = new Media();
-			media.id = 'media-uuid-1';
-			media.storagePath = 'messages/user-1/media-uuid-1.bin';
-			media.contentType = 'image/jpeg';
+	describe('delete()', () => {
+		it('soft deletes media, releases quota, and invalidates cache', async () => {
+			const media = makeMedia();
 			mockMediaRepository.findById.mockResolvedValue(media);
 
-			const fakeStream = {};
-			mockStorageService.download.mockResolvedValue(fakeStream);
+			await service.delete('media-uuid-1', 'user-uuid-1');
 
-			const result = await service.getStream('media-uuid-1');
-
-			expect(mockMediaRepository.findById).toHaveBeenCalledWith('media-uuid-1');
-			expect(mockStorageService.download).toHaveBeenCalledWith('messages/user-1/media-uuid-1.bin');
-			expect(result.contentType).toBe('image/jpeg');
-			expect(result.stream).toBe(fakeStream);
-		});
-
-		it('should throw NotFoundException when media does not exist', async () => {
-			mockMediaRepository.findById.mockResolvedValue(null);
-
-			await expect(service.getStream('missing-id')).rejects.toThrow(NotFoundException);
-		});
-	});
-
-	describe('delete', () => {
-		it('should delete from StorageService and soft-delete when requester is owner', async () => {
-			const media = new Media();
-			media.id = 'media-uuid-1';
-			media.ownerId = 'user-1';
-			media.storagePath = 'messages/user-1/media-uuid-1.bin';
-			mockMediaRepository.findById.mockResolvedValue(media);
-
-			await service.delete('media-uuid-1', 'user-1');
-
-			expect(mockStorageService.delete).toHaveBeenCalledWith('messages/user-1/media-uuid-1.bin');
 			expect(mockMediaRepository.softDelete).toHaveBeenCalledWith('media-uuid-1');
+			expect(mockCache.del).toHaveBeenCalledWith('media:meta:media-uuid-1');
+			expect(mockQuotaService.recordDelete).toHaveBeenCalledWith('user-uuid-1', 1024);
 		});
 
-		it('should throw NotFoundException when media does not exist', async () => {
-			mockMediaRepository.findById.mockResolvedValue(null);
-
-			await expect(service.delete('missing-id', 'user-1')).rejects.toThrow(NotFoundException);
-		});
-
-		it('should throw NotFoundException when requester is not the owner', async () => {
-			const media = new Media();
-			media.id = 'media-uuid-1';
-			media.ownerId = 'user-1';
+		it('throws ForbiddenException when non-owner tries to delete', async () => {
+			const media = makeMedia({ ownerId: 'owner-1' });
 			mockMediaRepository.findById.mockResolvedValue(media);
 
-			await expect(service.delete('media-uuid-1', 'user-2')).rejects.toThrow(NotFoundException);
+			await expect(service.delete('media-uuid-1', 'other-user')).rejects.toThrow(
+				ForbiddenException
+			);
+		});
+
+		it('throws NotFoundException when media does not exist', async () => {
+			mockMediaRepository.findById.mockResolvedValue(null);
+
+			await expect(service.delete('missing', 'user-uuid-1')).rejects.toThrow(NotFoundException);
+		});
+	});
+
+	describe('getBlobUrl()', () => {
+		it('returns signed URL for message media owner', async () => {
+			const media = makeMedia();
+			mockMediaRepository.findById.mockResolvedValue(media);
+			mockMediaRepository.updateSignedUrlExpiry.mockResolvedValue(undefined);
+
+			const url = await service.getBlobUrl('media-uuid-1', 'user-uuid-1');
+
+			expect(url).toBe('https://presigned.url/file');
+		});
+
+		it('throws ForbiddenException for non-owner on message media', async () => {
+			const media = makeMedia({ ownerId: 'owner-1' });
+			mockMediaRepository.findById.mockResolvedValue(media);
+
+			await expect(service.getBlobUrl('media-uuid-1', 'other-user')).rejects.toThrow(
+				ForbiddenException
+			);
+		});
+	});
+
+	describe('getThumbnailUrl()', () => {
+		it('throws NotFoundException when no thumbnail exists', async () => {
+			const media = makeMedia({ thumbnailPath: null });
+			mockMediaRepository.findById.mockResolvedValue(media);
+
+			await expect(service.getThumbnailUrl('media-uuid-1', 'user-uuid-1')).rejects.toThrow(
+				NotFoundException
+			);
+		});
+
+		it('returns signed URL when thumbnail exists', async () => {
+			const media = makeMedia({ thumbnailPath: 'thumbnails/user-uuid-1/media-uuid-1.bin' });
+			mockMediaRepository.findById.mockResolvedValue(media);
+
+			const url = await service.getThumbnailUrl('media-uuid-1', 'user-uuid-1');
+
+			expect(url).toBe('https://presigned.url/file');
 		});
 	});
 });

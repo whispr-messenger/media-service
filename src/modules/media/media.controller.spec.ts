@@ -1,13 +1,17 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException } from '@nestjs/common';
-import { Readable } from 'stream';
 import { MediaController } from './media.controller';
 import { MediaService } from './media.service';
+import { MediaContext, UploadMediaDto } from './dto/upload-media.dto';
+import type { Request, Response } from 'express';
 
 const mockMediaService = {
 	upload: jest.fn(),
-	getStream: jest.fn(),
+	getMetadata: jest.fn(),
+	getBlobUrl: jest.fn(),
+	getThumbnailUrl: jest.fn(),
 	delete: jest.fn(),
+	getStream: jest.fn(),
 };
 
 describe('MediaController', () => {
@@ -25,93 +29,130 @@ describe('MediaController', () => {
 	});
 
 	describe('upload()', () => {
-		it('should return UploadMediaResponseDto shape when file and ownerId are provided', async () => {
-			const file = {
-				originalname: 'photo.jpg',
-				mimetype: 'image/jpeg',
+		const dto: UploadMediaDto = { context: MediaContext.MESSAGE, ownerId: 'user-uuid-1' };
+		const file = {
+			originalname: 'photo.jpg',
+			mimetype: 'image/jpeg',
+			size: 2048,
+			buffer: Buffer.from('data'),
+		} as Express.Multer.File;
+
+		it('should return UploadMediaResponseDto on success', async () => {
+			const expected = {
+				mediaId: 'media-uuid-1',
+				url: 'http://minio/messages/photo.jpg',
+				thumbnailUrl: null,
+				expiresAt: null,
+				context: MediaContext.MESSAGE,
 				size: 2048,
-				buffer: Buffer.from('data'),
-			} as Express.Multer.File;
-
-			const createdAt = new Date();
-			const media = {
-				id: 'media-uuid-1',
-				contentType: 'image/jpeg',
-				blobSize: 2048,
-				createdAt,
 			};
+			mockMediaService.upload.mockResolvedValue(expected);
 
-			mockMediaService.upload.mockResolvedValue(media);
-
-			const result = await controller.upload('user-uuid-1', file);
-
-			expect(result).toEqual({
-				id: 'media-uuid-1',
-				contentType: 'image/jpeg',
-				blobSize: 2048,
-				createdAt,
-			});
-		});
-
-		it('should throw BadRequestException when no file is provided', async () => {
-			await expect(
-				controller.upload('user-uuid-1', undefined as unknown as Express.Multer.File)
-			).rejects.toThrow(new BadRequestException('No file provided'));
-		});
-
-		it('should throw BadRequestException when ownerId header is missing', async () => {
-			const file = {
-				originalname: 'photo.jpg',
-				mimetype: 'image/jpeg',
-				size: 512,
-				buffer: Buffer.from('x'),
-			} as Express.Multer.File;
-
-			await expect(controller.upload(undefined as unknown as string, file)).rejects.toThrow(
-				new BadRequestException('Missing x-user-id header')
+			const result = await controller.upload(
+				'user-uuid-1',
+				{ file: [file], thumbnail: [] },
+				dto
 			);
+
+			expect(result).toEqual(expected);
+		});
+
+		it('throws BadRequestException when no file is provided', async () => {
+			await expect(
+				controller.upload('user-uuid-1', { file: [], thumbnail: [] }, dto)
+			).rejects.toThrow(BadRequestException);
+		});
+
+		it('throws BadRequestException when x-user-id header is missing', async () => {
+			await expect(
+				controller.upload(
+					undefined as unknown as string,
+					{ file: [file], thumbnail: [] },
+					dto
+				)
+			).rejects.toThrow(BadRequestException);
+		});
+
+		it('throws BadRequestException when ownerId does not match header', async () => {
+			const mismatchDto: UploadMediaDto = { context: MediaContext.MESSAGE, ownerId: 'other-user' };
+			await expect(
+				controller.upload('user-uuid-1', { file: [file] }, mismatchDto)
+			).rejects.toThrow(BadRequestException);
 		});
 	});
 
-	describe('download()', () => {
-		it('should set correct Content-Type header and pipe stream to response', async () => {
-			const stream = new Readable({ read() {} });
+	describe('getMetadata()', () => {
+		it('throws BadRequestException when x-user-id is missing', async () => {
+			await expect(
+				controller.getMetadata('media-id', undefined as unknown as string)
+			).rejects.toThrow(BadRequestException);
+		});
 
-			mockMediaService.getStream.mockResolvedValue({
-				stream,
-				contentType: 'image/jpeg',
-			});
+		it('returns metadata on success', async () => {
+			const meta = { id: 'media-id', ownerId: 'user-uuid-1' };
+			mockMediaService.getMetadata.mockResolvedValue(meta);
 
-			const setHeader = jest.fn();
-			const pipe = jest
-				.spyOn(stream, 'pipe')
-				.mockImplementation(() => stream as unknown as NodeJS.WritableStream);
-			const res = { setHeader, pipe } as unknown as import('express').Response;
+			const result = await controller.getMetadata('media-id', 'user-uuid-1');
 
-			await controller.download('media-uuid-1', res);
+			expect(result).toEqual(meta);
+		});
+	});
 
-			expect(setHeader).toHaveBeenCalledWith('Content-Type', 'image/jpeg');
-			expect(setHeader).toHaveBeenCalledWith(
-				'Content-Disposition',
-				'attachment; filename="media-uuid-1"'
-			);
-			expect(pipe).toHaveBeenCalledWith(res);
+	describe('getBlobUrl()', () => {
+		it('redirects to blob URL', async () => {
+			mockMediaService.getBlobUrl.mockResolvedValue('https://blob.url');
+			const redirect = jest.fn();
+			const res = { redirect } as unknown as Response;
+			const req = { headers: {}, socket: {} } as Request;
+
+			await controller.getBlobUrl('media-id', 'user-uuid-1', req, res);
+
+			expect(redirect).toHaveBeenCalledWith(302, 'https://blob.url');
+		});
+
+		it('throws BadRequestException when x-user-id is missing', async () => {
+			const res = { redirect: jest.fn() } as unknown as Response;
+			const req = { headers: {}, socket: {} } as Request;
+
+			await expect(
+				controller.getBlobUrl('media-id', undefined as unknown as string, req, res)
+			).rejects.toThrow(BadRequestException);
+		});
+	});
+
+	describe('getThumbnailUrl()', () => {
+		it('redirects to thumbnail URL', async () => {
+			mockMediaService.getThumbnailUrl.mockResolvedValue('https://thumb.url');
+			const redirect = jest.fn();
+			const res = { redirect } as unknown as Response;
+			const req = { headers: {}, socket: {} } as Request;
+
+			await controller.getThumbnailUrl('media-id', 'user-uuid-1', req, res);
+
+			expect(redirect).toHaveBeenCalledWith(302, 'https://thumb.url');
 		});
 	});
 
 	describe('delete()', () => {
-		it('should throw BadRequestException when requesterId header is missing', async () => {
-			await expect(controller.delete('media-uuid-1', undefined as unknown as string)).rejects.toThrow(
-				new BadRequestException('Missing x-user-id header')
-			);
+		it('throws BadRequestException when x-user-id is missing', async () => {
+			const req = { headers: {}, socket: {} } as Request;
+			await expect(
+				controller.delete('media-id', undefined as unknown as string, req)
+			).rejects.toThrow(BadRequestException);
 		});
 
-		it('should call mediaService.delete and return void when requesterId is provided', async () => {
+		it('calls mediaService.delete and returns void', async () => {
 			mockMediaService.delete.mockResolvedValue(undefined);
+			const req = { headers: {}, socket: {} } as Request;
 
-			const result = await controller.delete('media-uuid-1', 'user-uuid-1');
+			const result = await controller.delete('media-id', 'user-uuid-1', req);
 
-			expect(mockMediaService.delete).toHaveBeenCalledWith('media-uuid-1', 'user-uuid-1');
+			expect(mockMediaService.delete).toHaveBeenCalledWith(
+				'media-id',
+				'user-uuid-1',
+				undefined,
+				undefined
+			);
 			expect(result).toBeUndefined();
 		});
 	});
