@@ -10,6 +10,7 @@ import { typeOrmModuleAsyncOptions } from './config/typeorm.config';
 import { s3ModuleAsyncOptions } from './config/s3.config';
 import { HealthModule } from './modules/health/health.module';
 import { MediaModule } from './modules/media/media.module';
+import { JwksModule } from './modules/jwks/jwks.module';
 
 @Module({
 	imports: [
@@ -23,6 +24,7 @@ import { MediaModule } from './modules/media/media.module';
 		CacheModule.registerAsync(cacheModuleAsyncOptions),
 		ScheduleModule.forRoot(),
 		S3Module.forRootAsync(s3ModuleAsyncOptions),
+		JwksModule,
 		HealthModule,
 		MediaModule,
 	],
