@@ -3,11 +3,10 @@ import { RlsContextService } from './rls-context.service';
 import { DataSource } from 'typeorm';
 import type { TransactionStartEvent } from 'typeorm';
 
-const makeDataSource = (): DataSource =>
-	({ subscribers: [] } as unknown as DataSource);
+const makeDataSource = (): DataSource => ({ subscribers: [] }) as unknown as DataSource;
 
 const makeEvent = (): TransactionStartEvent =>
-	({ queryRunner: { query: jest.fn() } } as unknown as TransactionStartEvent);
+	({ queryRunner: { query: jest.fn() } }) as unknown as TransactionStartEvent;
 
 describe('RlsSubscriber', () => {
 	let rlsContext: RlsContextService;
@@ -38,9 +37,7 @@ describe('RlsSubscriber', () => {
 			await subscriber.afterTransactionStart(event);
 		});
 
-		expect(event.queryRunner.query).toHaveBeenCalledWith(
-			`SET LOCAL "app.current_user_id" = '${userId}'`
-		);
+		expect(event.queryRunner.query).toHaveBeenCalledWith(`SET LOCAL "app.current_user_id" = '${userId}'`);
 	});
 
 	it('does not throw if the query fails — it only logs the error', async () => {
