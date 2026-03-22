@@ -11,12 +11,15 @@ import {
 /**
  * Configures S3/MinIO lifecycle policies for automatic blob expiration.
  *
- * Rules are applied at application startup only if they are not already
- * present (idempotent). Two prefixes are covered:
+ * Rules are applied at application startup. If rules already exist with
+ * matching TTL values, the PUT is skipped (idempotent). If TTL values
+ * have changed in configuration, the rules are updated. Two prefixes
+ * are currently covered:
  *
- * - `messages/`  — per-message blobs; TTL driven by MESSAGE_BLOB_TTL_DAYS
- *                  (default: 30 days after the object's LastModified date)
- * - `thumbnails/` — same TTL as messages
+ * - `messages/`    — per-message blobs; TTL driven by MESSAGE_BLOB_TTL_DAYS
+ *                    (default: 30 days after the object's LastModified date)
+ * - `thumbnails/`  — thumbnail blobs; TTL driven by THUMBNAIL_BLOB_TTL_DAYS
+ *                    (default: 30 days)
  *
  * MinIO supports lifecycle policies via the AWS S3-compatible API, so no
  * additional Helm or MinIO configuration is required beyond enabling the
@@ -27,13 +30,21 @@ export class LifecycleService implements OnApplicationBootstrap {
 	private readonly logger = new Logger(LifecycleService.name);
 	private readonly bucket: string;
 	private readonly messageBlobTtlDays: number;
+	private readonly thumbnailBlobTtlDays: number;
 
 	constructor(
 		@InjectS3() private readonly s3: S3,
 		private readonly configService: ConfigService
 	) {
 		this.bucket = this.configService.get<string>('S3_BUCKET', 'whispr-media');
-		this.messageBlobTtlDays = this.configService.get<number>('MESSAGE_BLOB_TTL_DAYS', 30);
+		this.messageBlobTtlDays = parseInt(
+			String(this.configService.get<number>('MESSAGE_BLOB_TTL_DAYS', 30)),
+			10
+		);
+		this.thumbnailBlobTtlDays = parseInt(
+			String(this.configService.get<number>('THUMBNAIL_BLOB_TTL_DAYS', 30)),
+			10
+		);
 	}
 
 	async onApplicationBootstrap(): Promise<void> {
@@ -65,7 +76,17 @@ export class LifecycleService implements OnApplicationBootstrap {
 		const existingIds = new Set(existingRules.map((r) => r.ID ?? ''));
 		const allPresent = [...desiredRuleIds].every((id) => existingIds.has(id));
 
-		if (allPresent) {
+		// Check if existing rules match desired configuration (TTL values)
+		const rulesUpToDate =
+			allPresent &&
+			existingRules.some(
+				(r) => r.ID === 'messages-expiry' && r.Expiration?.Days === this.messageBlobTtlDays
+			) &&
+			existingRules.some(
+				(r) => r.ID === 'thumbnails-expiry' && r.Expiration?.Days === this.thumbnailBlobTtlDays
+			);
+
+		if (rulesUpToDate) {
 			this.logger.log('S3 lifecycle policies already configured — skipping');
 			return;
 		}
@@ -73,7 +94,8 @@ export class LifecycleService implements OnApplicationBootstrap {
 		// Merge: keep existing rules that are not ours, then add/replace ours
 		const otherRules = existingRules.filter((r) => !desiredRuleIds.has(r.ID ?? ''));
 
-		const expiration: LifecycleExpiration = { Days: this.messageBlobTtlDays };
+		const messageExpiration: LifecycleExpiration = { Days: this.messageBlobTtlDays };
+		const thumbnailExpiration: LifecycleExpiration = { Days: this.thumbnailBlobTtlDays };
 
 		const newRules: LifecycleRule[] = [
 			...otherRules,
@@ -81,13 +103,13 @@ export class LifecycleService implements OnApplicationBootstrap {
 				ID: 'messages-expiry',
 				Status: 'Enabled',
 				Filter: { Prefix: 'messages/' },
-				Expiration: expiration,
+				Expiration: messageExpiration,
 			},
 			{
 				ID: 'thumbnails-expiry',
 				Status: 'Enabled',
 				Filter: { Prefix: 'thumbnails/' },
-				Expiration: expiration,
+				Expiration: thumbnailExpiration,
 			},
 		];
 
@@ -99,8 +121,9 @@ export class LifecycleService implements OnApplicationBootstrap {
 		);
 
 		this.logger.log(
-			`S3 lifecycle policies applied: messages/ and thumbnails/ expire after ` +
-				`${this.messageBlobTtlDays} days`
+			`S3 lifecycle policies applied: messages/ expire after ` +
+				`${this.messageBlobTtlDays} days, thumbnails/ expire after ` +
+				`${this.thumbnailBlobTtlDays} days`
 		);
 	}
 }
