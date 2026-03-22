@@ -39,7 +39,7 @@ describe('RlsSubscriber', () => {
 
 		expect(event.queryRunner.query).toHaveBeenCalledWith(
 			`SELECT set_config('app.current_user_id', $1, true)`,
-			[userId],
+			[userId]
 		);
 	});
 
@@ -50,7 +50,7 @@ describe('RlsSubscriber', () => {
 		(event.queryRunner.query as jest.Mock).mockRejectedValueOnce(dbError);
 
 		await expect(
-			rlsContext.run(userId, async () => subscriber.afterTransactionStart(event)),
+			rlsContext.run(userId, async () => subscriber.afterTransactionStart(event))
 		).rejects.toThrow('db error');
 	});
 });

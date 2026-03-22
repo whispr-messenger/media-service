@@ -53,16 +53,10 @@ export class RlsSubscriber implements EntitySubscriberInterface {
 		}
 
 		try {
-			await event.queryRunner.query(
-				`SELECT set_config('app.current_user_id', $1, true)`,
-				[userId],
-			);
+			await event.queryRunner.query(`SELECT set_config('app.current_user_id', $1, true)`, [userId]);
 		} catch (error) {
 			const err = error as Error;
-			this.logger.error(
-				`Failed to set app.current_user_id GUC: ${err.message}`,
-				err.stack,
-			);
+			this.logger.error(`Failed to set app.current_user_id GUC: ${err.message}`, err.stack);
 			throw error;
 		}
 	}
