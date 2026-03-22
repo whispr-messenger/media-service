@@ -14,6 +14,11 @@ import { RlsContextService } from './rls-context.service';
  * The {@link RlsSubscriber} then picks up the user ID on every transaction
  * start and runs `set_config('app.current_user_id', …)` so PostgreSQL RLS
  * policies can restrict rows to the request owner.
+ *
+ * **Scope:** Registered globally via `APP_INTERCEPTOR` so every route is
+ * covered without manual decorator wiring. For unauthenticated routes the
+ * interceptor is a no-op (no userId → early return), so the overhead is
+ * negligible and we avoid the risk of forgetting to apply it on a new route.
  */
 @Injectable()
 export class RlsInterceptor implements NestInterceptor {
@@ -29,7 +34,8 @@ export class RlsInterceptor implements NestInterceptor {
 
 		return new Observable((observer) => {
 			this.rlsContext.run(userId, () => {
-				next.handle().subscribe(observer);
+				const sub = next.handle().subscribe(observer);
+				observer.add(sub);
 			});
 		});
 	}

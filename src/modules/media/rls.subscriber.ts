@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource, EntitySubscriberInterface, EventSubscriber, TransactionStartEvent } from 'typeorm';
 import { RlsContextService } from './rls-context.service';
@@ -36,7 +36,7 @@ import { RlsContextService } from './rls-context.service';
  */
 @Injectable()
 @EventSubscriber()
-export class RlsSubscriber implements EntitySubscriberInterface {
+export class RlsSubscriber implements EntitySubscriberInterface, OnModuleInit {
 	private readonly logger = new Logger(RlsSubscriber.name);
 
 	constructor(
@@ -46,12 +46,32 @@ export class RlsSubscriber implements EntitySubscriberInterface {
 		dataSource.subscribers.push(this);
 	}
 
+	/**
+	 * Verify at startup that the DB role is NOT a superuser.
+	 * Superusers bypass all RLS policies, making them useless.
+	 */
+	async onModuleInit(): Promise<void> {
+		const result = await this.dataSource.query(`SELECT current_setting('is_superuser') AS is_superuser`);
+		if (result?.[0]?.is_superuser === 'on') {
+			throw new Error(
+				'The database connection is using a superuser role. ' +
+					'Superusers bypass RLS policies — use a dedicated non-superuser role (e.g. media_app).'
+			);
+		}
+		this.logger.log('Database role is non-superuser — RLS policies are active');
+	}
+
 	async afterTransactionStart(event: TransactionStartEvent): Promise<void> {
 		const userId = this.rlsContext.getCurrentUserId();
 		if (!userId) {
 			return;
 		}
 
+		// SECURITY: set_config(…, true) scopes the GUC to the current transaction.
+		// Queries executed outside an explicit transaction (e.g. plain `findOne`,
+		// `update`, `save`) do NOT pass through this hook and will therefore run
+		// WITHOUT the RLS GUC set. Ensure any security-sensitive query is wrapped
+		// in `dataSource.transaction(…)` or `queryRunner.startTransaction()`.
 		try {
 			await event.queryRunner.query(`SELECT set_config('app.current_user_id', $1, true)`, [userId]);
 		} catch (error) {
