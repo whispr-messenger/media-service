@@ -7,6 +7,11 @@ import { Media } from '../entities/media.entity';
 export class MediaRepository {
 	constructor(@InjectRepository(Media) private readonly repo: Repository<Media>) {}
 
+	// SECURITY: These repository methods use implicit transactions. The RLS GUC
+	// (`app.current_user_id`) is only set inside explicit transactions via the
+	// RlsSubscriber. If RLS filtering is required for any of these operations,
+	// wrap the call site in `dataSource.transaction(…)`.
+
 	async save(media: Media): Promise<Media> {
 		return this.repo.save(media);
 	}
