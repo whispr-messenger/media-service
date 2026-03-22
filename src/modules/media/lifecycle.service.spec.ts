@@ -8,6 +8,7 @@ const mockConfigService = {
 	get: jest.fn((key: string, def?: unknown) => {
 		if (key === 'S3_BUCKET') return 'whispr-media';
 		if (key === 'MESSAGE_BLOB_TTL_DAYS') return 30;
+		if (key === 'THUMBNAIL_BLOB_TTL_DAYS') return 30;
 		return def;
 	}),
 };
@@ -51,17 +52,31 @@ describe('LifecycleService', () => {
 		expect(thumbnailsRule?.Expiration.Days).toBe(30);
 	});
 
-	it('skips PUT when both rules already exist', async () => {
+	it('skips PUT when both rules already exist with correct TTL', async () => {
 		mockS3.send.mockResolvedValueOnce({
 			Rules: [
-				{ ID: 'messages-expiry', Status: 'Enabled' },
-				{ ID: 'thumbnails-expiry', Status: 'Enabled' },
+				{ ID: 'messages-expiry', Status: 'Enabled', Expiration: { Days: 30 } },
+				{ ID: 'thumbnails-expiry', Status: 'Enabled', Expiration: { Days: 30 } },
 			],
 		});
 
 		await service.ensureLifecyclePolicies();
 
 		expect(mockS3.send).toHaveBeenCalledTimes(1);
+	});
+
+	it('re-applies rules when TTL has changed', async () => {
+		mockS3.send.mockResolvedValueOnce({
+			Rules: [
+				{ ID: 'messages-expiry', Status: 'Enabled', Expiration: { Days: 7 } },
+				{ ID: 'thumbnails-expiry', Status: 'Enabled', Expiration: { Days: 30 } },
+			],
+		});
+		mockS3.send.mockResolvedValueOnce({});
+
+		await service.ensureLifecyclePolicies();
+
+		expect(mockS3.send).toHaveBeenCalledTimes(2);
 	});
 
 	it('re-applies rules when only one is present', async () => {
@@ -79,5 +94,11 @@ describe('LifecycleService', () => {
 		mockS3.send.mockRejectedValue(new Error('S3 error'));
 
 		await expect(service.onApplicationBootstrap()).resolves.toBeUndefined();
+	});
+
+	it('propagates unexpected S3 errors from GET', async () => {
+		mockS3.send.mockRejectedValueOnce(Object.assign(new Error('AccessDenied'), { name: 'AccessDenied' }));
+
+		await expect(service.ensureLifecyclePolicies()).rejects.toThrow('AccessDenied');
 	});
 });

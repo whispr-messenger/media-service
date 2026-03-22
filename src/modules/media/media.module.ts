@@ -1,4 +1,4 @@
-import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Media } from './entities/media.entity';
 import { UserQuota } from './entities/user-quota.entity';
@@ -21,9 +21,4 @@ import { LifecycleService } from './lifecycle.service';
 	],
 	controllers: [MediaController],
 })
-export class MediaModule implements NestModule {
-	// eslint-disable-next-line @typescript-eslint/no-unused-vars
-	configure(_consumer: MiddlewareConsumer): void {
-		// Middleware registered at app level — reserved for RLS (WHISPR-457)
-	}
-}
+export class MediaModule {}
