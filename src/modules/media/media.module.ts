@@ -1,4 +1,5 @@
-import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
+import { Module } from '@nestjs/common';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Media } from './entities/media.entity';
 import { UserQuota } from './entities/user-quota.entity';
@@ -9,7 +10,7 @@ import { MediaController } from './media.controller';
 import { MediaAccessLogPartitionService } from './media-access-log-partition.service';
 import { StorageService } from './storage.service';
 import { RlsContextService } from './rls-context.service';
-import { RlsMiddleware } from './rls.middleware';
+import { RlsInterceptor } from './rls.interceptor';
 import { RlsSubscriber } from './rls.subscriber';
 
 @Module({
@@ -21,12 +22,11 @@ import { RlsSubscriber } from './rls.subscriber';
 		MediaAccessLogPartitionService,
 		RlsContextService,
 		RlsSubscriber,
+		{
+			provide: APP_INTERCEPTOR,
+			useClass: RlsInterceptor,
+		},
 	],
 	controllers: [MediaController],
-	exports: [RlsContextService],
 })
-export class MediaModule implements NestModule {
-	configure(consumer: MiddlewareConsumer): void {
-		consumer.apply(RlsMiddleware).forRoutes('*');
-	}
-}
+export class MediaModule {}

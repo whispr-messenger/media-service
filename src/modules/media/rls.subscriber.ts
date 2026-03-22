@@ -4,14 +4,24 @@ import { DataSource, EntitySubscriberInterface, EventSubscriber, TransactionStar
 import { RlsContextService } from './rls-context.service';
 
 /**
- * TypeORM entity subscriber that fires `SET LOCAL "app.current_user_id" = '…'`
+ * TypeORM entity subscriber that fires `set_config('app.current_user_id', …, true)`
  * at the beginning of every transaction.
  *
- * Using SET LOCAL ensures the GUC is scoped to the transaction only and
- * cannot leak across connections in the pool when the connection is returned.
+ * Using `set_config` with `is_local = true` ensures the GUC is scoped to the
+ * current transaction only and cannot leak across connections in the pool when
+ * the connection is returned.
  *
- * The user ID is sourced from the request-scoped {@link RlsContextService}
- * via AsyncLocalStorage, so no constructor injection of the request is needed.
+ * **Important:** `SET LOCAL` (and `set_config(…, true)`) only take effect
+ * inside an explicit transaction. This subscriber hooks into
+ * `afterTransactionStart`, so it is guaranteed to run within a transaction
+ * context. For queries that do **not** use an explicit transaction (e.g. plain
+ * `findOne`, `update`), the GUC will NOT be set. Wrap such operations in
+ * `dataSource.transaction(…)` or `queryRunner.startTransaction()` if RLS
+ * filtering is required.
+ *
+ * The user ID is sourced from the {@link RlsContextService} which uses
+ * AsyncLocalStorage per-request state, so no constructor injection of the
+ * request is needed.
  *
  * ### Required role setup
  * The application DB role must NOT be a superuser (superusers bypass RLS).
@@ -43,9 +53,17 @@ export class RlsSubscriber implements EntitySubscriberInterface {
 		}
 
 		try {
-			await event.queryRunner.query(`SET LOCAL "app.current_user_id" = '${userId}'`);
+			await event.queryRunner.query(
+				`SELECT set_config('app.current_user_id', $1, true)`,
+				[userId],
+			);
 		} catch (error) {
-			this.logger.error(`Failed to set app.current_user_id GUC: ${(error as Error).message}`);
+			const err = error as Error;
+			this.logger.error(
+				`Failed to set app.current_user_id GUC: ${err.message}`,
+				err.stack,
+			);
+			throw error;
 		}
 	}
 }
