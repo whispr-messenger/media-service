@@ -3,7 +3,7 @@ import { RlsContextService } from './rls-context.service';
 import { DataSource } from 'typeorm';
 import type { TransactionStartEvent } from 'typeorm';
 
-const makeDataSource = (): DataSource => ({ subscribers: [] }) as unknown as DataSource;
+const makeDataSource = (): DataSource => ({ subscribers: [], query: jest.fn() }) as unknown as DataSource;
 
 const makeEvent = (): TransactionStartEvent =>
 	({ queryRunner: { query: jest.fn() } }) as unknown as TransactionStartEvent;
@@ -52,5 +52,24 @@ describe('RlsSubscriber', () => {
 		await expect(
 			rlsContext.run(userId, async () => subscriber.afterTransactionStart(event))
 		).rejects.toThrow('db error');
+	});
+
+	describe('onModuleInit', () => {
+		it('succeeds when the database role is not a superuser', async () => {
+			(dataSource.query as jest.Mock).mockResolvedValueOnce([{ is_superuser: 'off' }]);
+
+			await expect(subscriber.onModuleInit()).resolves.not.toThrow();
+			expect(dataSource.query).toHaveBeenCalledWith(
+				`SELECT current_setting('is_superuser') AS is_superuser`
+			);
+		});
+
+		it('throws when the database role is a superuser', async () => {
+			(dataSource.query as jest.Mock).mockResolvedValueOnce([{ is_superuser: 'on' }]);
+
+			await expect(subscriber.onModuleInit()).rejects.toThrow(
+				'The database connection is using a superuser role'
+			);
+		});
 	});
 });
