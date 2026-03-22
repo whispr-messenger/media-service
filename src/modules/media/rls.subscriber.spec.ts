@@ -23,13 +23,13 @@ describe('RlsSubscriber', () => {
 		expect(dataSource.subscribers).toContain(subscriber);
 	});
 
-	it('does NOT run SET LOCAL when no userId is in context', async () => {
+	it('does NOT run set_config when no userId is in context', async () => {
 		const event = makeEvent();
 		await subscriber.afterTransactionStart(event);
 		expect(event.queryRunner.query).not.toHaveBeenCalled();
 	});
 
-	it('runs SET LOCAL with the correct userId when context is set', async () => {
+	it('runs set_config with parameterized query when context is set', async () => {
 		const userId = '550e8400-e29b-41d4-a716-446655440000';
 		const event = makeEvent();
 
@@ -37,16 +37,20 @@ describe('RlsSubscriber', () => {
 			await subscriber.afterTransactionStart(event);
 		});
 
-		expect(event.queryRunner.query).toHaveBeenCalledWith(`SET LOCAL "app.current_user_id" = '${userId}'`);
+		expect(event.queryRunner.query).toHaveBeenCalledWith(
+			`SELECT set_config('app.current_user_id', $1, true)`,
+			[userId],
+		);
 	});
 
-	it('does not throw if the query fails — it only logs the error', async () => {
+	it('rethrows the error when the query fails', async () => {
 		const userId = '550e8400-e29b-41d4-a716-446655440000';
 		const event = makeEvent();
-		(event.queryRunner.query as jest.Mock).mockRejectedValueOnce(new Error('db error'));
+		const dbError = new Error('db error');
+		(event.queryRunner.query as jest.Mock).mockRejectedValueOnce(dbError);
 
 		await expect(
-			rlsContext.run(userId, async () => subscriber.afterTransactionStart(event))
-		).resolves.toBeUndefined();
+			rlsContext.run(userId, async () => subscriber.afterTransactionStart(event)),
+		).rejects.toThrow('db error');
 	});
 });
