@@ -12,6 +12,9 @@ const mockMediaService = {
 	getThumbnailUrl: jest.fn(),
 	delete: jest.fn(),
 	getStream: jest.fn(),
+	getUserQuota: jest.fn(),
+	getUserMedia: jest.fn(),
+	logAccess: jest.fn(),
 };
 
 describe('MediaController', () => {
@@ -124,6 +127,117 @@ describe('MediaController', () => {
 			expect(redirect).toHaveBeenCalledWith(302, 'https://thumb.url');
 		});
 	});
+
+	describe('getQuota()', () => {
+		it('should return user quota', async () => {
+			const quota = {
+				storageUsed: 100,
+				storageLimit: 1073741824,
+				filesCount: 1,
+				filesLimit: 1000,
+				dailyUploads: 1,
+				dailyUploadLimit: 100,
+				quotaDate: '2026-03-22',
+				usagePercent: 0,
+			};
+			mockMediaService.getUserQuota.mockResolvedValue(quota);
+
+			const result = await controller.getQuota('user-uuid-1');
+
+			expect(result).toEqual(quota);
+			expect(mockMediaService.getUserQuota).toHaveBeenCalledWith('user-uuid-1');
+		});
+
+		it('should throw BadRequestException when userId is missing', async () => {
+			await expect(controller.getQuota(undefined as unknown as string)).rejects.toThrow(
+				new BadRequestException('Missing x-user-id header')
+			);
+		});
+	});
+
+	describe('getMyMedia()', () => {
+		it('should return paginated media list with default params', async () => {
+			const response = {
+				items: [],
+				total: 0,
+				page: 1,
+				limit: 20,
+				totalPages: 0,
+			};
+			mockMediaService.getUserMedia.mockResolvedValue(response);
+
+			const result = await controller.getMyMedia('user-uuid-1');
+
+			expect(result).toEqual(response);
+			expect(mockMediaService.getUserMedia).toHaveBeenCalledWith('user-uuid-1', 1, 20);
+		});
+
+		it('should parse page and limit params', async () => {
+			mockMediaService.getUserMedia.mockResolvedValue({
+				items: [],
+				total: 0,
+				page: 2,
+				limit: 50,
+				totalPages: 0,
+			});
+
+			await controller.getMyMedia('user-uuid-1', '2', '50');
+
+			expect(mockMediaService.getUserMedia).toHaveBeenCalledWith('user-uuid-1', 2, 50);
+		});
+
+		it('should cap limit at 100', async () => {
+			mockMediaService.getUserMedia.mockResolvedValue({
+				items: [],
+				total: 0,
+				page: 1,
+				limit: 100,
+				totalPages: 0,
+			});
+
+			await controller.getMyMedia('user-uuid-1', '1', '200');
+
+			expect(mockMediaService.getUserMedia).toHaveBeenCalledWith('user-uuid-1', 1, 100);
+		});
+
+		it('should throw BadRequestException when userId is missing', async () => {
+			await expect(controller.getMyMedia(undefined as unknown as string)).rejects.toThrow(
+				new BadRequestException('Missing x-user-id header')
+			);
+		});
+	});
+
+	describe('download()', () => {
+		it('should set correct Content-Type header and pipe stream to response', async () => {
+			const stream = new Readable({ read() {} });
+
+			mockMediaService.getStream.mockResolvedValue({
+				stream,
+				contentType: 'image/jpeg',
+			});
+
+			const setHeader = jest.fn();
+			const pipe = jest
+				.spyOn(stream, 'pipe')
+				.mockImplementation(() => stream as unknown as NodeJS.WritableStream);
+			const res = { setHeader, pipe } as unknown as import('express').Response;
+
+			await controller.download('media-uuid-1', 'user-uuid-1', res);
+
+			expect(setHeader).toHaveBeenCalledWith('Content-Type', 'image/jpeg');
+			expect(setHeader).toHaveBeenCalledWith(
+				'Content-Disposition',
+				'attachment; filename="media-uuid-1"'
+			);
+			expect(pipe).toHaveBeenCalledWith(res);
+			expect(mockMediaService.logAccess).toHaveBeenCalledWith(
+				'media-uuid-1',
+				'user-uuid-1',
+				'download'
+			);
+		});
+	});
+
 
 	describe('delete()', () => {
 		it('throws BadRequestException when x-user-id is missing', async () => {
