@@ -6,7 +6,8 @@ import { DataSource, Repository } from 'typeorm';
 import { UserQuota } from './entities/user-quota.entity';
 import { Cron, CronExpression } from '@nestjs/schedule';
 
-const QUOTA_CACHE_TTL_S = 60 * 60; // 1 hour (cache-manager TTL is in seconds)
+// @keyv/redis (used by cache-manager v7) expects TTL in milliseconds.
+const QUOTA_CACHE_TTL_MS = 60 * 60 * 1_000; // 1 hour in milliseconds
 
 interface QuotaCheckResult {
 	allowed: boolean;
@@ -56,6 +57,9 @@ export class QuotaService {
 	// WHISPR-356: Pre-upload quota check
 	// -------------------------------------------------------------------------
 
+	// blobSize is a plain number (bytes). JavaScript numbers are safe up to 2^53-1
+	// (~9 PB), which is far above any realistic file size, so Number→BigInt conversion
+	// here is safe.
 	async checkQuota(userId: string, blobSize: number): Promise<QuotaCheckResult> {
 		const quota = await this.getOrCreateQuota(userId);
 
@@ -123,9 +127,12 @@ export class QuotaService {
 				.setParameters({ blobSize })
 				.execute();
 			if (!result.affected) {
-				throw new Error(`No quota row found for user ${userId} — cannot record upload`);
+				throw new Error(`No quota row found for user ${userId}`);
 			}
 		});
+		// Cache invalidation happens after the transaction commits. In the unlikely
+		// event of a crash between commit and DEL, the cache will serve stale data
+		// until the TTL expires (1 hour). This is an accepted trade-off.
 		await this.invalidateCache(userId);
 	}
 
@@ -146,6 +153,7 @@ export class QuotaService {
 				.setParameters({ blobSize })
 				.execute();
 		});
+		// Same post-transaction invalidation trade-off as recordUpload.
 		await this.invalidateCache(userId);
 	}
 
@@ -171,11 +179,13 @@ export class QuotaService {
 			.returning('"user_id"')
 			.execute();
 
-		const count = affected.affected ?? 0;
-		this.logger.log(`Daily quota reset: ${count} user(s) updated`);
+		// Use raw.length as the authoritative count: affected can be null on some
+		// TypeORM drivers even when rows were updated, but RETURNING always gives us
+		// the actual list of affected rows.
+		const userIds: string[] = ((affected.raw ?? []) as Array<{ user_id: string }>).map((r) => r.user_id);
+		this.logger.log(`Daily quota reset: ${userIds.length} user(s) updated`);
 
 		// Invalidate Redis cache for all affected users in chunks to avoid Redis burst
-		const userIds: string[] = ((affected.raw ?? []) as Array<{ user_id: string }>).map((r) => r.user_id);
 		const CHUNK_SIZE = 100;
 		for (let i = 0; i < userIds.length; i += CHUNK_SIZE) {
 			await Promise.all(userIds.slice(i, i + CHUNK_SIZE).map((id) => this.invalidateCache(id)));
@@ -220,7 +230,7 @@ export class QuotaService {
 			throw new Error(`Failed to create or fetch quota for user ${userId}`);
 		}
 
-		await this.cache.set(key, quota, QUOTA_CACHE_TTL_S);
+		await this.cache.set(key, quota, QUOTA_CACHE_TTL_MS);
 		return quota;
 	}
 }
