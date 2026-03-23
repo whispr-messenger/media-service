@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { DataSource } from 'typeorm';
-import { PayloadTooLargeException } from '@nestjs/common';
+import { BadRequestException, PayloadTooLargeException } from '@nestjs/common';
 import { QuotaService } from './quota.service';
 import { UserQuota } from './entities/user-quota.entity';
 
@@ -48,8 +48,11 @@ const mockCache = {
 	del: jest.fn(),
 };
 
+// mockDataSource.transaction is used by recordUpload, recordDelete, and
+// getOrCreateQuota. mockDataSource.query is used by resetDailyUploads.
 const mockDataSource = {
 	transaction: jest.fn(),
+	query: jest.fn(),
 };
 
 describe('QuotaService', () => {
@@ -69,6 +72,17 @@ describe('QuotaService', () => {
 
 		service = module.get(QuotaService);
 	});
+
+	// Helper: wire mockDataSource.transaction to use a fake manager that delegates
+	// getRepository() to mockQuotaRepo and createQueryBuilder() to a given qb.
+	function mockTransaction(qb?: object) {
+		mockDataSource.transaction.mockImplementation(async (cb: (manager: unknown) => Promise<unknown>) => {
+			return cb({
+				getRepository: () => mockQuotaRepo,
+				createQueryBuilder: () => qb,
+			});
+		});
+	}
 
 	describe('checkQuota()', () => {
 		it('returns allowed=true when quota is within limits', async () => {
@@ -106,6 +120,18 @@ describe('QuotaService', () => {
 			expect(result.reason).toMatch(/Daily upload/);
 		});
 
+		it('throws BadRequestException for negative blobSize', async () => {
+			await expect(service.checkQuota('user-1', -1)).rejects.toThrow(BadRequestException);
+		});
+
+		it('throws BadRequestException for NaN blobSize', async () => {
+			await expect(service.checkQuota('user-1', NaN)).rejects.toThrow(BadRequestException);
+		});
+
+		it('throws BadRequestException for float blobSize', async () => {
+			await expect(service.checkQuota('user-1', 1.5)).rejects.toThrow(BadRequestException);
+		});
+
 		it('creates quota row on cache miss and DB miss', async () => {
 			mockCache.get.mockResolvedValue(null);
 			const quota = makeQuota();
@@ -119,7 +145,7 @@ describe('QuotaService', () => {
 				orIgnore: jest.fn().mockReturnThis(),
 				execute: jest.fn().mockResolvedValue({}),
 			};
-			mockQuotaRepo.createQueryBuilder.mockReturnValue(qb);
+			mockTransaction(qb);
 			mockCache.set.mockResolvedValue(undefined);
 
 			const result = await service.checkQuota('user-1', 1);
@@ -145,7 +171,7 @@ describe('QuotaService', () => {
 				orIgnore: jest.fn().mockReturnThis(),
 				execute: jest.fn().mockResolvedValue({}),
 			};
-			mockQuotaRepo.createQueryBuilder.mockReturnValue(qb);
+			mockTransaction(qb);
 
 			await expect(service.checkQuota('user-1', 1)).rejects.toThrow('Failed to create or fetch quota');
 		});
@@ -205,6 +231,10 @@ describe('QuotaService', () => {
 				new Error('No quota row found for user user-1')
 			);
 		});
+
+		it('throws BadRequestException for invalid blobSize', async () => {
+			await expect(service.recordUpload('user-1', -1)).rejects.toThrow(BadRequestException);
+		});
 	});
 
 	describe('recordDelete()', () => {
@@ -248,46 +278,33 @@ describe('QuotaService', () => {
 				new Error('No quota row found for user user-1')
 			);
 		});
+
+		it('throws BadRequestException for invalid blobSize', async () => {
+			await expect(service.recordDelete('user-1', -1)).rejects.toThrow(BadRequestException);
+		});
 	});
 
 	describe('resetDailyUploads()', () => {
-		it('resets daily_uploads for stale rows and invalidates their caches', async () => {
-			const qb = {
-				update: jest.fn().mockReturnThis(),
-				set: jest.fn().mockReturnThis(),
-				where: jest.fn().mockReturnThis(),
-				returning: jest.fn().mockReturnThis(),
-				execute: jest
-					.fn()
-					.mockResolvedValue({ affected: 2, raw: [{ user_id: 'u1' }, { user_id: 'u2' }] }),
-			};
-			mockQuotaRepo.createQueryBuilder.mockReturnValue(qb);
+		it('calls the SECURITY DEFINER function and invalidates affected caches', async () => {
+			mockDataSource.query.mockResolvedValue([{ user_id: 'u1' }, { user_id: 'u2' }]);
 			mockCache.del.mockResolvedValue(undefined);
 
 			await service.resetDailyUploads();
 
-			expect(qb.set).toHaveBeenCalledWith(
-				expect.objectContaining({ dailyUploads: 0, quotaDate: expect.any(Function) })
+			expect(mockDataSource.query).toHaveBeenCalledWith(
+				expect.stringContaining('reset_daily_uploads()')
 			);
 			expect(mockCache.del).toHaveBeenCalledWith('quota:user:u1');
 			expect(mockCache.del).toHaveBeenCalledWith('quota:user:u2');
 		});
 
-		it('uses raw rows (not affected) for cache invalidation when affected is null', async () => {
-			const qb = {
-				update: jest.fn().mockReturnThis(),
-				set: jest.fn().mockReturnThis(),
-				where: jest.fn().mockReturnThis(),
-				returning: jest.fn().mockReturnThis(),
-				execute: jest.fn().mockResolvedValue({ affected: null, raw: [{ user_id: 'u3' }] }),
-			};
-			mockQuotaRepo.createQueryBuilder.mockReturnValue(qb);
+		it('does not call cache.del when no rows are updated', async () => {
+			mockDataSource.query.mockResolvedValue([]);
 			mockCache.del.mockResolvedValue(undefined);
 
 			await service.resetDailyUploads();
 
-			expect(mockCache.del).toHaveBeenCalledWith('quota:user:u3');
-			expect(mockCache.del).toHaveBeenCalledTimes(1);
+			expect(mockCache.del).not.toHaveBeenCalled();
 		});
 	});
 });
