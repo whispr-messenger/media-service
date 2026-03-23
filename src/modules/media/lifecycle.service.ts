@@ -37,14 +37,8 @@ export class LifecycleService implements OnApplicationBootstrap {
 		private readonly configService: ConfigService
 	) {
 		this.bucket = this.configService.get<string>('S3_BUCKET', 'whispr-media');
-		this.messageBlobTtlDays = parseInt(
-			String(this.configService.get<number>('MESSAGE_BLOB_TTL_DAYS', 30)),
-			10
-		);
-		this.thumbnailBlobTtlDays = parseInt(
-			String(this.configService.get<number>('THUMBNAIL_BLOB_TTL_DAYS', 30)),
-			10
-		);
+		this.messageBlobTtlDays = this.configService.get<number>('MESSAGE_BLOB_TTL_DAYS');
+		this.thumbnailBlobTtlDays = this.configService.get<number>('THUMBNAIL_BLOB_TTL_DAYS');
 	}
 
 	async onApplicationBootstrap(): Promise<void> {
@@ -79,12 +73,10 @@ export class LifecycleService implements OnApplicationBootstrap {
 		// Check if existing rules match desired configuration (TTL values)
 		const rulesUpToDate =
 			allPresent &&
-			existingRules.some(
-				(r) => r.ID === 'messages-expiry' && r.Expiration?.Days === this.messageBlobTtlDays
-			) &&
-			existingRules.some(
-				(r) => r.ID === 'thumbnails-expiry' && r.Expiration?.Days === this.thumbnailBlobTtlDays
-			);
+			existingRules.find((r) => r.ID === 'messages-expiry')?.Expiration?.Days ===
+				this.messageBlobTtlDays &&
+			existingRules.find((r) => r.ID === 'thumbnails-expiry')?.Expiration?.Days ===
+				this.thumbnailBlobTtlDays;
 
 		if (rulesUpToDate) {
 			this.logger.log('S3 lifecycle policies already configured — skipping');

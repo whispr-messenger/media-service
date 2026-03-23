@@ -88,6 +88,19 @@ describe('LifecycleService', () => {
 		await service.ensureLifecyclePolicies();
 
 		expect(mockS3.send).toHaveBeenCalledTimes(2);
+		const putCall = mockS3.send.mock.calls[1][0];
+		const ids = putCall.input.LifecycleConfiguration.Rules.map((r: { ID: string }) => r.ID);
+		expect(ids).toContain('messages-expiry');
+		expect(ids).toContain('thumbnails-expiry');
+	});
+
+	it('applies rules when GET returns an empty Rules array', async () => {
+		mockS3.send.mockResolvedValueOnce({ Rules: [] });
+		mockS3.send.mockResolvedValueOnce({});
+
+		await service.ensureLifecyclePolicies();
+
+		expect(mockS3.send).toHaveBeenCalledTimes(2);
 	});
 
 	it('does not throw when ensureLifecyclePolicies fails — onApplicationBootstrap catches it', async () => {
