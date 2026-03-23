@@ -9,6 +9,7 @@ import { MediaService } from './media.service';
 import { MediaController } from './media.controller';
 import { MediaAccessLogPartitionService } from './media-access-log-partition.service';
 import { StorageService } from './storage.service';
+import { LifecycleService } from './lifecycle.service';
 import { RlsContextService } from './rls-context.service';
 import { RlsInterceptor } from './rls.interceptor';
 import { RlsSubscriber } from './rls.subscriber';
@@ -20,6 +21,7 @@ import { RlsSubscriber } from './rls.subscriber';
 		StorageService,
 		MediaService,
 		MediaAccessLogPartitionService,
+		LifecycleService,
 		RlsContextService,
 		RlsSubscriber,
 		// Global interceptor — applies to all routes including unauthenticated ones.
