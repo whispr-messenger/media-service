@@ -6,8 +6,23 @@ import { DataSource, Repository } from 'typeorm';
 import { UserQuota } from './entities/user-quota.entity';
 import { Cron, CronExpression } from '@nestjs/schedule';
 
-// @keyv/redis (used by cache-manager v7) expects TTL in milliseconds.
+// @keyv/redis (used by cache-manager v7) passes TTL to Redis as PX (milliseconds).
+// The global CacheModule default (ttl: 900) is also milliseconds = 0.9 s.
 const QUOTA_CACHE_TTL_MS = 60 * 60 * 1_000; // 1 hour in milliseconds
+
+// Plain-object DTO stored in Redis. bigint and Date do not survive JSON round-trips,
+// so we serialise them to string/string and rehydrate on read.
+interface CachedQuota {
+	id: string;
+	userId: string;
+	storageUsed: string;
+	storageLimit: string;
+	filesCount: number;
+	filesLimit: number;
+	dailyUploads: number;
+	dailyUploadLimit: number;
+	quotaDate: string;
+}
 
 interface QuotaCheckResult {
 	allowed: boolean;
@@ -142,7 +157,7 @@ export class QuotaService {
 	 */
 	async recordDelete(userId: string, blobSize: number): Promise<void> {
 		await this.dataSource.transaction(async (manager) => {
-			await manager
+			const result = await manager
 				.createQueryBuilder()
 				.update(UserQuota)
 				.set({
@@ -152,6 +167,9 @@ export class QuotaService {
 				.where('user_id = :userId', { userId })
 				.setParameters({ blobSize })
 				.execute();
+			if (!result.affected) {
+				throw new Error(`No quota row found for user ${userId}`);
+			}
 		});
 		// Same post-transaction invalidation trade-off as recordUpload.
 		await this.invalidateCache(userId);
@@ -206,9 +224,14 @@ export class QuotaService {
 
 	private async getOrCreateQuota(userId: string): Promise<UserQuota> {
 		const key = this.cacheKey(userId);
-		const cached = await this.cache.get<UserQuota>(key);
+		const cached = await this.cache.get<CachedQuota>(key);
 		if (cached) {
-			return cached;
+			// Rehydrate bigint fields from their serialised string form.
+			return {
+				...cached,
+				storageUsed: BigInt(cached.storageUsed),
+				storageLimit: BigInt(cached.storageLimit),
+			} as UserQuota;
 		}
 
 		let quota = await this.quotaRepo.findOne({ where: { userId } });
@@ -230,7 +253,20 @@ export class QuotaService {
 			throw new Error(`Failed to create or fetch quota for user ${userId}`);
 		}
 
-		await this.cache.set(key, quota, QUOTA_CACHE_TTL_MS);
+		// Serialise to a plain DTO before caching: bigint does not survive JSON
+		// round-trips through Redis (JSON.stringify throws on bigint values).
+		const dto: CachedQuota = {
+			id: quota.id,
+			userId: quota.userId,
+			storageUsed: quota.storageUsed.toString(),
+			storageLimit: quota.storageLimit.toString(),
+			filesCount: quota.filesCount,
+			filesLimit: quota.filesLimit,
+			dailyUploads: quota.dailyUploads,
+			dailyUploadLimit: quota.dailyUploadLimit,
+			quotaDate: quota.quotaDate,
+		};
+		await this.cache.set(key, dto, QUOTA_CACHE_TTL_MS);
 		return quota;
 	}
 }
