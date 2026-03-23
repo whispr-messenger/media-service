@@ -15,8 +15,8 @@ export class UserQuota {
 		type: 'bigint',
 		default: 0,
 		transformer: {
-			to: (value: bigint | number): string => String(value),
-			from: (value: string): bigint => BigInt(value),
+			to: String,
+			from: BigInt,
 		},
 	})
 	storageUsed: bigint;
@@ -26,8 +26,8 @@ export class UserQuota {
 		type: 'bigint',
 		default: 1073741824,
 		transformer: {
-			to: (value: bigint | number): string => String(value),
-			from: (value: string): bigint => BigInt(value),
+			to: String,
+			from: BigInt,
 		},
 	})
 	storageLimit: bigint;
