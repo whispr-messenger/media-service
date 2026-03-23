@@ -185,7 +185,7 @@ describe('QuotaService', () => {
 			});
 
 			await expect(service.recordUpload('user-1', 512)).rejects.toThrow(
-				'No quota row found for user user-1'
+				new Error('No quota row found for user user-1')
 			);
 		});
 	});
@@ -237,6 +237,23 @@ describe('QuotaService', () => {
 			);
 			expect(mockCache.del).toHaveBeenCalledWith('quota:user:u1');
 			expect(mockCache.del).toHaveBeenCalledWith('quota:user:u2');
+		});
+
+		it('uses raw rows (not affected) for cache invalidation when affected is null', async () => {
+			const qb = {
+				update: jest.fn().mockReturnThis(),
+				set: jest.fn().mockReturnThis(),
+				where: jest.fn().mockReturnThis(),
+				returning: jest.fn().mockReturnThis(),
+				execute: jest.fn().mockResolvedValue({ affected: null, raw: [{ user_id: 'u3' }] }),
+			};
+			mockQuotaRepo.createQueryBuilder.mockReturnValue(qb);
+			mockCache.del.mockResolvedValue(undefined);
+
+			await service.resetDailyUploads();
+
+			expect(mockCache.del).toHaveBeenCalledWith('quota:user:u3');
+			expect(mockCache.del).toHaveBeenCalledTimes(1);
 		});
 	});
 });
