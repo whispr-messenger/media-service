@@ -15,22 +15,22 @@ export class UserQuota {
 		type: 'bigint',
 		default: 0,
 		transformer: {
-			to: (value: number): number => value,
-			from: (value: string): number => Number(value),
+			to: (value: bigint | number): string => String(value),
+			from: (value: string): bigint => BigInt(value),
 		},
 	})
-	storageUsed: number;
+	storageUsed: bigint;
 
 	@Column({
 		name: 'storage_limit',
 		type: 'bigint',
 		default: 1073741824,
 		transformer: {
-			to: (value: number): number => value,
-			from: (value: string): number => Number(value),
+			to: (value: bigint | number): string => String(value),
+			from: (value: string): bigint => BigInt(value),
 		},
 	})
-	storageLimit: number;
+	storageLimit: bigint;
 
 	@Column({ name: 'files_count', type: 'integer', default: 0 })
 	filesCount: number;

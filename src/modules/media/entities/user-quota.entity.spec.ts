@@ -42,17 +42,17 @@ describe('UserQuota entity', () => {
 		expect(quotaDateIndex).toBeDefined();
 	});
 
-	it('bigint columns use transformer to return numbers', () => {
+	it('bigint columns use transformer to return bigint', () => {
 		const columns = getMetadataArgsStorage().columns.filter((c) => c.target === UserQuota);
 		const storageUsed = columns.find((c) => (c.options?.name ?? c.propertyName) === 'storage_used');
 		const storageLimit = columns.find((c) => (c.options?.name ?? c.propertyName) === 'storage_limit');
 
 		expect(storageUsed?.options?.transformer).toBeDefined();
-		const usedTransformer = storageUsed!.options!.transformer as { from: (v: string) => number };
-		expect(usedTransformer.from('42')).toBe(42);
+		const usedTransformer = storageUsed!.options!.transformer as { from: (v: string) => bigint };
+		expect(usedTransformer.from('42')).toBe(42n);
 
 		expect(storageLimit?.options?.transformer).toBeDefined();
-		const limitTransformer = storageLimit!.options!.transformer as { from: (v: string) => number };
-		expect(limitTransformer.from('1073741824')).toBe(1073741824);
+		const limitTransformer = storageLimit!.options!.transformer as { from: (v: string) => bigint };
+		expect(limitTransformer.from('1073741824')).toBe(1073741824n);
 	});
 });

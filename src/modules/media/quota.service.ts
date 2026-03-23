@@ -11,8 +11,8 @@ const QUOTA_CACHE_TTL_S = 60 * 60; // 1 hour (cache-manager TTL is in seconds)
 interface QuotaCheckResult {
 	allowed: boolean;
 	reason?: string;
-	storageUsed: number;
-	storageLimit: number;
+	storageUsed: bigint;
+	storageLimit: bigint;
 	filesCount: number;
 	filesLimit: number;
 	dailyUploads: number;
@@ -69,7 +69,7 @@ export class QuotaService {
 			dailyUploadLimit: quota.dailyUploadLimit,
 		};
 
-		if (BigInt(quota.storageUsed) + BigInt(blobSize) > BigInt(quota.storageLimit)) {
+		if (quota.storageUsed + BigInt(blobSize) > quota.storageLimit) {
 			result.allowed = false;
 			result.reason = 'Storage limit exceeded';
 		} else if (quota.filesCount >= quota.filesLimit) {
@@ -91,8 +91,8 @@ export class QuotaService {
 		if (!result.allowed) {
 			throw new PayloadTooLargeException({
 				message: result.reason,
-				storageUsed: result.storageUsed,
-				storageLimit: result.storageLimit,
+				storageUsed: result.storageUsed.toString(),
+				storageLimit: result.storageLimit.toString(),
 				filesCount: result.filesCount,
 				filesLimit: result.filesLimit,
 				dailyUploads: result.dailyUploads,
@@ -111,7 +111,7 @@ export class QuotaService {
 	 */
 	async recordUpload(userId: string, blobSize: number): Promise<void> {
 		await this.dataSource.transaction(async (manager) => {
-			await manager
+			const result = await manager
 				.createQueryBuilder()
 				.update(UserQuota)
 				.set({
@@ -122,6 +122,9 @@ export class QuotaService {
 				.where('user_id = :userId', { userId })
 				.setParameters({ blobSize })
 				.execute();
+			if (!result.affected) {
+				throw new Error(`No quota row found for user ${userId} — cannot record upload`);
+			}
 		});
 		await this.invalidateCache(userId);
 	}
