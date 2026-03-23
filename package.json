@@ -31,7 +31,8 @@
 		"migration:run": "npm run typeorm -- migration:run -d src/config/typeorm.config.ts",
 		"migration:revert": "npm run typeorm -- migration:revert -d src/config/typeorm.config.ts",
 		"docker:build": "docker build -t media-service .",
-		"docker:run": "docker run -p 3000:3000 media-service"
+		"docker:run": "docker run -p 3000:3000 media-service",
+		"prepare": "husky"
 	},
 	"dependencies": {
 		"@aws-sdk/client-s3": "^3.967.0",
