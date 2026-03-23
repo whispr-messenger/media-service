@@ -1,4 +1,4 @@
-import { Injectable, Inject, Logger, PayloadTooLargeException } from '@nestjs/common';
+import { BadRequestException, Injectable, Inject, Logger, PayloadTooLargeException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Cache } from 'cache-manager';
@@ -72,10 +72,8 @@ export class QuotaService {
 	// WHISPR-356: Pre-upload quota check
 	// -------------------------------------------------------------------------
 
-	// blobSize is a plain number (bytes). JavaScript numbers are safe up to 2^53-1
-	// (~9 PB), which is far above any realistic file size, so Number→BigInt conversion
-	// here is safe.
 	async checkQuota(userId: string, blobSize: number): Promise<QuotaCheckResult> {
+		this.validateBlobSize(blobSize);
 		const quota = await this.getOrCreateQuota(userId);
 
 		const result: QuotaCheckResult = {
@@ -129,6 +127,7 @@ export class QuotaService {
 	 * after a successful upload. Invalidates Redis cache for the user.
 	 */
 	async recordUpload(userId: string, blobSize: number): Promise<void> {
+		this.validateBlobSize(blobSize);
 		await this.dataSource.transaction(async (manager) => {
 			const result = await manager
 				.createQueryBuilder()
@@ -156,6 +155,7 @@ export class QuotaService {
 	 * Ensures values never go below zero. Invalidates Redis cache.
 	 */
 	async recordDelete(userId: string, blobSize: number): Promise<void> {
+		this.validateBlobSize(blobSize);
 		await this.dataSource.transaction(async (manager) => {
 			const result = await manager
 				.createQueryBuilder()
@@ -181,29 +181,23 @@ export class QuotaService {
 
 	/**
 	 * Runs at midnight UTC every day.
-	 * Resets daily_uploads = 0 and updates quota_date = CURRENT_DATE
-	 * for all rows where quota_date < CURRENT_DATE.
-	 * Invalidates Redis cache for all affected users.
+	 * Delegates to the `media.reset_daily_uploads()` SECURITY DEFINER function
+	 * (created by migration 1742800000000) which bypasses RLS to update all
+	 * stale rows atomically. Returns the affected user IDs so their caches
+	 * can be invalidated.
 	 */
 	@Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT, { timeZone: 'UTC' })
 	async resetDailyUploads(): Promise<void> {
 		this.logger.log('Running daily quota reset');
 
-		const affected = await this.quotaRepo
-			.createQueryBuilder()
-			.update(UserQuota)
-			.set({ dailyUploads: 0, quotaDate: () => 'CURRENT_DATE' })
-			.where('"quota_date" < CURRENT_DATE')
-			.returning('"user_id"')
-			.execute();
+		const rows = (await this.dataSource.query(
+			`SELECT user_id FROM media.reset_daily_uploads()`
+		)) as Array<{ user_id: string }>;
 
-		// Use raw.length as the authoritative count: affected can be null on some
-		// TypeORM drivers even when rows were updated, but RETURNING always gives us
-		// the actual list of affected rows.
-		const userIds: string[] = ((affected.raw ?? []) as Array<{ user_id: string }>).map((r) => r.user_id);
-		this.logger.log(`Daily quota reset: ${userIds.length} user(s) updated`);
+		this.logger.log(`Daily quota reset: ${rows.length} user(s) updated`);
 
 		// Invalidate Redis cache for all affected users in chunks to avoid Redis burst
+		const userIds = rows.map((r) => r.user_id);
 		const CHUNK_SIZE = 100;
 		for (let i = 0; i < userIds.length; i += CHUNK_SIZE) {
 			await Promise.all(userIds.slice(i, i + CHUNK_SIZE).map((id) => this.invalidateCache(id)));
@@ -234,24 +228,32 @@ export class QuotaService {
 			} as UserQuota;
 		}
 
-		let quota = await this.quotaRepo.findOne({ where: { userId } });
+		// Wrap in an explicit transaction so RlsSubscriber sets app.current_user_id
+		// via set_config(..., true) before the findOne/insert queries run.
+		// Without a transaction the GUC is never set and RLS blocks the queries.
+		const quota = await this.dataSource.transaction(async (manager) => {
+			const repo = manager.getRepository(UserQuota);
+			let row = await repo.findOne({ where: { userId } });
 
-		if (!quota) {
-			// Upsert — concurrent inserts are handled by the unique index
-			const today = new Date().toISOString().slice(0, 10);
-			await this.quotaRepo
-				.createQueryBuilder()
-				.insert()
-				.into(UserQuota)
-				.values({ userId, quotaDate: today })
-				.orIgnore()
-				.execute();
-			quota = await this.quotaRepo.findOne({ where: { userId } });
-		}
+			if (!row) {
+				// Upsert — concurrent inserts are handled by the unique index.
+				// Use CURRENT_DATE (DB clock) to stay consistent with the cron reset.
+				await manager
+					.createQueryBuilder()
+					.insert()
+					.into(UserQuota)
+					.values({ userId, quotaDate: () => 'CURRENT_DATE' })
+					.orIgnore()
+					.execute();
+				row = await repo.findOne({ where: { userId } });
+			}
 
-		if (!quota) {
-			throw new Error(`Failed to create or fetch quota for user ${userId}`);
-		}
+			if (!row) {
+				throw new Error(`Failed to create or fetch quota for user ${userId}`);
+			}
+
+			return row;
+		});
 
 		// Serialise to a plain DTO before caching: bigint does not survive JSON
 		// round-trips through Redis (JSON.stringify throws on bigint values).
@@ -268,5 +270,16 @@ export class QuotaService {
 		};
 		await this.cache.set(key, dto, QUOTA_CACHE_TTL_MS);
 		return quota;
+	}
+
+	/**
+	 * Guards against invalid blobSize values before they reach BigInt conversion
+	 * or SQL parameters. BigInt() throws a SyntaxError for NaN/Infinity/floats;
+	 * negative values would corrupt quota arithmetic.
+	 */
+	private validateBlobSize(blobSize: number): void {
+		if (!Number.isFinite(blobSize) || !Number.isInteger(blobSize) || blobSize < 0) {
+			throw new BadRequestException(`Invalid blobSize: ${blobSize}`);
+		}
 	}
 }
