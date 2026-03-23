@@ -10,8 +10,8 @@ const makeQuota = (overrides: Partial<UserQuota> = {}): UserQuota =>
 	({
 		id: 'quota-id-1',
 		userId: 'user-1',
-		storageUsed: 0,
-		storageLimit: 1073741824,
+		storageUsed: 0n,
+		storageLimit: 1073741824n,
 		filesCount: 0,
 		filesLimit: 1000,
 		dailyUploads: 0,
@@ -56,7 +56,7 @@ describe('QuotaService', () => {
 
 	describe('checkQuota()', () => {
 		it('returns allowed=true when quota is within limits', async () => {
-			const quota = makeQuota({ storageUsed: 100, storageLimit: 1000 });
+			const quota = makeQuota({ storageUsed: 100n, storageLimit: 1000n });
 			mockCache.get.mockResolvedValue(quota);
 
 			const result = await service.checkQuota('user-1', 100);
@@ -65,7 +65,7 @@ describe('QuotaService', () => {
 		});
 
 		it('returns allowed=false when storage would be exceeded', async () => {
-			const quota = makeQuota({ storageUsed: 900, storageLimit: 1000 });
+			const quota = makeQuota({ storageUsed: 900n, storageLimit: 1000n });
 			mockCache.get.mockResolvedValue(quota);
 
 			const result = await service.checkQuota('user-1', 200);
@@ -116,6 +116,22 @@ describe('QuotaService', () => {
 			expect(qb.insert).toHaveBeenCalled();
 			expect(mockCache.set).toHaveBeenCalledWith('quota:user:user-1', quota, expect.any(Number));
 		});
+
+		it('throws when quota cannot be created or fetched', async () => {
+			mockCache.get.mockResolvedValue(null);
+			mockQuotaRepo.findOne.mockResolvedValue(null);
+
+			const qb = {
+				insert: jest.fn().mockReturnThis(),
+				into: jest.fn().mockReturnThis(),
+				values: jest.fn().mockReturnThis(),
+				orIgnore: jest.fn().mockReturnThis(),
+				execute: jest.fn().mockResolvedValue({}),
+			};
+			mockQuotaRepo.createQueryBuilder.mockReturnValue(qb);
+
+			await expect(service.checkQuota('user-1', 1)).rejects.toThrow('Failed to create or fetch quota');
+		});
 	});
 
 	describe('enforceQuota()', () => {
@@ -125,7 +141,7 @@ describe('QuotaService', () => {
 		});
 
 		it('throws PayloadTooLargeException (413) when quota is exceeded', async () => {
-			mockCache.get.mockResolvedValue(makeQuota({ storageUsed: 1073741824 }));
+			mockCache.get.mockResolvedValue(makeQuota({ storageUsed: 1073741824n }));
 			await expect(service.enforceQuota('user-1', 1)).rejects.toThrow(PayloadTooLargeException);
 		});
 	});
@@ -137,7 +153,7 @@ describe('QuotaService', () => {
 				set: jest.fn().mockReturnThis(),
 				where: jest.fn().mockReturnThis(),
 				setParameters: jest.fn().mockReturnThis(),
-				execute: jest.fn().mockResolvedValue({}),
+				execute: jest.fn().mockResolvedValue({ affected: 1 }),
 			};
 			mockDataSource.transaction.mockImplementation(async (cb: (m: typeof qb) => Promise<void>) => {
 				await cb({ createQueryBuilder: () => qb } as unknown as typeof qb);
@@ -154,6 +170,23 @@ describe('QuotaService', () => {
 				})
 			);
 			expect(mockCache.del).toHaveBeenCalledWith('quota:user:user-1');
+		});
+
+		it('throws when no quota row exists for the user', async () => {
+			const qb = {
+				update: jest.fn().mockReturnThis(),
+				set: jest.fn().mockReturnThis(),
+				where: jest.fn().mockReturnThis(),
+				setParameters: jest.fn().mockReturnThis(),
+				execute: jest.fn().mockResolvedValue({ affected: 0 }),
+			};
+			mockDataSource.transaction.mockImplementation(async (cb: (m: typeof qb) => Promise<void>) => {
+				await cb({ createQueryBuilder: () => qb } as unknown as typeof qb);
+			});
+
+			await expect(service.recordUpload('user-1', 512)).rejects.toThrow(
+				'No quota row found for user user-1'
+			);
 		});
 	});
 
