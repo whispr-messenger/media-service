@@ -1,13 +1,12 @@
-import { Injectable, Logger, PayloadTooLargeException } from '@nestjs/common';
+import { Injectable, Inject, Logger, PayloadTooLargeException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Inject } from '@nestjs/common';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Cache } from 'cache-manager';
 import { DataSource, Repository } from 'typeorm';
 import { UserQuota } from './entities/user-quota.entity';
 import { Cron, CronExpression } from '@nestjs/schedule';
 
-const QUOTA_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+const QUOTA_CACHE_TTL_S = 60 * 60; // 1 hour (cache-manager TTL is in seconds)
 
 interface QuotaCheckResult {
 	allowed: boolean;
@@ -70,7 +69,7 @@ export class QuotaService {
 			dailyUploadLimit: quota.dailyUploadLimit,
 		};
 
-		if (quota.storageUsed + blobSize > quota.storageLimit) {
+		if (BigInt(quota.storageUsed) + BigInt(blobSize) > BigInt(quota.storageLimit)) {
 			result.allowed = false;
 			result.reason = 'Storage limit exceeded';
 		} else if (quota.filesCount >= quota.filesLimit) {
@@ -116,11 +115,12 @@ export class QuotaService {
 				.createQueryBuilder()
 				.update(UserQuota)
 				.set({
-					storageUsed: () => `"storage_used" + ${blobSize}`,
+					storageUsed: () => '"storage_used" + :blobSize',
 					filesCount: () => '"files_count" + 1',
 					dailyUploads: () => '"daily_uploads" + 1',
 				})
 				.where('user_id = :userId', { userId })
+				.setParameters({ blobSize })
 				.execute();
 		});
 		await this.invalidateCache(userId);
@@ -136,10 +136,11 @@ export class QuotaService {
 				.createQueryBuilder()
 				.update(UserQuota)
 				.set({
-					storageUsed: () => `GREATEST(0, "storage_used" - ${blobSize})`,
+					storageUsed: () => 'GREATEST(0, "storage_used" - :blobSize)',
 					filesCount: () => 'GREATEST(0, "files_count" - 1)',
 				})
 				.where('user_id = :userId', { userId })
+				.setParameters({ blobSize })
 				.execute();
 		});
 		await this.invalidateCache(userId);
@@ -159,22 +160,23 @@ export class QuotaService {
 	async resetDailyUploads(): Promise<void> {
 		this.logger.log('Running daily quota reset');
 
-		const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-
 		const affected = await this.quotaRepo
 			.createQueryBuilder()
 			.update(UserQuota)
-			.set({ dailyUploads: 0, quotaDate: today })
-			.where('"quota_date" < :today', { today })
+			.set({ dailyUploads: 0, quotaDate: () => 'CURRENT_DATE' })
+			.where('"quota_date" < CURRENT_DATE')
 			.returning('"user_id"')
 			.execute();
 
 		const count = affected.affected ?? 0;
 		this.logger.log(`Daily quota reset: ${count} user(s) updated`);
 
-		// Invalidate Redis cache for all affected users
-		const userIds: string[] = (affected.raw as Array<{ user_id: string }>).map((r) => r.user_id);
-		await Promise.all(userIds.map((id) => this.invalidateCache(id)));
+		// Invalidate Redis cache for all affected users in chunks to avoid Redis burst
+		const userIds: string[] = ((affected.raw ?? []) as Array<{ user_id: string }>).map((r) => r.user_id);
+		const CHUNK_SIZE = 100;
+		for (let i = 0; i < userIds.length; i += CHUNK_SIZE) {
+			await Promise.all(userIds.slice(i, i + CHUNK_SIZE).map((id) => this.invalidateCache(id)));
+		}
 	}
 
 	// -------------------------------------------------------------------------
@@ -215,7 +217,7 @@ export class QuotaService {
 			throw new Error(`Failed to create or fetch quota for user ${userId}`);
 		}
 
-		await this.cache.set(key, quota, QUOTA_CACHE_TTL_MS);
+		await this.cache.set(key, quota, QUOTA_CACHE_TTL_S);
 		return quota;
 	}
 }

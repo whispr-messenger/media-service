@@ -136,6 +136,7 @@ describe('QuotaService', () => {
 				update: jest.fn().mockReturnThis(),
 				set: jest.fn().mockReturnThis(),
 				where: jest.fn().mockReturnThis(),
+				setParameters: jest.fn().mockReturnThis(),
 				execute: jest.fn().mockResolvedValue({}),
 			};
 			mockDataSource.transaction.mockImplementation(async (cb: (m: typeof qb) => Promise<void>) => {
@@ -145,6 +146,13 @@ describe('QuotaService', () => {
 
 			await service.recordUpload('user-1', 512);
 
+			expect(qb.set).toHaveBeenCalledWith(
+				expect.objectContaining({
+					storageUsed: expect.any(Function),
+					filesCount: expect.any(Function),
+					dailyUploads: expect.any(Function),
+				})
+			);
 			expect(mockCache.del).toHaveBeenCalledWith('quota:user:user-1');
 		});
 	});
@@ -155,6 +163,7 @@ describe('QuotaService', () => {
 				update: jest.fn().mockReturnThis(),
 				set: jest.fn().mockReturnThis(),
 				where: jest.fn().mockReturnThis(),
+				setParameters: jest.fn().mockReturnThis(),
 				execute: jest.fn().mockResolvedValue({}),
 			};
 			mockDataSource.transaction.mockImplementation(async (cb: (m: typeof qb) => Promise<void>) => {
@@ -164,6 +173,12 @@ describe('QuotaService', () => {
 
 			await service.recordDelete('user-1', 512);
 
+			expect(qb.set).toHaveBeenCalledWith(
+				expect.objectContaining({
+					storageUsed: expect.any(Function),
+					filesCount: expect.any(Function),
+				})
+			);
 			expect(mockCache.del).toHaveBeenCalledWith('quota:user:user-1');
 		});
 	});
@@ -184,7 +199,9 @@ describe('QuotaService', () => {
 
 			await service.resetDailyUploads();
 
-			expect(qb.set).toHaveBeenCalledWith(expect.objectContaining({ dailyUploads: 0 }));
+			expect(qb.set).toHaveBeenCalledWith(
+				expect.objectContaining({ dailyUploads: 0, quotaDate: expect.any(Function) })
+			);
 			expect(mockCache.del).toHaveBeenCalledWith('quota:user:u1');
 			expect(mockCache.del).toHaveBeenCalledWith('quota:user:u2');
 		});
