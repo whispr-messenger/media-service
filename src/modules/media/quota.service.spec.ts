@@ -1,5 +1,4 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { getRepositoryToken } from '@nestjs/typeorm';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { DataSource } from 'typeorm';
 import { BadRequestException, PayloadTooLargeException } from '@nestjs/common';
@@ -64,7 +63,6 @@ describe('QuotaService', () => {
 		const module: TestingModule = await Test.createTestingModule({
 			providers: [
 				QuotaService,
-				{ provide: getRepositoryToken(UserQuota), useValue: mockQuotaRepo },
 				{ provide: CACHE_MANAGER, useValue: mockCache },
 				{ provide: DataSource, useValue: mockDataSource },
 			],
@@ -181,6 +179,30 @@ describe('QuotaService', () => {
 
 			await expect(service.checkQuota('user-1', 1)).rejects.toThrow('Failed to create or fetch quota');
 		});
+
+		it('falls back to DB when cache.get throws (Redis outage)', async () => {
+			mockCache.get.mockRejectedValue(new Error('Redis connection refused'));
+			const quota = makeQuota();
+			mockQuotaRepo.findOne.mockResolvedValueOnce(quota);
+			mockTransaction();
+			mockCache.set.mockResolvedValue(undefined);
+
+			const result = await service.checkQuota('user-1', 1);
+
+			expect(result.allowed).toBe(true);
+		});
+
+		it('still returns quota when cache.set throws (Redis outage)', async () => {
+			mockCache.get.mockResolvedValue(null);
+			const quota = makeQuota();
+			mockQuotaRepo.findOne.mockResolvedValueOnce(quota);
+			mockTransaction();
+			mockCache.set.mockRejectedValue(new Error('Redis connection refused'));
+
+			const result = await service.checkQuota('user-1', 1);
+
+			expect(result.allowed).toBe(true);
+		});
 	});
 
 	describe('enforceQuota()', () => {
@@ -246,6 +268,22 @@ describe('QuotaService', () => {
 			await expect(service.recordUpload('user-1', Number.MAX_SAFE_INTEGER + 1)).rejects.toThrow(
 				BadRequestException
 			);
+		});
+
+		it('still resolves when cache.del throws after DB commit (Redis outage)', async () => {
+			const qb = {
+				update: jest.fn().mockReturnThis(),
+				set: jest.fn().mockReturnThis(),
+				where: jest.fn().mockReturnThis(),
+				setParameters: jest.fn().mockReturnThis(),
+				execute: jest.fn().mockResolvedValue({ affected: 1 }),
+			};
+			mockDataSource.transaction.mockImplementation(async (cb: (m: typeof qb) => Promise<void>) => {
+				await cb({ createQueryBuilder: () => qb } as unknown as typeof qb);
+			});
+			mockCache.del.mockRejectedValue(new Error('Redis connection refused'));
+
+			await expect(service.recordUpload('user-1', 512)).resolves.toBeUndefined();
 		});
 	});
 
