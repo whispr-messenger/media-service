@@ -9,6 +9,7 @@ import { MediaService } from './media.service';
 import { MediaController } from './media.controller';
 import { MediaAccessLogPartitionService } from './media-access-log-partition.service';
 import { StorageService } from './storage.service';
+import { QuotaService } from './quota.service';
 import { LifecycleService } from './lifecycle.service';
 import { RlsContextService } from './rls-context.service';
 import { RlsInterceptor } from './rls.interceptor';
@@ -21,6 +22,7 @@ import { RlsSubscriber } from './rls.subscriber';
 		StorageService,
 		MediaService,
 		MediaAccessLogPartitionService,
+		QuotaService,
 		LifecycleService,
 		RlsContextService,
 		RlsSubscriber,
@@ -33,5 +35,6 @@ import { RlsSubscriber } from './rls.subscriber';
 		},
 	],
 	controllers: [MediaController],
+	exports: [QuotaService],
 })
 export class MediaModule {}
