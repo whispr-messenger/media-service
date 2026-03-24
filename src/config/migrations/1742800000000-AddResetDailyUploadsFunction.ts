@@ -26,10 +26,15 @@ export class AddResetDailyUploadsFunction1742800000000 implements MigrationInter
 		`);
 
 		// Restrict execution: SECURITY DEFINER functions are callable by PUBLIC
-		// by default. Revoke that so only the function owner and explicitly
-		// granted roles (e.g. the app/cron DB role) can invoke it.
+		// by default. Revoke that, then grant only to the application DB role.
 		await queryRunner.query(`
 			REVOKE EXECUTE ON FUNCTION media.reset_daily_uploads() FROM PUBLIC;
+		`);
+
+		// Grant EXECUTE to the application DB role (media_user) so the cron job
+		// can invoke the function without needing superuser privileges.
+		await queryRunner.query(`
+			GRANT EXECUTE ON FUNCTION media.reset_daily_uploads() TO media_user;
 		`);
 	}
 
