@@ -190,9 +190,9 @@ export class QuotaService {
 	async resetDailyUploads(): Promise<void> {
 		this.logger.log('Running daily quota reset');
 
-		const rows = (await this.dataSource.query(
+		const rows: Array<{ user_id: string }> = await this.dataSource.query(
 			`SELECT user_id FROM media.reset_daily_uploads()`
-		)) as Array<{ user_id: string }>;
+		);
 
 		this.logger.log(`Daily quota reset: ${rows.length} user(s) updated`);
 
