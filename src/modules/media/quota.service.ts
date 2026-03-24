@@ -278,7 +278,7 @@ export class QuotaService {
 	 * negative values would corrupt quota arithmetic.
 	 */
 	private validateBlobSize(blobSize: number): void {
-		if (!Number.isFinite(blobSize) || !Number.isInteger(blobSize) || blobSize < 0) {
+		if (!Number.isSafeInteger(blobSize) || blobSize < 0) {
 			throw new BadRequestException(`Invalid blobSize: ${blobSize}`);
 		}
 	}

@@ -132,6 +132,12 @@ describe('QuotaService', () => {
 			await expect(service.checkQuota('user-1', 1.5)).rejects.toThrow(BadRequestException);
 		});
 
+		it('throws BadRequestException for blobSize above Number.MAX_SAFE_INTEGER', async () => {
+			await expect(service.checkQuota('user-1', Number.MAX_SAFE_INTEGER + 1)).rejects.toThrow(
+				BadRequestException
+			);
+		});
+
 		it('creates quota row on cache miss and DB miss', async () => {
 			mockCache.get.mockResolvedValue(null);
 			const quota = makeQuota();
@@ -235,6 +241,12 @@ describe('QuotaService', () => {
 		it('throws BadRequestException for invalid blobSize', async () => {
 			await expect(service.recordUpload('user-1', -1)).rejects.toThrow(BadRequestException);
 		});
+
+		it('throws BadRequestException for blobSize above Number.MAX_SAFE_INTEGER', async () => {
+			await expect(service.recordUpload('user-1', Number.MAX_SAFE_INTEGER + 1)).rejects.toThrow(
+				BadRequestException
+			);
+		});
 	});
 
 	describe('recordDelete()', () => {
@@ -281,6 +293,12 @@ describe('QuotaService', () => {
 
 		it('throws BadRequestException for invalid blobSize', async () => {
 			await expect(service.recordDelete('user-1', -1)).rejects.toThrow(BadRequestException);
+		});
+
+		it('throws BadRequestException for blobSize above Number.MAX_SAFE_INTEGER', async () => {
+			await expect(service.recordDelete('user-1', Number.MAX_SAFE_INTEGER + 1)).rejects.toThrow(
+				BadRequestException
+			);
 		});
 	});
 
