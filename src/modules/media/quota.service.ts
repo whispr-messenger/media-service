@@ -1,8 +1,7 @@
 import { BadRequestException, Injectable, Inject, Logger, PayloadTooLargeException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Cache } from 'cache-manager';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource } from 'typeorm';
 import { UserQuota } from './entities/user-quota.entity';
 import { Cron, CronExpression } from '@nestjs/schedule';
 
@@ -61,8 +60,6 @@ export class QuotaService {
 	private readonly logger = new Logger(QuotaService.name);
 
 	constructor(
-		@InjectRepository(UserQuota)
-		private readonly quotaRepo: Repository<UserQuota>,
 		@Inject(CACHE_MANAGER)
 		private readonly cache: Cache,
 		private readonly dataSource: DataSource
@@ -213,12 +210,25 @@ export class QuotaService {
 	}
 
 	private async invalidateCache(userId: string): Promise<void> {
-		await this.cache.del(this.cacheKey(userId));
+		try {
+			await this.cache.del(this.cacheKey(userId));
+		} catch (err) {
+			this.logger.error(
+				`Failed to invalidate quota cache for user ${userId}: ${err instanceof Error ? err.message : String(err)}`
+			);
+		}
 	}
 
 	private async getOrCreateQuota(userId: string): Promise<UserQuota> {
 		const key = this.cacheKey(userId);
-		const cached = await this.cache.get<CachedQuota>(key);
+		let cached: CachedQuota | null = null;
+		try {
+			cached = await this.cache.get<CachedQuota>(key);
+		} catch (err) {
+			this.logger.warn(
+				`Failed to read quota cache for user ${userId}: ${err instanceof Error ? err.message : String(err)}`
+			);
+		}
 		if (cached) {
 			// Rehydrate bigint fields from their serialised string form.
 			return {
@@ -268,7 +278,13 @@ export class QuotaService {
 			dailyUploadLimit: quota.dailyUploadLimit,
 			quotaDate: quota.quotaDate,
 		};
-		await this.cache.set(key, dto, QUOTA_CACHE_TTL_MS);
+		try {
+			await this.cache.set(key, dto, QUOTA_CACHE_TTL_MS);
+		} catch (err) {
+			this.logger.warn(
+				`Failed to write quota cache for user ${userId}: ${err instanceof Error ? err.message : String(err)}`
+			);
+		}
 		return quota;
 	}
 
