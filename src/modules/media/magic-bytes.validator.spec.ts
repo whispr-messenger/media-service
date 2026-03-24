@@ -9,6 +9,66 @@ const webm = Buffer.from([0x1a, 0x45, 0xdf, 0xa3, 0x01, 0x00, 0x00, 0x00]);
 // MP4: 4 bytes size (any) + "ftyp"
 const mp4 = Buffer.from([0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d]);
 
+// WebP: RIFF at 0, 4-byte size, WEBP at 8
+const webp = Buffer.from([
+	0x52,
+	0x49,
+	0x46,
+	0x46, // RIFF
+	0x24,
+	0x00,
+	0x00,
+	0x00, // file size (arbitrary)
+	0x57,
+	0x45,
+	0x42,
+	0x50, // WEBP
+	0x56,
+	0x50,
+	0x38,
+	0x20, // VP8 chunk
+]);
+
+// WAV: RIFF at 0, 4-byte size, WAVE at 8
+const wav = Buffer.from([
+	0x52,
+	0x49,
+	0x46,
+	0x46, // RIFF
+	0x24,
+	0x00,
+	0x00,
+	0x00, // file size (arbitrary)
+	0x57,
+	0x41,
+	0x56,
+	0x45, // WAVE
+	0x66,
+	0x6d,
+	0x74,
+	0x20, // fmt  chunk
+]);
+
+// Plain RIFF (neither WEBP nor WAVE at offset 8)
+const plainRiff = Buffer.from([
+	0x52,
+	0x49,
+	0x46,
+	0x46, // RIFF
+	0x24,
+	0x00,
+	0x00,
+	0x00, // file size
+	0x41,
+	0x56,
+	0x49,
+	0x20, // AVI  (not WEBP or WAVE)
+	0x4c,
+	0x49,
+	0x53,
+	0x54,
+]);
+
 describe('validateMagicBytes()', () => {
 	it('passes JPEG with image/jpeg', () => {
 		expect(() => validateMagicBytes(jpeg, 'image/jpeg')).not.toThrow();
@@ -54,5 +114,25 @@ describe('validateMagicBytes()', () => {
 	it('throws when buffer is too short to contain magic bytes', () => {
 		const tinyBuf = Buffer.from([0x89, 0x50]); // only 2 bytes of PNG header
 		expect(() => validateMagicBytes(tinyBuf, 'image/png')).toThrow(UnsupportedMediaTypeException);
+	});
+
+	it('passes WebP with image/webp', () => {
+		expect(() => validateMagicBytes(webp, 'image/webp')).not.toThrow();
+	});
+
+	it('rejects plain RIFF (non-WebP) declared as image/webp', () => {
+		expect(() => validateMagicBytes(plainRiff, 'image/webp')).toThrow(UnsupportedMediaTypeException);
+	});
+
+	it('passes WAV with audio/wav', () => {
+		expect(() => validateMagicBytes(wav, 'audio/wav')).not.toThrow();
+	});
+
+	it('rejects plain RIFF (non-WAV) declared as audio/wav', () => {
+		expect(() => validateMagicBytes(plainRiff, 'audio/wav')).toThrow(UnsupportedMediaTypeException);
+	});
+
+	it('rejects WAV bytes declared as image/webp (RIFF+WAVE not RIFF+WEBP)', () => {
+		expect(() => validateMagicBytes(wav, 'image/webp')).toThrow(UnsupportedMediaTypeException);
 	});
 });

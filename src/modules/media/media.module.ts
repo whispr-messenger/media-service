@@ -1,5 +1,6 @@
-import { Module } from '@nestjs/common';
+import { Module, OnModuleDestroy } from '@nestjs/common';
 import { APP_INTERCEPTOR } from '@nestjs/core';
+import { ModuleRef } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { createClient } from '@redis/client';
@@ -52,4 +53,13 @@ export const REDIS_CLIENT = 'REDIS_CLIENT';
 	controllers: [MediaController],
 	exports: [QuotaService],
 })
-export class MediaModule {}
+export class MediaModule implements OnModuleDestroy {
+	constructor(private readonly moduleRef: ModuleRef) {}
+
+	async onModuleDestroy(): Promise<void> {
+		const client = this.moduleRef.get<ReturnType<typeof createClient>>(REDIS_CLIENT, {
+			strict: false,
+		});
+		await client?.quit();
+	}
+}

@@ -173,7 +173,7 @@ export class MediaService {
 		const dto: MediaMetadataDto = {
 			id: media.id,
 			ownerId: media.ownerId,
-			context: media.context,
+			context: media.context as MediaContext,
 			contentType: media.contentType,
 			blobSize: media.blobSize,
 			expiresAt: media.expiresAt,
@@ -394,7 +394,7 @@ export class MediaService {
 					: null
 				: null,
 			expiresAt: media.expiresAt,
-			context: media.context,
+			context: media.context as MediaContext,
 			size: media.blobSize,
 		};
 	}

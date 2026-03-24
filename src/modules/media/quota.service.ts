@@ -158,7 +158,7 @@ export class QuotaService {
 				.createQueryBuilder()
 				.update(UserQuota)
 				.set({
-					storageUsed: () => 'GREATEST(0, "storage_used" - :blobSize',
+					storageUsed: () => 'GREATEST(0, "storage_used" - :blobSize)',
 					filesCount: () => 'GREATEST(0, "files_count" - 1)',
 				})
 				.where('user_id = :userId', { userId })

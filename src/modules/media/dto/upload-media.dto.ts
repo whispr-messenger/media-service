@@ -33,7 +33,7 @@ export class UploadMediaResponseDto {
 	expiresAt: Date | null;
 
 	@ApiProperty({ description: 'Upload context', enum: MediaContext })
-	context: string;
+	context: MediaContext;
 
 	@ApiProperty({ description: 'Blob size in bytes' })
 	size: number;
@@ -47,7 +47,7 @@ export class MediaMetadataDto {
 	ownerId: string;
 
 	@ApiProperty({ enum: MediaContext })
-	context: string;
+	context: MediaContext;
 
 	@ApiProperty()
 	contentType: string;
@@ -64,6 +64,6 @@ export class MediaMetadataDto {
 	@ApiProperty()
 	createdAt: Date;
 
-	@ApiPropertyOptional()
+	@ApiProperty()
 	hasThumbnail: boolean;
 }

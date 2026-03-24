@@ -44,7 +44,7 @@ export class MediaController {
 	@ApiBody({
 		schema: {
 			type: 'object',
-			required: ['file', 'context', 'ownerId'],
+			required: ['file'],
 			properties: {
 				file: { type: 'string', format: 'binary' },
 				thumbnail: { type: 'string', format: 'binary' },
