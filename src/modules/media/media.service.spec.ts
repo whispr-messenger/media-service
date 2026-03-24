@@ -16,6 +16,7 @@ import { QuotaService } from './quota.service';
 import { MediaAccessLog } from './entities/media-access-log.entity';
 import { Media } from './entities/media.entity';
 import { MediaContext } from './dto/upload-media.dto';
+import { REDIS_CLIENT } from './media.module';
 
 jest.mock('@aws-sdk/s3-request-presigner', () => ({
 	getSignedUrl: jest.fn().mockResolvedValue('https://presigned.url/file'),
@@ -70,6 +71,13 @@ const mockAccessLogRepo = {
 	save: jest.fn().mockResolvedValue(undefined),
 };
 
+const mockRedisClient = {
+	incr: jest.fn().mockResolvedValue(1),
+	decr: jest.fn().mockResolvedValue(0),
+	expire: jest.fn().mockResolvedValue(1),
+	del: jest.fn().mockResolvedValue(1),
+};
+
 const mockS3 = {
 	putObject: jest.fn().mockResolvedValue({}),
 	getObject: jest.fn(),
@@ -105,6 +113,7 @@ describe('MediaService', () => {
 				{ provide: ConfigService, useValue: mockConfigService },
 				{ provide: CACHE_MANAGER, useValue: mockCache },
 				{ provide: getRepositoryToken(MediaAccessLog), useValue: mockAccessLogRepo },
+				{ provide: REDIS_CLIENT, useValue: mockRedisClient },
 			],
 		}).compile();
 
@@ -133,8 +142,8 @@ describe('MediaService', () => {
 		});
 
 		it('throws 429 HttpException when semaphore is at max', async () => {
-			// Simulate 3 concurrent uploads already in progress
-			mockCache.get.mockResolvedValue(3);
+			// Simulate counter already at MAX+1 after INCR (4 = over the limit of 3)
+			mockRedisClient.incr.mockResolvedValueOnce(4);
 
 			await expect(service.upload('user-uuid-1', file, MediaContext.MESSAGE)).rejects.toThrow(
 				HttpException
@@ -142,9 +151,8 @@ describe('MediaService', () => {
 		});
 
 		it('returns existing media on dedup cache hit', async () => {
-			mockCache.get
-				.mockResolvedValueOnce(0) // semaphore
-				.mockResolvedValueOnce('existing-media-id'); // dedup hit
+			// Semaphore now uses redisClient.incr, so only the dedup key hits cache.get
+			mockCache.get.mockResolvedValueOnce('existing-media-id'); // dedup hit
 
 			const existingMedia = makeMedia({ id: 'existing-media-id' });
 			mockMediaRepository.findById.mockResolvedValue(existingMedia);
@@ -156,8 +164,7 @@ describe('MediaService', () => {
 		});
 
 		it('throws PayloadTooLargeException when quota is exceeded', async () => {
-			// semaphore is fine (0), but quota check fails
-			mockCache.get.mockResolvedValueOnce(0); // semaphore
+			// semaphore is fine (INCR returns 1), but quota check fails
 			mockQuotaService.enforceQuota.mockRejectedValue(new PayloadTooLargeException('quota exceeded'));
 
 			await expect(service.upload('user-uuid-1', file, MediaContext.MESSAGE)).rejects.toThrow(

@@ -28,7 +28,7 @@ import {
 
 @ApiTags('Media')
 @ApiHeader({ name: 'x-user-id', description: 'UUID of the authenticated user', required: true })
-@Controller('media/v1')
+@Controller()
 export class MediaController {
 	private readonly logger = new Logger(MediaController.name);
 
@@ -161,7 +161,7 @@ export class MediaController {
 
 	@Delete(':id')
 	@HttpCode(HttpStatus.NO_CONTENT)
-	@ApiOperation({ summary: 'Soft delete media — releases quota and publishes event' })
+	@ApiOperation({ summary: 'Soft delete media — releases quota' })
 	@ApiResponse({ status: 204, description: 'Deleted' })
 	@ApiResponse({ status: 403, description: 'Not owner' })
 	@ApiResponse({ status: 404, description: 'Not found' })

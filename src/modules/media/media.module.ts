@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { APP_INTERCEPTOR } from '@nestjs/core';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { createClient } from '@redis/client';
 import { Media } from './entities/media.entity';
 import { UserQuota } from './entities/user-quota.entity';
 import { MediaAccessLog } from './entities/media-access-log.entity';
@@ -15,9 +17,22 @@ import { RlsContextService } from './rls-context.service';
 import { RlsInterceptor } from './rls.interceptor';
 import { RlsSubscriber } from './rls.subscriber';
 
+export const REDIS_CLIENT = 'REDIS_CLIENT';
+
 @Module({
-	imports: [TypeOrmModule.forFeature([Media, UserQuota, MediaAccessLog])],
+	imports: [TypeOrmModule.forFeature([Media, UserQuota, MediaAccessLog]), ConfigModule],
 	providers: [
+		{
+			provide: REDIS_CLIENT,
+			inject: [ConfigService],
+			useFactory: async (configService: ConfigService) => {
+				const host = configService.get('REDIS_HOST', 'redis');
+				const port = configService.get('REDIS_PORT', 6379);
+				const client = createClient({ socket: { host, port } });
+				await client.connect();
+				return client;
+			},
+		},
 		MediaRepository,
 		StorageService,
 		MediaService,

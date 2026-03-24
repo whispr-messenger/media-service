@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEnum, IsNotEmpty, IsUUID } from 'class-validator';
+import { IsEnum, IsOptional, IsUUID } from 'class-validator';
 
 export enum MediaContext {
 	MESSAGE = 'message',
@@ -8,14 +8,15 @@ export enum MediaContext {
 }
 
 export class UploadMediaDto {
-	@ApiProperty({ description: 'Upload context', enum: MediaContext })
+	@ApiPropertyOptional({ description: 'Upload context', enum: MediaContext })
+	@IsOptional()
 	@IsEnum(MediaContext)
-	context: MediaContext;
+	context?: MediaContext;
 
-	@ApiProperty({ description: 'UUID of the resource owner' })
+	@ApiPropertyOptional({ description: 'UUID of the resource owner' })
+	@IsOptional()
 	@IsUUID()
-	@IsNotEmpty()
-	ownerId: string;
+	ownerId?: string;
 }
 
 export class UploadMediaResponseDto {
@@ -64,5 +65,5 @@ export class MediaMetadataDto {
 	createdAt: Date;
 
 	@ApiPropertyOptional()
-	thumbnailPath: string | null;
+	hasThumbnail: boolean;
 }

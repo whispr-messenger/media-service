@@ -2,13 +2,15 @@ import {
 	ForbiddenException,
 	HttpException,
 	HttpStatus,
+	Inject,
 	Injectable,
 	Logger,
 	NotFoundException,
+	NotImplementedException,
+	PayloadTooLargeException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectS3, S3 } from 'nestjs-s3';
-import { Inject } from '@nestjs/common';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Cache } from 'cache-manager';
 import { randomUUID } from 'crypto';
@@ -24,7 +26,9 @@ import { MediaRepository } from './repositories/media.repository';
 import { StorageService, StorageContext } from './storage.service';
 import { QuotaService } from './quota.service';
 import { validateMagicBytes } from './magic-bytes.validator';
+import { createClient } from '@redis/client';
 import { MediaContext, UploadMediaResponseDto, MediaMetadataDto } from './dto/upload-media.dto';
+import { REDIS_CLIENT } from './media.module';
 
 // Blob size limits per context (in bytes)
 const CONTEXT_SIZE_LIMITS: Record<MediaContext, number> = {
@@ -55,7 +59,8 @@ export class MediaService {
 		private readonly configService: ConfigService,
 		@Inject(CACHE_MANAGER) private readonly cache: Cache,
 		@InjectRepository(MediaAccessLog)
-		private readonly accessLogRepo: Repository<MediaAccessLog>
+		private readonly accessLogRepo: Repository<MediaAccessLog>,
+		@Inject(REDIS_CLIENT) private readonly redisClient: ReturnType<typeof createClient>
 	) {
 		this.signedUrlExpirySeconds = this.configService.get<number>(
 			'SIGNED_URL_EXPIRY_SECONDS',
@@ -81,21 +86,21 @@ export class MediaService {
 			await this.quotaService.enforceQuota(ownerId, file.size);
 
 			// WHISPR-361: Blob size limits per context
-			this.enforceContextSizeLimit(file.size, context, ownerId);
+			this.enforceContextSizeLimit(file.size, context);
 
 			// WHISPR-360: Magic bytes validation
 			const blobBuffer = file.buffer ?? Buffer.alloc(0);
 			validateMagicBytes(blobBuffer, file.mimetype);
 
-			// WHISPR-362: Blob deduplication via SHA-256
+			// WHISPR-362: Blob deduplication via SHA-256 (scoped per owner+context)
 			const sha256 = createHash('sha256').update(blobBuffer).digest('hex');
-			const dedupKey = `dedup:blob:${sha256}`;
+			const dedupKey = `dedup:blob:${ownerId}:${context}:${sha256}`;
 			const existingId = await this.cache.get<string>(dedupKey);
 			if (existingId) {
 				const existing = await this.mediaRepository.findById(existingId);
 				if (existing) {
 					this.logger.debug(`Dedup hit for sha256=${sha256} → reusing media ${existingId}`);
-					return this.buildUploadResponse(existing);
+					return this.buildUploadResponse(existing, context);
 				}
 			}
 
@@ -140,7 +145,7 @@ export class MediaService {
 			// WHISPR-357: Update quota
 			await this.quotaService.recordUpload(ownerId, file.size);
 
-			return this.buildUploadResponse(media);
+			return this.buildUploadResponse(media, context);
 		} finally {
 			await this.releaseSemaphore(ownerId);
 		}
@@ -174,7 +179,7 @@ export class MediaService {
 			expiresAt: media.expiresAt,
 			isActive: media.isActive,
 			createdAt: media.createdAt,
-			thumbnailPath: media.thumbnailPath,
+			hasThumbnail: media.thumbnailPath !== null,
 		};
 
 		await this.cache.set(cacheKey, dto, META_CACHE_TTL_MS);
@@ -285,21 +290,18 @@ export class MediaService {
 	// Private helpers
 	// =========================================================================
 
-	private enforceContextSizeLimit(size: number, context: MediaContext, ownerId: string): void {
-		const limit = CONTEXT_SIZE_LIMITS[context];
-		if (size > limit) {
-			throw new ForbiddenException(
-				`File size ${size} exceeds the ${limit} byte limit for context '${context}'`
-			);
-		}
-		// WHISPR-361: For message and avatar, JWT sub must match ownerId.
-		// For group_icon: 403 — group admin check deferred.
+	private enforceContextSizeLimit(size: number, context: MediaContext): void {
 		if (context === MediaContext.GROUP_ICON) {
-			throw new ForbiddenException(
+			throw new NotImplementedException(
 				'Group icon upload requires group admin authorization (not yet implemented)'
 			);
 		}
-		void ownerId; // used in validation above
+		const limit = CONTEXT_SIZE_LIMITS[context];
+		if (size > limit) {
+			throw new PayloadTooLargeException(
+				`File size ${size} exceeds the ${limit} byte limit for context '${context}'`
+			);
+		}
 	}
 
 	private enforceReadAccess(context: MediaContext, ownerId: string, requesterId: string): void {
@@ -310,29 +312,25 @@ export class MediaService {
 
 	private async acquireSemaphore(userId: string): Promise<void> {
 		const key = `upload:semaphore:${userId}`;
-		// Get-and-increment approach
-		const current = await this.cache.get<number>(key);
-		const count = typeof current === 'number' ? current : 0;
+		// Atomic INCR: increment first, then check and reject if over limit
+		const count = Number(await this.redisClient.incr(key));
+		await this.redisClient.expire(key, SEMAPHORE_TTL_SECONDS);
 
-		if (count >= MAX_CONCURRENT_UPLOADS) {
+		if (count > MAX_CONCURRENT_UPLOADS) {
+			// Roll back the increment before rejecting
+			await this.redisClient.decr(key);
 			throw new HttpException(
 				`You have reached the maximum of ${MAX_CONCURRENT_UPLOADS} concurrent uploads`,
 				HttpStatus.TOO_MANY_REQUESTS
 			);
 		}
-
-		await this.cache.set(key, count + 1, SEMAPHORE_TTL_SECONDS * 1000);
 	}
 
 	private async releaseSemaphore(userId: string): Promise<void> {
 		const key = `upload:semaphore:${userId}`;
-		const current = await this.cache.get<number>(key);
-		const count = typeof current === 'number' ? current : 1;
-
-		if (count <= 1) {
-			await this.cache.del(key);
-		} else {
-			await this.cache.set(key, count - 1, SEMAPHORE_TTL_SECONDS * 1000);
+		const remaining = Number(await this.redisClient.decr(key));
+		if (remaining <= 0) {
+			await this.redisClient.del(key);
 		}
 	}
 
@@ -343,7 +341,10 @@ export class MediaService {
 
 		const now = new Date();
 		if (media.signedUrlExpiresAt && media.signedUrlExpiresAt > now) {
-			const remaining = Math.floor((media.signedUrlExpiresAt.getTime() - now.getTime()) / 1000);
+			const remaining = Math.max(
+				1,
+				Math.floor((media.signedUrlExpiresAt.getTime() - now.getTime()) / 1000)
+			);
 			return this.generatePresignedUrl(media.storagePath, remaining);
 		}
 
@@ -378,11 +379,20 @@ export class MediaService {
 		return new Date(Date.now() + ttlDays * 24 * 60 * 60 * 1000);
 	}
 
-	private buildUploadResponse(media: Media): UploadMediaResponseDto {
+	private buildUploadResponse(media: Media, context: MediaContext): UploadMediaResponseDto {
+		const isPublic = PUBLIC_CONTEXTS.has(context);
 		return {
 			mediaId: media.id,
-			url: media.storagePath ? this.storageService.getPublicUrl(media.storagePath) : null,
-			thumbnailUrl: media.thumbnailPath ? this.storageService.getPublicUrl(media.thumbnailPath) : null,
+			url: media.storagePath
+				? isPublic
+					? this.storageService.getPublicUrl(media.storagePath)
+					: null
+				: null,
+			thumbnailUrl: media.thumbnailPath
+				? isPublic
+					? this.storageService.getPublicUrl(media.thumbnailPath)
+					: null
+				: null,
 			expiresAt: media.expiresAt,
 			context: media.context,
 			size: media.blobSize,
