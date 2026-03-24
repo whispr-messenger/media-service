@@ -159,7 +159,7 @@ export class MediaService {
 		const cacheKey = `media:meta:${id}`;
 		const cached = await this.cache.get<MediaMetadataDto>(cacheKey);
 		if (cached) {
-			this.enforceReadAccess(cached.context as MediaContext, cached.ownerId, requesterId);
+			this.enforceReadAccess(cached.context, cached.ownerId, requesterId);
 			return cached;
 		}
 
@@ -381,18 +381,14 @@ export class MediaService {
 
 	private buildUploadResponse(media: Media, context: MediaContext): UploadMediaResponseDto {
 		const isPublic = PUBLIC_CONTEXTS.has(context);
+		const url =
+			isPublic && media.storagePath ? this.storageService.getPublicUrl(media.storagePath) : null;
+		const thumbnailUrl =
+			isPublic && media.thumbnailPath ? this.storageService.getPublicUrl(media.thumbnailPath) : null;
 		return {
 			mediaId: media.id,
-			url: media.storagePath
-				? isPublic
-					? this.storageService.getPublicUrl(media.storagePath)
-					: null
-				: null,
-			thumbnailUrl: media.thumbnailPath
-				? isPublic
-					? this.storageService.getPublicUrl(media.thumbnailPath)
-					: null
-				: null,
+			url,
+			thumbnailUrl,
 			expiresAt: media.expiresAt,
 			context: media.context as MediaContext,
 			size: media.blobSize,

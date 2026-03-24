@@ -1,6 +1,5 @@
 import { Module, OnModuleDestroy } from '@nestjs/common';
-import { APP_INTERCEPTOR } from '@nestjs/core';
-import { ModuleRef } from '@nestjs/core';
+import { APP_INTERCEPTOR, ModuleRef } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { createClient } from '@redis/client';
