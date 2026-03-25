@@ -8,6 +8,7 @@ import {
 	NotFoundException,
 	NotImplementedException,
 	PayloadTooLargeException,
+	UnsupportedMediaTypeException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectS3, S3 } from 'nestjs-s3';
@@ -42,7 +43,7 @@ const PUBLIC_CONTEXTS = new Set<string>([MediaContext.AVATAR, MediaContext.GROUP
 // Redis key TTLs
 const META_CACHE_TTL_MS = 30 * 60 * 1000; // 30 min
 const DEDUP_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
-const SEMAPHORE_TTL_SECONDS = 120; // safety net TTL in seconds
+const SEMAPHORE_TTL_SECONDS = 30 * 60; // 30 min safety net TTL in seconds
 
 const MAX_CONCURRENT_UPLOADS = 3;
 
@@ -114,9 +115,31 @@ export class MediaService {
 
 			let thumbnailPath: string | null = null;
 			if (thumbnailFile) {
+				// Validate thumbnail: only safe image MIME types, max 5 MB, magic-bytes check
+				const THUMBNAIL_MAX_BYTES = 5 * 1024 * 1024;
+				const THUMBNAIL_ALLOWED_MIME = new Set([
+					'image/jpeg',
+					'image/png',
+					'image/gif',
+					'image/webp',
+					'image/heic',
+					'image/heif',
+				]);
+				if (!THUMBNAIL_ALLOWED_MIME.has(thumbnailFile.mimetype)) {
+					throw new UnsupportedMediaTypeException(
+						`Thumbnail MIME type '${thumbnailFile.mimetype}' is not allowed`
+					);
+				}
+				if (thumbnailFile.size > THUMBNAIL_MAX_BYTES) {
+					throw new PayloadTooLargeException(
+						`Thumbnail size ${thumbnailFile.size} exceeds the 5 MB limit`
+					);
+				}
+				const thumbBuffer = thumbnailFile.buffer ?? Buffer.alloc(0);
+				validateMagicBytes(thumbBuffer, thumbnailFile.mimetype);
+
 				const thumbnailStoragePath = this.storageService.buildPath('thumbnails', ownerId, id);
-				const thumbStream =
-					thumbnailFile.stream ?? Readable.from(thumbnailFile.buffer ?? Buffer.alloc(0));
+				const thumbStream = thumbnailFile.stream ?? Readable.from(thumbBuffer);
 				await this.storageService.upload(
 					thumbnailStoragePath,
 					thumbStream,
