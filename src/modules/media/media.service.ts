@@ -40,6 +40,49 @@ const CONTEXT_SIZE_LIMITS: Record<MediaContext, number> = {
 
 const PUBLIC_CONTEXTS = new Set<string>([MediaContext.AVATAR, MediaContext.GROUP_ICON]);
 
+// Strict MIME allowlists per context — unknown types are rejected for uploads
+const CONTEXT_MIME_ALLOWLIST: Record<MediaContext, Set<string>> = {
+	[MediaContext.MESSAGE]: new Set([
+		'image/jpeg',
+		'image/png',
+		'image/gif',
+		'image/webp',
+		'image/heic',
+		'image/heif',
+		'video/mp4',
+		'video/quicktime',
+		'video/webm',
+		'video/x-matroska',
+		'audio/mpeg',
+		'audio/ogg',
+		'audio/wav',
+		'audio/mp4',
+		'audio/aac',
+		'application/pdf',
+		'application/msword',
+		'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+		'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+		'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+		'application/zip',
+	]),
+	[MediaContext.AVATAR]: new Set([
+		'image/jpeg',
+		'image/png',
+		'image/gif',
+		'image/webp',
+		'image/heic',
+		'image/heif',
+	]),
+	[MediaContext.GROUP_ICON]: new Set([
+		'image/jpeg',
+		'image/png',
+		'image/gif',
+		'image/webp',
+		'image/heic',
+		'image/heif',
+	]),
+};
+
 // Redis key TTLs
 const META_CACHE_TTL_MS = 30 * 60 * 1000; // 30 min
 const DEDUP_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
@@ -89,7 +132,12 @@ export class MediaService {
 			// WHISPR-361: Blob size limits per context
 			this.enforceContextSizeLimit(file.size, context);
 
-			// WHISPR-360: Magic bytes validation
+			// WHISPR-360: MIME allowlist + magic bytes validation
+			if (!CONTEXT_MIME_ALLOWLIST[context].has(file.mimetype)) {
+				throw new UnsupportedMediaTypeException(
+					`MIME type '${file.mimetype}' is not allowed for context '${context}'`
+				);
+			}
 			const blobBuffer = file.buffer ?? Buffer.alloc(0);
 			validateMagicBytes(blobBuffer, file.mimetype);
 
@@ -281,8 +329,14 @@ export class MediaService {
 			throw new ForbiddenException(`You do not own media ${id}`);
 		}
 
-		// Soft delete
+		// Soft delete DB record first
 		await this.mediaRepository.softDelete(id);
+
+		// Delete underlying S3 objects so storage and quota stay in sync
+		await this.storageService.delete(media.storagePath);
+		if (media.thumbnailPath) {
+			await this.storageService.delete(media.thumbnailPath);
+		}
 
 		// Invalidate metadata cache
 		await this.cache.del(`media:meta:${id}`);
@@ -293,7 +347,7 @@ export class MediaService {
 		// Access log
 		this.writeAccessLog(media.id, requesterId, 'delete', ipAddress, userAgent).catch(() => {});
 
-		this.logger.debug(`Soft-deleted media ${id}`);
+		this.logger.debug(`Soft-deleted media ${id} and removed S3 objects`);
 	}
 
 	// =========================================================================
