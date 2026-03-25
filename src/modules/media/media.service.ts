@@ -302,13 +302,18 @@ export class MediaService {
 
 		this.enforceReadAccess(media.context as MediaContext, media.ownerId, requesterId);
 
-		const command = new GetObjectCommand({
-			Bucket: this.storageService.bucket,
-			Key: media.thumbnailPath,
-		});
-		const url = await getSignedUrl(this.s3 as never, command, {
-			expiresIn: this.signedUrlExpirySeconds,
-		});
+		let url: string;
+		if (PUBLIC_CONTEXTS.has(media.context)) {
+			url = this.storageService.getPublicUrl(media.thumbnailPath);
+		} else {
+			const command = new GetObjectCommand({
+				Bucket: this.storageService.bucket,
+				Key: media.thumbnailPath,
+			});
+			url = await getSignedUrl(this.s3 as never, command, {
+				expiresIn: this.signedUrlExpirySeconds,
+			});
+		}
 
 		this.writeAccessLog(media.id, requesterId, 'thumbnail', ipAddress, userAgent).catch(() => {});
 
