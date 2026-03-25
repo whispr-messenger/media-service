@@ -222,6 +222,7 @@ describe('QuotaService', () => {
 			const qb = {
 				update: jest.fn().mockReturnThis(),
 				set: jest.fn().mockReturnThis(),
+				setParameter: jest.fn().mockReturnThis(),
 				where: jest.fn().mockReturnThis(),
 				setParameters: jest.fn().mockReturnThis(),
 				execute: jest.fn().mockResolvedValue({ affected: 1 }),
@@ -292,6 +293,7 @@ describe('QuotaService', () => {
 			const qb = {
 				update: jest.fn().mockReturnThis(),
 				set: jest.fn().mockReturnThis(),
+				setParameter: jest.fn().mockReturnThis(),
 				where: jest.fn().mockReturnThis(),
 				setParameters: jest.fn().mockReturnThis(),
 				execute: jest.fn().mockResolvedValue({ affected: 1 }),
