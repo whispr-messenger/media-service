@@ -409,6 +409,74 @@ export class MediaService {
 	}
 
 	// =========================================================================
+	// GET /media/v1/quota — WHISPR-368
+	// =========================================================================
+
+	async getUserQuota(userId: string): Promise<UserQuotaResponseDto> {
+		const quota = await this.dataSource.transaction((manager) =>
+			manager.getRepository(UserQuota).findOne({ where: { userId } })
+		);
+
+		const rawStorageUsed = quota?.storageUsed ?? 0n;
+		const rawStorageLimit = quota?.storageLimit ?? BigInt(MediaService.DEFAULT_STORAGE_LIMIT);
+		const maxSafe = BigInt(Number.MAX_SAFE_INTEGER);
+		const storageUsed = rawStorageUsed > maxSafe ? Number.MAX_SAFE_INTEGER : Number(rawStorageUsed);
+		const storageLimit = rawStorageLimit > maxSafe ? Number.MAX_SAFE_INTEGER : Number(rawStorageLimit);
+
+		const filesCount = quota?.filesCount ?? 0;
+		const filesLimit = quota?.filesLimit ?? MediaService.DEFAULT_FILES_LIMIT;
+		const dailyUploads = quota?.dailyUploads ?? 0;
+		const dailyUploadLimit = quota?.dailyUploadLimit ?? MediaService.DEFAULT_DAILY_UPLOAD_LIMIT;
+		const quotaDate = quota?.quotaDate ?? null;
+
+		let usagePercent = 0;
+		if (rawStorageLimit > 0n) {
+			const percentTimes100 = (rawStorageUsed * 10000n) / rawStorageLimit;
+			usagePercent = Number(percentTimes100) / 100;
+		}
+
+		return {
+			storageUsed,
+			storageLimit,
+			filesCount,
+			filesLimit,
+			dailyUploads,
+			dailyUploadLimit,
+			quotaDate,
+			usagePercent,
+		};
+	}
+
+	// =========================================================================
+	// GET /media/v1/my-media — WHISPR-369
+	// =========================================================================
+
+	async getUserMedia(userId: string, page: number, limit: number): Promise<PaginatedMediaResponseDto> {
+		const [items, total] = await this.dataSource.transaction((manager) =>
+			manager.getRepository(Media).findAndCount({
+				where: { ownerId: userId, isActive: true },
+				order: { createdAt: 'DESC' },
+				skip: (page - 1) * limit,
+				take: limit,
+			})
+		);
+
+		return {
+			items: items.map((m) => ({
+				id: m.id,
+				contentType: m.contentType,
+				blobSize: m.blobSize,
+				context: m.context,
+				createdAt: m.createdAt,
+			})),
+			total,
+			page,
+			limit,
+			totalPages: Math.ceil(total / limit),
+		};
+	}
+
+	// =========================================================================
 	// Private helpers
 	// =========================================================================
 
@@ -533,56 +601,6 @@ export class MediaService {
 		log.ipAddress = ipAddress ?? null;
 		log.userAgent = userAgent?.slice(0, 512) ?? null;
 		await this.accessLogRepo.save(log);
-	}
-
-	async getUserQuota(userId: string): Promise<UserQuotaResponseDto> {
-		const quota = await this.userQuotaRepo.findOne({ where: { userId } });
-
-		const storageUsed = quota?.storageUsed ?? 0n;
-		const storageLimit = quota?.storageLimit ?? BigInt(MediaService.DEFAULT_STORAGE_LIMIT);
-		const filesCount = quota?.filesCount ?? 0;
-		const filesLimit = quota?.filesLimit ?? MediaService.DEFAULT_FILES_LIMIT;
-		const dailyUploads = quota?.dailyUploads ?? 0;
-		const dailyUploadLimit = quota?.dailyUploadLimit ?? MediaService.DEFAULT_DAILY_UPLOAD_LIMIT;
-		const quotaDate = quota?.quotaDate ?? null;
-		const usagePercent =
-			storageLimit > 0n
-				? Math.round((Number(storageUsed) / Number(storageLimit)) * 10000) / 100
-				: 0;
-
-		return {
-			storageUsed: Number(storageUsed),
-			storageLimit: Number(storageLimit),
-			filesCount,
-			filesLimit,
-			dailyUploads,
-			dailyUploadLimit,
-			quotaDate,
-			usagePercent,
-		};
-	}
-
-	async getUserMedia(userId: string, page: number, limit: number): Promise<PaginatedMediaResponseDto> {
-		const [items, total] = await this.mediaRepo.findAndCount({
-			where: { ownerId: userId, isActive: true },
-			order: { createdAt: 'DESC' },
-			skip: (page - 1) * limit,
-			take: limit,
-		});
-
-		return {
-			items: items.map((m) => ({
-				id: m.id,
-				contentType: m.contentType,
-				blobSize: m.blobSize,
-				context: m.context,
-				createdAt: m.createdAt,
-			})),
-			total,
-			page,
-			limit,
-			totalPages: Math.ceil(total / limit),
-		};
 	}
 
 	logAccess(mediaId: string, accessorId: string | null, accessType: string): void {

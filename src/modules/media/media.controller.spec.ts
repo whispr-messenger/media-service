@@ -128,6 +128,7 @@ describe('MediaController', () => {
 		});
 	});
 
+
 	describe('getQuota()', () => {
 		it('should return user quota', async () => {
 			const quota = {
@@ -142,16 +143,10 @@ describe('MediaController', () => {
 			};
 			mockMediaService.getUserQuota.mockResolvedValue(quota);
 
-			const result = await controller.getQuota('user-uuid-1');
+			const result = await controller.getQuota(makeReq('user-uuid-1'));
 
 			expect(result).toEqual(quota);
 			expect(mockMediaService.getUserQuota).toHaveBeenCalledWith('user-uuid-1');
-		});
-
-		it('should throw BadRequestException when userId is missing', async () => {
-			await expect(controller.getQuota(undefined as unknown as string)).rejects.toThrow(
-				new BadRequestException('Missing x-user-id header')
-			);
 		});
 	});
 
@@ -166,7 +161,7 @@ describe('MediaController', () => {
 			};
 			mockMediaService.getUserMedia.mockResolvedValue(response);
 
-			const result = await controller.getMyMedia('user-uuid-1');
+			const result = await controller.getMyMedia(makeReq('user-uuid-1'));
 
 			expect(result).toEqual(response);
 			expect(mockMediaService.getUserMedia).toHaveBeenCalledWith('user-uuid-1', 1, 20);
@@ -181,7 +176,7 @@ describe('MediaController', () => {
 				totalPages: 0,
 			});
 
-			await controller.getMyMedia('user-uuid-1', '2', '50');
+			await controller.getMyMedia(makeReq('user-uuid-1'), '2', '50');
 
 			expect(mockMediaService.getUserMedia).toHaveBeenCalledWith('user-uuid-1', 2, 50);
 		});
@@ -195,15 +190,9 @@ describe('MediaController', () => {
 				totalPages: 0,
 			});
 
-			await controller.getMyMedia('user-uuid-1', '1', '200');
+			await controller.getMyMedia(makeReq('user-uuid-1'), '1', '200');
 
 			expect(mockMediaService.getUserMedia).toHaveBeenCalledWith('user-uuid-1', 1, 100);
-		});
-
-		it('should throw BadRequestException when userId is missing', async () => {
-			await expect(controller.getMyMedia(undefined as unknown as string)).rejects.toThrow(
-				new BadRequestException('Missing x-user-id header')
-			);
 		});
 	});
 

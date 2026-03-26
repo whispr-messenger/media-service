@@ -6,6 +6,7 @@ import {
 	PayloadTooLargeException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { DataSource } from 'typeorm';
 import { getDataSourceToken, getRepositoryToken } from '@nestjs/typeorm';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { getS3ConnectionToken } from 'nestjs-s3';
@@ -87,16 +88,6 @@ const mockS3 = {
 	send: jest.fn().mockResolvedValue({}),
 };
 
-const mockEntityManager = {
-	getRepository: jest.fn(),
-};
-
-const mockDataSource = {
-	transaction: jest.fn(async (callback: (manager: typeof mockEntityManager) => Promise<unknown>) =>
-		callback(mockEntityManager)
-	),
-};
-
 const mockConfigService = {
 	get: jest.fn((key: string, defaultValue?: unknown) => {
 		const config: Record<string, unknown> = {
@@ -116,6 +107,18 @@ const mockUserQuotaRepo = {
 
 const mockMediaRepo = {
 	findAndCount: jest.fn(),
+};
+
+const mockDataSource = {
+	transaction: jest.fn((cb: (manager: any) => any) =>
+		cb({
+			getRepository: (entity: any) => {
+				if (entity === UserQuota) return mockUserQuotaRepo;
+				if (entity === Media) return mockMediaRepo;
+				return {};
+			},
+		})
+	),
 };
 
 const mockMetricsService = {
@@ -145,6 +148,7 @@ describe('MediaService', () => {
 				{ provide: getRepositoryToken(MediaAccessLog), useValue: mockAccessLogRepo },
 				{ provide: REDIS_CLIENT, useValue: mockRedisClient },
 				{ provide: MetricsService, useValue: mockMetricsService },
+				{ provide: DataSource, useValue: mockDataSource },
 			],
 		}).compile();
 
