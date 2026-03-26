@@ -109,11 +109,8 @@ export class MediaController {
 	@Get('quota')
 	@ApiOperation({ summary: 'Get current user quota' })
 	@ApiResponse({ status: 200, description: 'User quota retrieved', type: UserQuotaResponseDto })
-	@ApiResponse({ status: 400, description: 'Missing x-user-id header' })
-	async getQuota(@Headers('x-user-id') userId: string): Promise<UserQuotaResponseDto> {
-		if (!userId) {
-			throw new BadRequestException('Missing x-user-id header');
-		}
+	async getQuota(@Req() req: Request): Promise<UserQuotaResponseDto> {
+		const userId = (req as any).user?.userId as string;
 		return this.mediaService.getUserQuota(userId);
 	}
 
@@ -131,16 +128,12 @@ export class MediaController {
 		description: 'Items per page (default: 20, max: 100)',
 	})
 	@ApiResponse({ status: 200, description: 'Paginated media list', type: PaginatedMediaResponseDto })
-	@ApiResponse({ status: 400, description: 'Missing x-user-id header' })
 	async getMyMedia(
-		@Headers('x-user-id') userId: string,
+		@Req() req: Request,
 		@Query('page') rawPage?: string,
 		@Query('limit') rawLimit?: string
 	): Promise<PaginatedMediaResponseDto> {
-		if (!userId) {
-			throw new BadRequestException('Missing x-user-id header');
-		}
-
+		const userId = (req as any).user?.userId as string;
 		const page = Math.max(1, Number.parseInt(rawPage ?? '', 10) || 1);
 		const limit = Math.min(100, Math.max(1, Number.parseInt(rawLimit ?? '', 10) || 20));
 
