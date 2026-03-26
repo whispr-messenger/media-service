@@ -63,7 +63,7 @@ describe('Quota Concurrency (e2e, Docker)', () => {
 		return Buffer.concat([JPEG_MAGIC, noise]);
 	}
 
-	function uploadJpeg(userId: string, fileBuffer: Buffer): Promise<Response> {
+	function uploadJpeg(userId: string, fileBuffer: Buffer): Promise<any> {
 		return request(app.getHttpServer())
 			.post('/media/v1/upload')
 			.set('x-user-id', userId)
