@@ -2,12 +2,20 @@ import { BadRequestException, Injectable, Inject, Logger, PayloadTooLargeExcepti
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Cache } from 'cache-manager';
 import { DataSource } from 'typeorm';
+import { createClient } from '@redis/client';
 import { UserQuota } from './entities/user-quota.entity';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { REDIS_CLIENT } from './media.module';
 
 // @keyv/redis (used by cache-manager v7) passes TTL to Redis as PX (milliseconds).
 // The global CacheModule default (ttl: 900) is also milliseconds = 0.9 s.
 const QUOTA_CACHE_TTL_MS = 60 * 60 * 1_000; // 1 hour in milliseconds
+
+// Cooldown TTL for quota alert events (in seconds)
+const QUOTA_ALERT_COOLDOWN_TTL_SECONDS = 60 * 60; // 1 hour
+
+// Storage usage thresholds that trigger a quota.alert event
+const QUOTA_ALERT_THRESHOLDS = [80, 95] as const;
 
 // Plain-object DTO stored in Redis. bigint and Date do not survive JSON round-trips,
 // so we serialise them to string/string and rehydrate on read.
@@ -62,7 +70,9 @@ export class QuotaService {
 	constructor(
 		@Inject(CACHE_MANAGER)
 		private readonly cache: Cache,
-		private readonly dataSource: DataSource
+		private readonly dataSource: DataSource,
+		@Inject(REDIS_CLIENT)
+		private readonly redisClient: ReturnType<typeof createClient>
 	) {}
 
 	// -------------------------------------------------------------------------
@@ -122,6 +132,7 @@ export class QuotaService {
 	/**
 	 * Atomically increments storage_used, files_count and daily_uploads
 	 * after a successful upload. Invalidates Redis cache for the user.
+	 * Also publishes a quota.alert event if usage crosses 80% or 95% thresholds.
 	 */
 	async recordUpload(userId: string, blobSize: number): Promise<void> {
 		this.validateBlobSize(blobSize);
@@ -145,6 +156,13 @@ export class QuotaService {
 		// event of a crash between commit and DEL, the cache will serve stale data
 		// until the TTL expires (1 hour). This is an accepted trade-off.
 		await this.invalidateCache(userId);
+
+		// WHISPR-371: Check thresholds and publish quota.alert if needed (fire-and-forget)
+		this.checkAndPublishQuotaAlert(userId).catch((err: unknown) => {
+			this.logger.error(
+				`Failed to publish quota.alert for user ${userId}: ${err instanceof Error ? err.message : String(err)}`
+			);
+		});
 	}
 
 	/**
@@ -286,6 +304,62 @@ export class QuotaService {
 			);
 		}
 		return quota;
+	}
+
+	// -------------------------------------------------------------------------
+	// WHISPR-371: quota.alert Redis pub/sub events
+	// -------------------------------------------------------------------------
+
+	/**
+	 * Reads the current quota for the user and publishes a `quota.alert` event
+	 * if storage usage crosses 80% or 95% thresholds, subject to a 1h cooldown.
+	 */
+	private async checkAndPublishQuotaAlert(userId: string): Promise<void> {
+		const quota = await this.getOrCreateQuota(userId);
+		if (quota.storageLimit === 0n) {
+			return;
+		}
+
+		const percentUsed = Number((quota.storageUsed * 100n) / quota.storageLimit);
+
+		for (const threshold of QUOTA_ALERT_THRESHOLDS) {
+			if (percentUsed >= threshold) {
+				await this.publishQuotaAlert(userId, quota.storageUsed, quota.storageLimit, threshold);
+			}
+		}
+	}
+
+	/**
+	 * Publishes a `quota.alert` event to Redis pub/sub if no cooldown key is set.
+	 * Cooldown key: `quota:alert:cooldown:{userId}:{percent}`, TTL 1h.
+	 */
+	private async publishQuotaAlert(
+		userId: string,
+		storageUsed: bigint,
+		storageLimit: bigint,
+		percent: number
+	): Promise<void> {
+		const cooldownKey = `quota:alert:cooldown:${userId}:${percent}`;
+
+		// SET NX with EX to atomically check and set cooldown
+		const acquired = await this.redisClient.set(cooldownKey, '1', {
+			NX: true,
+			EX: QUOTA_ALERT_COOLDOWN_TTL_SECONDS,
+		});
+		if (!acquired) {
+			// Cooldown active — skip publishing
+			return;
+		}
+
+		const payload = JSON.stringify({
+			userId,
+			storageUsed: storageUsed.toString(),
+			storageLimit: storageLimit.toString(),
+			percent,
+		});
+
+		await this.redisClient.publish('quota.alert', payload);
+		this.logger.log(`Published quota.alert for user ${userId} at ${percent}% usage`);
 	}
 
 	/**
