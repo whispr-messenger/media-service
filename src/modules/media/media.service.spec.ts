@@ -76,6 +76,7 @@ const mockRedisClient = {
 	decr: jest.fn().mockResolvedValue(0),
 	expire: jest.fn().mockResolvedValue(1),
 	del: jest.fn().mockResolvedValue(1),
+	publish: jest.fn().mockResolvedValue(1),
 };
 
 const mockS3 = {
@@ -262,6 +263,60 @@ describe('MediaService', () => {
 			expect(mockMediaRepository.softDelete).toHaveBeenCalledWith('media-uuid-1', mockEntityManager);
 			expect(mockCache.del).toHaveBeenCalledWith('media:meta:media-uuid-1');
 			expect(mockQuotaService.recordDelete).toHaveBeenCalledWith('user-uuid-1', 1024);
+		});
+
+		describe('media.deleted event (WHISPR-372)', () => {
+			beforeEach(() => {
+				mockRedisClient.publish.mockClear();
+			});
+
+			it('publishes media.deleted event with mediaId, ownerId and context on successful delete', async () => {
+				const media = makeMedia();
+				mockMediaRepository.findById.mockResolvedValue(media);
+
+				await service.delete('media-uuid-1', 'user-uuid-1');
+
+				// publish is fire-and-forget — wait for microtasks to flush
+				await Promise.resolve();
+
+				expect(mockRedisClient.publish).toHaveBeenCalledWith(
+					'media.deleted',
+					JSON.stringify({
+						mediaId: 'media-uuid-1',
+						ownerId: 'user-uuid-1',
+						context: MediaContext.MESSAGE,
+					})
+				);
+			});
+
+			it('does not publish media.deleted when media is not found', async () => {
+				mockMediaRepository.findById.mockResolvedValue(null);
+
+				await expect(service.delete('missing', 'user-uuid-1')).rejects.toThrow(NotFoundException);
+
+				await Promise.resolve();
+				expect(mockRedisClient.publish).not.toHaveBeenCalled();
+			});
+
+			it('does not publish media.deleted when requester is not the owner', async () => {
+				const media = makeMedia({ ownerId: 'owner-1' });
+				mockMediaRepository.findById.mockResolvedValue(media);
+
+				await expect(service.delete('media-uuid-1', 'other-user')).rejects.toThrow(
+					ForbiddenException
+				);
+
+				await Promise.resolve();
+				expect(mockRedisClient.publish).not.toHaveBeenCalled();
+			});
+
+			it('does not throw when publish fails (fire-and-forget)', async () => {
+				const media = makeMedia();
+				mockMediaRepository.findById.mockResolvedValue(media);
+				mockRedisClient.publish.mockRejectedValueOnce(new Error('Redis connection lost'));
+
+				await expect(service.delete('media-uuid-1', 'user-uuid-1')).resolves.toBeUndefined();
+			});
 		});
 
 		it('throws ForbiddenException when non-owner tries to delete', async () => {
