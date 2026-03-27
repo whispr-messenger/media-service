@@ -23,7 +23,7 @@ export const REDIS_CLIENT = 'REDIS_CLIENT';
 	imports: [TypeOrmModule.forFeature([Media, UserQuota, MediaAccessLog]), ConfigModule],
 	providers: [
 		{
-			provide: REDIS_CLIENT,
+			provide: 'REDIS_CLIENT',
 			inject: [ConfigService],
 			useFactory: async (configService: ConfigService) => {
 				const host = configService.get('REDIS_HOST', 'redis');
@@ -56,7 +56,7 @@ export class MediaModule implements OnModuleDestroy {
 	constructor(private readonly moduleRef: ModuleRef) {}
 
 	async onModuleDestroy(): Promise<void> {
-		const client = this.moduleRef.get<ReturnType<typeof createClient>>(REDIS_CLIENT, {
+		const client = this.moduleRef.get<ReturnType<typeof createClient>>('REDIS_CLIENT', {
 			strict: false,
 		});
 		await client?.quit();
