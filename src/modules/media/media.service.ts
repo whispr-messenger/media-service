@@ -368,6 +368,18 @@ export class MediaService {
 		// Access log
 		this.writeAccessLog(media.id, requesterId, 'delete', ipAddress, userAgent).catch(() => {});
 
+		// WHISPR-372: Publish media.deleted event (fire-and-forget — failure does not affect the delete response)
+		const deletedPayload = JSON.stringify({
+			mediaId: media.id,
+			ownerId: media.ownerId,
+			context: media.context,
+		});
+		this.redisClient.publish('media.deleted', deletedPayload).catch((err: unknown) => {
+			this.logger.error(
+				`Failed to publish media.deleted for media ${id}: ${err instanceof Error ? err.message : String(err)}`
+			);
+		});
+
 		this.logger.debug(`Soft-deleted media ${id} and removed S3 objects`);
 	}
 
