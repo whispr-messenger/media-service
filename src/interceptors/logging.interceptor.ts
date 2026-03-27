@@ -12,26 +12,42 @@ export class LoggingInterceptor implements NestInterceptor {
 		const response = context.switchToHttp().getResponse<Response>();
 		const { method, url, ip } = request;
 		const userAgent = request.get('User-Agent') || '';
+		const userId = request.headers['x-user-id'] as string | undefined;
 		const startTime = Date.now();
-
-		// Log request
-		this.logger.log(`Incoming Request: ${method} ${url} - IP: ${ip} - User-Agent: ${userAgent}`);
 
 		return next.handle().pipe(
 			tap({
 				next: () => {
 					const duration = Date.now() - startTime;
-					const outgoingMsg = `Outgoing Response: ${method} ${url}`;
-					const statusMsg = `Status: ${response.statusCode}`;
-					const durationMsg = `Duration: ${duration}ms`;
-					this.logger.log(`${outgoingMsg} - ${statusMsg} - ${durationMsg}`);
+					const contentLength = response.getHeader('content-length') || 0;
+					this.logger.log(
+						JSON.stringify({
+							method,
+							url,
+							statusCode: response.statusCode,
+							duration,
+							userId: userId || null,
+							contentLength: Number(contentLength),
+							ip,
+							userAgent,
+						})
+					);
 				},
 				error: (error) => {
 					const duration = Date.now() - startTime;
-					const requestMsg = `Request Error: ${method} ${url}`;
-					const statusMsg = `Status: ${error.status || 500}`;
-					const durationMsg = `Duration: ${duration}ms - Error: ${error.message}`;
-					this.logger.error(`${requestMsg} - ${statusMsg}  - ${durationMsg}`);
+					this.logger.error(
+						JSON.stringify({
+							method,
+							url,
+							statusCode: error.status || 500,
+							duration,
+							userId: userId || null,
+							contentLength: 0,
+							ip,
+							userAgent,
+							error: error.message,
+						})
+					);
 				},
 			})
 		);

@@ -22,6 +22,7 @@ import { Readable } from 'stream';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
 import { Media } from './entities/media.entity';
+import { UserQuota } from './entities/user-quota.entity';
 import { MediaAccessLog } from './entities/media-access-log.entity';
 import { MediaRepository } from './repositories/media.repository';
 import { StorageService, StorageContext } from './storage.service';
@@ -30,6 +31,9 @@ import { validateMagicBytes } from './magic-bytes.validator';
 import { createClient } from '@redis/client';
 import { MediaContext, UploadMediaResponseDto, MediaMetadataDto } from './dto/upload-media.dto';
 import { REDIS_CLIENT } from './media.tokens';
+import { UserQuotaResponseDto } from './dto/user-quota-response.dto';
+import { PaginatedMediaResponseDto } from './dto/paginated-media-response.dto';
+import { MetricsService } from '../metrics/metrics.service';
 
 // Blob size limits per context (in bytes)
 const CONTEXT_SIZE_LIMITS: Record<MediaContext, number> = {
@@ -95,6 +99,10 @@ export class MediaService {
 	private readonly logger = new Logger(MediaService.name);
 	private readonly signedUrlExpirySeconds: number;
 
+	private static readonly DEFAULT_STORAGE_LIMIT = 1073741824; // 1 GB
+	private static readonly DEFAULT_FILES_LIMIT = 1000;
+	private static readonly DEFAULT_DAILY_UPLOAD_LIMIT = 100;
+
 	constructor(
 		private readonly mediaRepository: MediaRepository,
 		private readonly storageService: StorageService,
@@ -103,9 +111,12 @@ export class MediaService {
 		private readonly configService: ConfigService,
 		private readonly dataSource: DataSource,
 		@Inject(CACHE_MANAGER) private readonly cache: Cache,
+		@InjectRepository(UserQuota) private readonly userQuotaRepo: Repository<UserQuota>,
+		@InjectRepository(Media) private readonly mediaRepo: Repository<Media>,
 		@InjectRepository(MediaAccessLog)
 		private readonly accessLogRepo: Repository<MediaAccessLog>,
-		@Inject(REDIS_CLIENT) private readonly redisClient: ReturnType<typeof createClient>
+		@Inject(REDIS_CLIENT) private readonly redisClient: ReturnType<typeof createClient>,
+		private readonly metricsService: MetricsService
 	) {
 		this.signedUrlExpirySeconds = this.configService.get<number>(
 			'SIGNED_URL_EXPIRY_SECONDS',
@@ -219,6 +230,7 @@ export class MediaService {
 			// WHISPR-357: Update quota
 			await this.quotaService.recordUpload(ownerId, file.size);
 
+			this.metricsService.uploadsTotal.inc();
 			return this.buildUploadResponse(media, context);
 		} finally {
 			await this.releaseSemaphore(ownerId);
@@ -397,6 +409,74 @@ export class MediaService {
 	}
 
 	// =========================================================================
+	// GET /media/v1/quota — WHISPR-368
+	// =========================================================================
+
+	async getUserQuota(userId: string): Promise<UserQuotaResponseDto> {
+		const quota = await this.dataSource.transaction((manager) =>
+			manager.getRepository(UserQuota).findOne({ where: { userId } })
+		);
+
+		const rawStorageUsed = quota?.storageUsed ?? 0n;
+		const rawStorageLimit = quota?.storageLimit ?? BigInt(MediaService.DEFAULT_STORAGE_LIMIT);
+		const maxSafe = BigInt(Number.MAX_SAFE_INTEGER);
+		const storageUsed = rawStorageUsed > maxSafe ? Number.MAX_SAFE_INTEGER : Number(rawStorageUsed);
+		const storageLimit = rawStorageLimit > maxSafe ? Number.MAX_SAFE_INTEGER : Number(rawStorageLimit);
+
+		const filesCount = quota?.filesCount ?? 0;
+		const filesLimit = quota?.filesLimit ?? MediaService.DEFAULT_FILES_LIMIT;
+		const dailyUploads = quota?.dailyUploads ?? 0;
+		const dailyUploadLimit = quota?.dailyUploadLimit ?? MediaService.DEFAULT_DAILY_UPLOAD_LIMIT;
+		const quotaDate = quota?.quotaDate ?? null;
+
+		let usagePercent = 0;
+		if (rawStorageLimit > 0n) {
+			const percentTimes100 = (rawStorageUsed * 10000n) / rawStorageLimit;
+			usagePercent = Number(percentTimes100) / 100;
+		}
+
+		return {
+			storageUsed,
+			storageLimit,
+			filesCount,
+			filesLimit,
+			dailyUploads,
+			dailyUploadLimit,
+			quotaDate,
+			usagePercent,
+		};
+	}
+
+	// =========================================================================
+	// GET /media/v1/my-media — WHISPR-369
+	// =========================================================================
+
+	async getUserMedia(userId: string, page: number, limit: number): Promise<PaginatedMediaResponseDto> {
+		const [items, total] = await this.dataSource.transaction((manager) =>
+			manager.getRepository(Media).findAndCount({
+				where: { ownerId: userId, isActive: true },
+				order: { createdAt: 'DESC' },
+				skip: (page - 1) * limit,
+				take: limit,
+			})
+		);
+
+		return {
+			items: items.map((m) => ({
+				id: m.id,
+				contentType: m.contentType,
+				blobSize: m.blobSize,
+				context: m.context,
+				createdAt: m.createdAt,
+			})),
+			total,
+			page,
+			limit,
+			totalPages: Math.ceil(total / limit),
+		};
+	}
+
+	// =========================================================================
 	// Private helpers
 	// =========================================================================
 
@@ -521,5 +601,19 @@ export class MediaService {
 		log.ipAddress = ipAddress ?? null;
 		log.userAgent = userAgent?.slice(0, 512) ?? null;
 		await this.accessLogRepo.save(log);
+	}
+
+	logAccess(mediaId: string, accessorId: string | null, accessType: string): void {
+		const log = this.accessLogRepo.create({
+			mediaId,
+			accessorId,
+			accessType,
+			accessedAt: new Date(),
+		});
+
+		this.accessLogRepo.save(log).catch((error: unknown) => {
+			const msg = error instanceof Error ? error.message : String(error);
+			this.logger.error(`Failed to write access log for media ${mediaId}: ${msg}`);
+		});
 	}
 }

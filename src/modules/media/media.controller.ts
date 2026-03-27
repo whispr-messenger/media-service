@@ -4,6 +4,7 @@ import {
 	Get,
 	Delete,
 	Param,
+	Query,
 	Headers,
 	UploadedFiles,
 	UseInterceptors,
@@ -16,7 +17,15 @@ import {
 	Body,
 } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
-import { ApiTags, ApiOperation, ApiResponse, ApiConsumes, ApiHeader, ApiBody } from '@nestjs/swagger';
+import {
+	ApiTags,
+	ApiOperation,
+	ApiResponse,
+	ApiConsumes,
+	ApiHeader,
+	ApiBody,
+	ApiQuery,
+} from '@nestjs/swagger';
 import { Response, Request } from 'express';
 import { MediaService } from './media.service';
 import {
@@ -25,6 +34,8 @@ import {
 	UploadMediaResponseDto,
 	MediaMetadataDto,
 } from './dto/upload-media.dto';
+import { UserQuotaResponseDto } from './dto/user-quota-response.dto';
+import { PaginatedMediaResponseDto } from './dto/paginated-media-response.dto';
 
 @ApiTags('Media')
 @ApiHeader({ name: 'x-user-id', description: 'UUID of the authenticated user', required: true })
@@ -89,6 +100,44 @@ export class MediaController {
 
 		this.logger.debug(`Upload request from user ${ownerId} context=${context}`);
 		return this.mediaService.upload(ownerId, file, context, thumbnail);
+	}
+
+	// =========================================================================
+	// GET /media/v1/quota — WHISPR-368
+	// =========================================================================
+
+	@Get('quota')
+	@ApiOperation({ summary: 'Get current user quota' })
+	@ApiResponse({ status: 200, description: 'User quota retrieved', type: UserQuotaResponseDto })
+	async getQuota(@Req() req: Request): Promise<UserQuotaResponseDto> {
+		const userId = (req as any).user?.userId as string;
+		return this.mediaService.getUserQuota(userId);
+	}
+
+	// =========================================================================
+	// GET /media/v1/my-media — WHISPR-375
+	// =========================================================================
+
+	@Get('my-media')
+	@ApiOperation({ summary: 'Get paginated list of current user media (GDPR)' })
+	@ApiQuery({ name: 'page', required: false, type: Number, description: 'Page number (default: 1)' })
+	@ApiQuery({
+		name: 'limit',
+		required: false,
+		type: Number,
+		description: 'Items per page (default: 20, max: 100)',
+	})
+	@ApiResponse({ status: 200, description: 'Paginated media list', type: PaginatedMediaResponseDto })
+	async getMyMedia(
+		@Req() req: Request,
+		@Query('page') rawPage?: string,
+		@Query('limit') rawLimit?: string
+	): Promise<PaginatedMediaResponseDto> {
+		const userId = (req as any).user?.userId as string;
+		const page = Math.max(1, Number.parseInt(rawPage ?? '', 10) || 1);
+		const limit = Math.min(100, Math.max(1, Number.parseInt(rawLimit ?? '', 10) || 20));
+
+		return this.mediaService.getUserMedia(userId, page, limit);
 	}
 
 	// =========================================================================
