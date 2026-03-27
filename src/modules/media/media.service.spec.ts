@@ -6,7 +6,7 @@ import {
 	PayloadTooLargeException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { getRepositoryToken } from '@nestjs/typeorm';
+import { getDataSourceToken, getRepositoryToken } from '@nestjs/typeorm';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { getS3ConnectionToken } from 'nestjs-s3';
 import { MediaService } from './media.service';
@@ -84,6 +84,16 @@ const mockS3 = {
 	send: jest.fn().mockResolvedValue({}),
 };
 
+const mockEntityManager = {
+	getRepository: jest.fn(),
+};
+
+const mockDataSource = {
+	transaction: jest.fn(async (callback: (manager: typeof mockEntityManager) => Promise<unknown>) =>
+		callback(mockEntityManager)
+	),
+};
+
 const mockConfigService = {
 	get: jest.fn((key: string, defaultValue?: unknown) => {
 		const config: Record<string, unknown> = {
@@ -111,6 +121,7 @@ describe('MediaService', () => {
 				{ provide: QuotaService, useValue: mockQuotaService },
 				{ provide: getS3ConnectionToken('default'), useValue: mockS3 },
 				{ provide: ConfigService, useValue: mockConfigService },
+				{ provide: getDataSourceToken(), useValue: mockDataSource },
 				{ provide: CACHE_MANAGER, useValue: mockCache },
 				{ provide: getRepositoryToken(MediaAccessLog), useValue: mockAccessLogRepo },
 				{ provide: REDIS_CLIENT, useValue: mockRedisClient },
@@ -118,6 +129,37 @@ describe('MediaService', () => {
 		}).compile();
 
 		service = module.get<MediaService>(MediaService);
+	});
+
+	it('wraps RLS-sensitive repository reads and writes in explicit transactions', async () => {
+		const media = makeMedia({ thumbnailPath: 'thumbnails/user-uuid-1/media-uuid-1.bin' });
+		const file: Express.Multer.File = {
+			originalname: 'photo.jpg',
+			mimetype: 'image/jpeg',
+			size: 1024,
+			buffer: jpegBuffer,
+		} as unknown as Express.Multer.File;
+
+		mockMediaRepository.save.mockResolvedValue(media);
+		mockMediaRepository.findById.mockResolvedValue(media);
+		mockMediaRepository.updateSignedUrlExpiry.mockResolvedValue(undefined);
+		mockMediaRepository.softDelete.mockResolvedValue(undefined);
+
+		await service.upload('user-uuid-1', file, MediaContext.MESSAGE);
+		await service.getMetadata('media-uuid-1', 'user-uuid-1');
+		await service.getBlobUrl('media-uuid-1', 'user-uuid-1');
+		await service.getThumbnailUrl('media-uuid-1', 'user-uuid-1');
+		await service.delete('media-uuid-1', 'user-uuid-1');
+
+		expect(mockDataSource.transaction).toHaveBeenCalledTimes(5);
+		expect(mockMediaRepository.save).toHaveBeenCalledWith(expect.any(Media), mockEntityManager);
+		expect(mockMediaRepository.findById).toHaveBeenCalledWith('media-uuid-1', mockEntityManager);
+		expect(mockMediaRepository.updateSignedUrlExpiry).toHaveBeenCalledWith(
+			'media-uuid-1',
+			expect.any(Date),
+			mockEntityManager
+		);
+		expect(mockMediaRepository.softDelete).toHaveBeenCalledWith('media-uuid-1', mockEntityManager);
 	});
 
 	describe('upload()', () => {
@@ -217,7 +259,7 @@ describe('MediaService', () => {
 
 			await service.delete('media-uuid-1', 'user-uuid-1');
 
-			expect(mockMediaRepository.softDelete).toHaveBeenCalledWith('media-uuid-1');
+			expect(mockMediaRepository.softDelete).toHaveBeenCalledWith('media-uuid-1', mockEntityManager);
 			expect(mockCache.del).toHaveBeenCalledWith('media:meta:media-uuid-1');
 			expect(mockQuotaService.recordDelete).toHaveBeenCalledWith('user-uuid-1', 1024);
 		});

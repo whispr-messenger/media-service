@@ -10,12 +10,18 @@ describe('MediaRepository', () => {
 		findOne: jest.Mock;
 		update: jest.Mock;
 	};
+	let mockManager: {
+		getRepository: jest.Mock;
+	};
 
 	beforeEach(async () => {
 		mockRepo = {
 			save: jest.fn(),
 			findOne: jest.fn(),
 			update: jest.fn(),
+		};
+		mockManager = {
+			getRepository: jest.fn().mockReturnValue(mockRepo),
 		};
 
 		const module: TestingModule = await Test.createTestingModule({
@@ -40,6 +46,16 @@ describe('MediaRepository', () => {
 
 			expect(mockRepo.save).toHaveBeenCalledWith(media);
 			expect(result).toBe(media);
+		});
+
+		it('uses the transactional manager when provided', async () => {
+			const media = { id: 'abc', isActive: true } as Media;
+			mockRepo.save.mockResolvedValue(media);
+
+			await mediaRepository.save(media, mockManager as never);
+
+			expect(mockManager.getRepository).toHaveBeenCalledWith(Media);
+			expect(mockRepo.save).toHaveBeenCalledWith(media);
 		});
 	});
 
@@ -71,6 +87,15 @@ describe('MediaRepository', () => {
 
 			await mediaRepository.softDelete('abc');
 
+			expect(mockRepo.update).toHaveBeenCalledWith('abc', { isActive: false });
+		});
+
+		it('uses the transactional manager for updates when provided', async () => {
+			mockRepo.update.mockResolvedValue(undefined);
+
+			await mediaRepository.softDelete('abc', mockManager as never);
+
+			expect(mockManager.getRepository).toHaveBeenCalledWith(Media);
 			expect(mockRepo.update).toHaveBeenCalledWith('abc', { isActive: false });
 		});
 	});
