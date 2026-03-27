@@ -297,6 +297,26 @@ describe('MediaService', () => {
 				ForbiddenException
 			);
 		});
+
+		it('allows any user to download avatar blob (public context)', async () => {
+			const media = makeMedia({ ownerId: 'owner-1', context: MediaContext.AVATAR });
+			mockMediaRepository.findById.mockResolvedValue(media);
+
+			await expect(service.getBlobUrl('media-uuid-1', 'different-user')).resolves.toBe(
+				`http://minio:9000/test-bucket/${media.storagePath}`
+			);
+			expect(mockStorageService.getPublicUrl).toHaveBeenCalledWith(media.storagePath);
+		});
+
+		it('allows any user to download group_icon blob (public context)', async () => {
+			const media = makeMedia({ ownerId: 'owner-1', context: MediaContext.GROUP_ICON });
+			mockMediaRepository.findById.mockResolvedValue(media);
+
+			await expect(service.getBlobUrl('media-uuid-1', 'different-user')).resolves.toBe(
+				`http://minio:9000/test-bucket/${media.storagePath}`
+			);
+			expect(mockStorageService.getPublicUrl).toHaveBeenCalledWith(media.storagePath);
+		});
 	});
 
 	describe('getThumbnailUrl()', () => {
