@@ -4,17 +4,22 @@ import { DataSource } from 'typeorm';
 import { BadRequestException, PayloadTooLargeException } from '@nestjs/common';
 import { QuotaService } from './quota.service';
 import { UserQuota } from './entities/user-quota.entity';
+import {
+	DEFAULT_STORAGE_LIMIT_BYTES,
+	DEFAULT_FILES_LIMIT,
+	DEFAULT_DAILY_UPLOAD_LIMIT,
+} from './quota.constants';
 
 const makeQuota = (overrides: Partial<UserQuota> = {}): UserQuota =>
 	({
 		id: 'quota-id-1',
 		userId: 'user-1',
 		storageUsed: 0n,
-		storageLimit: 1073741824n,
+		storageLimit: BigInt(DEFAULT_STORAGE_LIMIT_BYTES),
 		filesCount: 0,
-		filesLimit: 1000,
+		filesLimit: DEFAULT_FILES_LIMIT,
 		dailyUploads: 0,
-		dailyUploadLimit: 100,
+		dailyUploadLimit: DEFAULT_DAILY_UPLOAD_LIMIT,
 		quotaDate: '2026-03-21',
 		updatedAt: new Date(),
 		...overrides,
@@ -159,7 +164,10 @@ describe('QuotaService', () => {
 			// cache.set receives a serialised DTO (bigint fields as strings)
 			expect(mockCache.set).toHaveBeenCalledWith(
 				'quota:user:user-1',
-				expect.objectContaining({ storageUsed: '0', storageLimit: '1073741824' }),
+				expect.objectContaining({
+					storageUsed: '0',
+					storageLimit: String(DEFAULT_STORAGE_LIMIT_BYTES),
+				}),
 				expect.any(Number)
 			);
 		});
@@ -212,7 +220,9 @@ describe('QuotaService', () => {
 		});
 
 		it('throws PayloadTooLargeException (413) when quota is exceeded', async () => {
-			mockCache.get.mockResolvedValue(makeCachedQuota({ storageUsed: 1073741824n }));
+			mockCache.get.mockResolvedValue(
+				makeCachedQuota({ storageUsed: BigInt(DEFAULT_STORAGE_LIMIT_BYTES) })
+			);
 			await expect(service.enforceQuota('user-1', 1)).rejects.toThrow(PayloadTooLargeException);
 		});
 	});
