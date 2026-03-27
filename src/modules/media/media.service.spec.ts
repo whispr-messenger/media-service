@@ -184,6 +184,37 @@ describe('MediaService', () => {
 			expect(result).toHaveProperty('mediaId');
 		});
 
+		it('refreshes semaphore TTL while an upload is in progress', async () => {
+			jest.useFakeTimers();
+
+			try {
+				const media = makeMedia();
+				mockMediaRepository.save.mockResolvedValue(media);
+
+				let resolveUpload: (() => void) | undefined;
+				mockStorageService.upload.mockImplementationOnce(
+					() =>
+						new Promise<void>((resolve) => {
+							resolveUpload = resolve;
+						})
+				);
+
+				const uploadPromise = service.upload('user-uuid-1', file, MediaContext.MESSAGE);
+				await Promise.resolve();
+
+				expect(mockRedisClient.expire).toHaveBeenCalledTimes(1);
+
+				await jest.advanceTimersByTimeAsync(5 * 60 * 1000);
+
+				expect(mockRedisClient.expire).toHaveBeenCalledTimes(2);
+
+				resolveUpload?.();
+				await uploadPromise;
+			} finally {
+				jest.useRealTimers();
+			}
+		});
+
 		it('throws 429 HttpException when semaphore is at max', async () => {
 			// Simulate counter already at MAX+1 after INCR (4 = over the limit of 3)
 			mockRedisClient.incr.mockResolvedValueOnce(4);
