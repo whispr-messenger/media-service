@@ -8,6 +8,10 @@ RUN apt-get update && apt-get install -y $(cat requirements.txt) \
 EXPOSE 3000 9229
 
 WORKDIR /workspace
+
+COPY package.json package-lock.json ./
+RUN npm ci --include=dev
+
 COPY . .
 
 COPY ./docker/dev/entrypoint.sh /tmp/entrypoint.sh

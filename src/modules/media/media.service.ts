@@ -29,7 +29,7 @@ import { QuotaService } from './quota.service';
 import { validateMagicBytes } from './magic-bytes.validator';
 import { createClient } from '@redis/client';
 import { MediaContext, UploadMediaResponseDto, MediaMetadataDto } from './dto/upload-media.dto';
-import { REDIS_CLIENT } from './media.module';
+import { REDIS_CLIENT } from './media.tokens';
 
 // Blob size limits per context (in bytes)
 const CONTEXT_SIZE_LIMITS: Record<MediaContext, number> = {

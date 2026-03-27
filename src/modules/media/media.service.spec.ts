@@ -16,7 +16,7 @@ import { QuotaService } from './quota.service';
 import { MediaAccessLog } from './entities/media-access-log.entity';
 import { Media } from './entities/media.entity';
 import { MediaContext } from './dto/upload-media.dto';
-import { REDIS_CLIENT } from './media.module';
+import { REDIS_CLIENT } from './media.tokens';
 
 jest.mock('@aws-sdk/s3-request-presigner', () => ({
 	getSignedUrl: jest.fn().mockResolvedValue('https://presigned.url/file'),
