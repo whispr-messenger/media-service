@@ -5,7 +5,7 @@ import { DataSource } from 'typeorm';
 import { createClient } from '@redis/client';
 import { UserQuota } from './entities/user-quota.entity';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { REDIS_CLIENT } from './media.module';
+import { REDIS_CLIENT } from './media.tokens';
 
 // @keyv/redis (used by cache-manager v7) passes TTL to Redis as PX (milliseconds).
 // The global CacheModule default (ttl: 900) is also milliseconds = 0.9 s.
