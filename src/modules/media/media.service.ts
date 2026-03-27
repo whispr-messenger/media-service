@@ -29,7 +29,6 @@ import { QuotaService } from './quota.service';
 import { validateMagicBytes } from './magic-bytes.validator';
 import { createClient } from '@redis/client';
 import { MediaContext, UploadMediaResponseDto, MediaMetadataDto } from './dto/upload-media.dto';
-import { REDIS_CLIENT } from './media.tokens';
 
 // Blob size limits per context (in bytes)
 const CONTEXT_SIZE_LIMITS: Record<MediaContext, number> = {
@@ -105,7 +104,7 @@ export class MediaService {
 		@Inject(CACHE_MANAGER) private readonly cache: Cache,
 		@InjectRepository(MediaAccessLog)
 		private readonly accessLogRepo: Repository<MediaAccessLog>,
-		@Inject(REDIS_CLIENT) private readonly redisClient: ReturnType<typeof createClient>
+		@Inject('REDIS_CLIENT') private readonly redisClient: ReturnType<typeof createClient>
 	) {
 		this.signedUrlExpirySeconds = this.configService.get<number>(
 			'SIGNED_URL_EXPIRY_SECONDS',
