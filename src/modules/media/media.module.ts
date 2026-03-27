@@ -16,8 +16,7 @@ import { LifecycleService } from './lifecycle.service';
 import { RlsContextService } from './rls-context.service';
 import { RlsInterceptor } from './rls.interceptor';
 import { RlsSubscriber } from './rls.subscriber';
-
-export const REDIS_CLIENT = 'REDIS_CLIENT';
+import { REDIS_CLIENT } from './media.tokens';
 
 @Module({
 	imports: [TypeOrmModule.forFeature([Media, UserQuota, MediaAccessLog]), ConfigModule],
