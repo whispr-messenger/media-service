@@ -1,0 +1,26 @@
+import * as Joi from 'joi';
+
+export const envValidationSchema = Joi.object({
+	NODE_ENV: Joi.string().valid('development', 'production', 'test').required(),
+	HTTP_PORT: Joi.number().port().required(),
+	DB_HOST: Joi.string().required(),
+	DB_PORT: Joi.number().port().required(),
+	DB_USERNAME: Joi.string().required(),
+	DB_PASSWORD: Joi.string().required(),
+	DB_NAME: Joi.string().required(),
+	DB_URL: Joi.string().optional(),
+	DB_LOGGING: Joi.string().valid('true', 'false').default('false'),
+	DB_MIGRATIONS_RUN: Joi.string().valid('true', 'false').default('false'),
+	DB_SYNCHRONIZE: Joi.string().valid('true', 'false').default('false'),
+	REDIS_HOST: Joi.string().required(),
+	REDIS_PORT: Joi.number().port().required(),
+	REDIS_PASSWORD: Joi.string().optional().allow(''),
+	JWT_JWKS_URL: Joi.string().uri().required(),
+	S3_ACCESS_KEY_ID: Joi.string().required(),
+	S3_SECRET_ACCESS_KEY: Joi.string().required(),
+	S3_ENDPOINT: Joi.string().required(),
+	S3_REGION: Joi.string().optional().default('us-east-1'),
+	SIGNED_URL_EXPIRY_SECONDS: Joi.number().integer().positive().max(604800).optional().default(604800),
+	MESSAGE_BLOB_TTL_DAYS: Joi.number().integer().positive().optional().default(30),
+	THUMBNAIL_BLOB_TTL_DAYS: Joi.number().integer().positive().optional().default(30),
+}).options({ allowUnknown: true });
