@@ -31,6 +31,7 @@ describe('LifecycleService', () => {
 	});
 
 	it('applies lifecycle rules when none exist yet', async () => {
+		mockS3.send.mockResolvedValueOnce({});
 		// Simulate NoSuchLifecycleConfiguration on first GET
 		mockS3.send.mockRejectedValueOnce(
 			Object.assign(new Error('no config'), { name: 'NoSuchLifecycleConfiguration' })
@@ -39,8 +40,8 @@ describe('LifecycleService', () => {
 
 		await service.ensureLifecyclePolicies();
 
-		expect(mockS3.send).toHaveBeenCalledTimes(2);
-		const putCall = mockS3.send.mock.calls[1][0];
+		expect(mockS3.send).toHaveBeenCalledTimes(3);
+		const putCall = mockS3.send.mock.calls[2][0];
 		const rules: Array<{ ID: string; Expiration: { Days: number } }> =
 			putCall.input.LifecycleConfiguration.Rules;
 		const ids = rules.map((r) => r.ID);
@@ -53,6 +54,7 @@ describe('LifecycleService', () => {
 	});
 
 	it('skips PUT when both rules already exist with correct TTL', async () => {
+		mockS3.send.mockResolvedValueOnce({});
 		mockS3.send.mockResolvedValueOnce({
 			Rules: [
 				{ ID: 'messages-expiry', Status: 'Enabled', Expiration: { Days: 30 } },
@@ -62,10 +64,11 @@ describe('LifecycleService', () => {
 
 		await service.ensureLifecyclePolicies();
 
-		expect(mockS3.send).toHaveBeenCalledTimes(1);
+		expect(mockS3.send).toHaveBeenCalledTimes(2);
 	});
 
 	it('re-applies rules when TTL has changed', async () => {
+		mockS3.send.mockResolvedValueOnce({});
 		mockS3.send.mockResolvedValueOnce({
 			Rules: [
 				{ ID: 'messages-expiry', Status: 'Enabled', Expiration: { Days: 7 } },
@@ -76,10 +79,11 @@ describe('LifecycleService', () => {
 
 		await service.ensureLifecyclePolicies();
 
-		expect(mockS3.send).toHaveBeenCalledTimes(2);
+		expect(mockS3.send).toHaveBeenCalledTimes(3);
 	});
 
 	it('re-applies rules when only one is present', async () => {
+		mockS3.send.mockResolvedValueOnce({});
 		mockS3.send.mockResolvedValueOnce({
 			Rules: [{ ID: 'messages-expiry', Status: 'Enabled' }],
 		});
@@ -87,20 +91,21 @@ describe('LifecycleService', () => {
 
 		await service.ensureLifecyclePolicies();
 
-		expect(mockS3.send).toHaveBeenCalledTimes(2);
-		const putCall = mockS3.send.mock.calls[1][0];
+		expect(mockS3.send).toHaveBeenCalledTimes(3);
+		const putCall = mockS3.send.mock.calls[2][0];
 		const ids = putCall.input.LifecycleConfiguration.Rules.map((r: { ID: string }) => r.ID);
 		expect(ids).toContain('messages-expiry');
 		expect(ids).toContain('thumbnails-expiry');
 	});
 
 	it('applies rules when GET returns an empty Rules array', async () => {
+		mockS3.send.mockResolvedValueOnce({});
 		mockS3.send.mockResolvedValueOnce({ Rules: [] });
 		mockS3.send.mockResolvedValueOnce({});
 
 		await service.ensureLifecyclePolicies();
 
-		expect(mockS3.send).toHaveBeenCalledTimes(2);
+		expect(mockS3.send).toHaveBeenCalledTimes(3);
 	});
 
 	it('does not throw when ensureLifecyclePolicies fails — onApplicationBootstrap catches it', async () => {
@@ -110,6 +115,7 @@ describe('LifecycleService', () => {
 	});
 
 	it('propagates unexpected S3 errors from GET', async () => {
+		mockS3.send.mockResolvedValueOnce({});
 		mockS3.send.mockRejectedValueOnce(Object.assign(new Error('AccessDenied'), { name: 'AccessDenied' }));
 
 		await expect(service.ensureLifecyclePolicies()).rejects.toThrow('AccessDenied');

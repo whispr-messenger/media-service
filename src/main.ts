@@ -33,10 +33,13 @@ async function bootstrap() {
 
 	app.enableShutdownHooks();
 
-	const expressApp = app.getHttpAdapter().getInstance();
-	expressApp.get('/metrics', (_req: Request, res: Response) => {
-		res.type('text/plain').send('');
-	});
+	const httpAdapter = (app as any).getHttpAdapter?.();
+	const expressApp = httpAdapter?.getInstance?.();
+	if (expressApp?.get) {
+		expressApp.get('/metrics', (_req: Request, res: Response) => {
+			res.type('text/plain').send('');
+		});
+	}
 
 	await app.listen(port);
 
