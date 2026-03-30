@@ -1,3 +1,6 @@
 ffmpeg
 curl
 tini
+libvips-dev
+python3
+build-essential

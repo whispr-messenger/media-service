@@ -2,6 +2,8 @@ import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectS3, S3 } from 'nestjs-s3';
 import {
+	HeadBucketCommand,
+	CreateBucketCommand,
 	GetBucketLifecycleConfigurationCommand,
 	PutBucketLifecycleConfigurationCommand,
 	LifecycleRule,
@@ -37,8 +39,8 @@ export class LifecycleService implements OnApplicationBootstrap {
 		private readonly configService: ConfigService
 	) {
 		this.bucket = this.configService.get<string>('S3_BUCKET', 'whispr-media');
-		this.messageBlobTtlDays = this.configService.get<number>('MESSAGE_BLOB_TTL_DAYS');
-		this.thumbnailBlobTtlDays = this.configService.get<number>('THUMBNAIL_BLOB_TTL_DAYS');
+		this.messageBlobTtlDays = this.configService.get<number>('MESSAGE_BLOB_TTL_DAYS', 30);
+		this.thumbnailBlobTtlDays = this.configService.get<number>('THUMBNAIL_BLOB_TTL_DAYS', 30);
 	}
 
 	async onApplicationBootstrap(): Promise<void> {
@@ -52,6 +54,12 @@ export class LifecycleService implements OnApplicationBootstrap {
 
 	async ensureLifecyclePolicies(): Promise<void> {
 		const desiredRuleIds = new Set(['messages-expiry', 'thumbnails-expiry']);
+
+		try {
+			await this.s3.send(new HeadBucketCommand({ Bucket: this.bucket }));
+		} catch {
+			await this.s3.send(new CreateBucketCommand({ Bucket: this.bucket }));
+		}
 
 		// Fetch existing rules (if any)
 		let existingRules: LifecycleRule[] = [];
