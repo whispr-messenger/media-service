@@ -53,6 +53,14 @@ export class RlsSubscriber implements EntitySubscriberInterface, OnModuleInit {
 	async onModuleInit(): Promise<void> {
 		const result = await this.dataSource.query(`SELECT current_setting('is_superuser') AS is_superuser`);
 		if (result?.[0]?.is_superuser === 'on') {
+			if (process.env.NODE_ENV === 'development') {
+				this.logger.warn(
+					'Database role is superuser in development; RLS policies may be bypassed. ' +
+						'Use a dedicated non-superuser role (e.g. media_app) to validate RLS behavior.'
+				);
+				return;
+			}
+
 			throw new Error(
 				'The database connection is using a superuser role. ' +
 					'Superusers bypass RLS policies — use a dedicated non-superuser role (e.g. media_app).'

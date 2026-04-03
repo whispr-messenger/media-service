@@ -16,8 +16,7 @@ import { LifecycleService } from './lifecycle.service';
 import { RlsContextService } from './rls-context.service';
 import { RlsInterceptor } from './rls.interceptor';
 import { RlsSubscriber } from './rls.subscriber';
-
-export const REDIS_CLIENT = 'REDIS_CLIENT';
+import { REDIS_CLIENT } from './media.tokens';
 
 @Module({
 	imports: [TypeOrmModule.forFeature([Media, UserQuota, MediaAccessLog]), ConfigModule],
@@ -41,9 +40,6 @@ export const REDIS_CLIENT = 'REDIS_CLIENT';
 		LifecycleService,
 		RlsContextService,
 		RlsSubscriber,
-		// Global interceptor — applies to all routes including unauthenticated ones.
-		// This is intentional: the interceptor is a no-op when userId is absent,
-		// and registering it globally avoids forgetting to apply it on new routes.
 		{
 			provide: APP_INTERCEPTOR,
 			useClass: RlsInterceptor,
