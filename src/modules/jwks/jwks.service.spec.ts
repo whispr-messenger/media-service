@@ -19,6 +19,8 @@ describe('JwksService', () => {
 	};
 
 	beforeEach(async () => {
+		jest.useFakeTimers();
+
 		const module: TestingModule = await Test.createTestingModule({
 			providers: [JwksService, { provide: ConfigService, useValue: mockConfigService }],
 		}).compile();
@@ -28,6 +30,7 @@ describe('JwksService', () => {
 	});
 
 	afterEach(() => {
+		jest.useRealTimers();
 		jest.restoreAllMocks();
 	});
 
@@ -165,18 +168,65 @@ describe('JwksService', () => {
 	});
 
 	describe('onModuleInit()', () => {
-		it('should call loadPublicKey on module init', async () => {
-			const spy = jest.spyOn(service, 'loadPublicKey').mockResolvedValue(undefined);
+		it('should mark service as ready when JWKS loads successfully on first attempt', async () => {
+			jest.spyOn(globalThis, 'fetch').mockResolvedValue({
+				ok: true,
+				json: jest.fn().mockResolvedValue({ keys: [ES256_JWK] }),
+			} as unknown as Response);
 
-			await service.onModuleInit();
+			void service.onModuleInit();
+			// flush the microtask queue so the async retry loop runs the first attempt
+			await Promise.resolve();
+			await Promise.resolve();
 
-			expect(spy).toHaveBeenCalledTimes(1);
+			expect(service.isReady()).toBe(true);
 		});
 
-		it('should not throw when loadPublicKey fails — keeps publicKey null', async () => {
-			jest.spyOn(service, 'loadPublicKey').mockRejectedValue(new Error('JWKS unreachable'));
+		it('should retry and succeed on the second attempt', async () => {
+			const fetchMock = jest
+				.spyOn(globalThis, 'fetch')
+				.mockRejectedValueOnce(new Error('Network error'))
+				.mockResolvedValueOnce({
+					ok: true,
+					json: jest.fn().mockResolvedValue({ keys: [ES256_JWK] }),
+				} as unknown as Response);
 
-			await expect(service.onModuleInit()).resolves.toBeUndefined();
+			void service.onModuleInit();
+			// first attempt fires, fails; advance timer for the 1s backoff delay
+			await Promise.resolve();
+			await jest.advanceTimersByTimeAsync(1_000);
+			// second attempt fires and succeeds
+			await Promise.resolve();
+			await Promise.resolve();
+
+			expect(fetchMock).toHaveBeenCalledTimes(2);
+			expect(service.isReady()).toBe(true);
+		});
+
+		it('should remain not ready after all attempts exhaust', async () => {
+			jest.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Network error'));
+
+			void service.onModuleInit();
+			// first attempt fires immediately
+			await Promise.resolve();
+
+			expect(service.isReady()).toBe(false);
+
+			// stop background loop to prevent open handles in subsequent tests
+			service.onModuleDestroy();
+			await jest.runAllTimersAsync();
+		});
+
+		it('should stop retrying after onModuleDestroy is called', async () => {
+			const fetchMock = jest.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Network error'));
+
+			void service.onModuleInit();
+			await Promise.resolve();
+			service.onModuleDestroy();
+			await jest.runAllTimersAsync();
+
+			// only the first synchronous attempt should have fired before destroy
+			expect(fetchMock.mock.calls.length).toBeLessThanOrEqual(2);
 			expect(service.isReady()).toBe(false);
 		});
 	});

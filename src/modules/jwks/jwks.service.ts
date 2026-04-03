@@ -1,8 +1,11 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createPublicKey, KeyObject } from 'node:crypto';
 
 const FETCH_TIMEOUT_MS = 5000;
+const BACKOFF_INITIAL_MS = 1_000;
+const BACKOFF_CAP_MS = 30_000;
+const BACKOFF_MAX_ATTEMPTS = 10;
 
 interface JwkKey {
 	kty: string;
@@ -18,18 +21,69 @@ interface JwksDocument {
 }
 
 @Injectable()
-export class JwksService implements OnModuleInit {
+export class JwksService implements OnModuleInit, OnModuleDestroy {
 	private readonly logger = new Logger(JwksService.name);
 	private publicKey: KeyObject | null = null;
+	private _destroyed = false;
 
 	constructor(private readonly configService: ConfigService) {}
 
 	async onModuleInit(): Promise<void> {
-		try {
-			await this.loadPublicKey();
-		} catch (error) {
-			this.logger.error(`Failed to load ES256 public key at startup: ${error.message}`);
+		void this.loadPublicKeyWithRetry();
+	}
+
+	onModuleDestroy(): void {
+		this._destroyed = true;
+	}
+
+	private async loadPublicKeyWithRetry(): Promise<void> {
+		let delay = BACKOFF_INITIAL_MS;
+
+		for (let attempt = 1; attempt <= BACKOFF_MAX_ATTEMPTS; attempt++) {
+			if (this._destroyed) return;
+
+			try {
+				await this.loadPublicKey();
+				return;
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				this.logger.error(
+					`Failed to load ES256 public key (attempt ${attempt}/${BACKOFF_MAX_ATTEMPTS}): ${message}`
+				);
+			}
+
+			if (attempt < BACKOFF_MAX_ATTEMPTS) {
+				this.logger.warn(`Retrying JWKS fetch in ${delay}ms…`);
+				await this.sleep(delay);
+				delay = Math.min(delay * 2, BACKOFF_CAP_MS);
+			}
 		}
+
+		this.logger.error(
+			`ES256 public key could not be loaded after ${BACKOFF_MAX_ATTEMPTS} attempts. Continuing background retries every ${BACKOFF_CAP_MS}ms.`
+		);
+
+		void this.continueBackgroundRetry();
+	}
+
+	private async continueBackgroundRetry(): Promise<void> {
+		while (!this.publicKey && !this._destroyed) {
+			await this.sleep(BACKOFF_CAP_MS);
+
+			if (this._destroyed) return;
+
+			try {
+				await this.loadPublicKey();
+				this.logger.log('ES256 public key loaded successfully (background retry).');
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				this.logger.error(`Background JWKS reload failed: ${message}`);
+			}
+		}
+	}
+
+	private sleep(ms: number): Promise<void> {
+		return new Promise((resolve) => globalThis.setTimeout(resolve, ms));
 	}
 
 	async loadPublicKey(): Promise<void> {
