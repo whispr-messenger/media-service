@@ -25,6 +25,7 @@ export class JwksService implements OnModuleInit, OnModuleDestroy {
 	private readonly logger = new Logger(JwksService.name);
 	private publicKey: KeyObject | null = null;
 	private _destroyed = false;
+	private _sleepHandle: NodeJS.Timeout | null = null;
 
 	constructor(private readonly configService: ConfigService) {}
 
@@ -34,6 +35,10 @@ export class JwksService implements OnModuleInit, OnModuleDestroy {
 
 	onModuleDestroy(): void {
 		this._destroyed = true;
+		if (this._sleepHandle !== null) {
+			globalThis.clearTimeout(this._sleepHandle);
+			this._sleepHandle = null;
+		}
 	}
 
 	private async loadPublicKeyWithRetry(): Promise<void> {
@@ -83,7 +88,13 @@ export class JwksService implements OnModuleInit, OnModuleDestroy {
 	}
 
 	private sleep(ms: number): Promise<void> {
-		return new Promise((resolve) => globalThis.setTimeout(resolve, ms));
+		return new Promise((resolve) => {
+			const handle = globalThis.setTimeout(resolve, ms);
+			if (typeof handle === 'object' && 'unref' in handle) {
+				(handle as NodeJS.Timeout).unref();
+			}
+			this._sleepHandle = handle as NodeJS.Timeout;
+		});
 	}
 
 	async loadPublicKey(): Promise<void> {

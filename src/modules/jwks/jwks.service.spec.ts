@@ -2,6 +2,12 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { JwksService } from './jwks.service';
 
+async function flushPromises(): Promise<void> {
+	for (let i = 0; i < 10; i++) {
+		await Promise.resolve();
+	}
+}
+
 const ES256_JWK = {
 	kty: 'EC',
 	use: 'sig',
@@ -175,9 +181,7 @@ describe('JwksService', () => {
 			} as unknown as Response);
 
 			void service.onModuleInit();
-			// flush the microtask queue so the async retry loop runs the first attempt
-			await Promise.resolve();
-			await Promise.resolve();
+			await flushPromises();
 
 			expect(service.isReady()).toBe(true);
 		});
@@ -192,23 +196,22 @@ describe('JwksService', () => {
 				} as unknown as Response);
 
 			void service.onModuleInit();
-			// first attempt fires, fails; advance timer for the 1s backoff delay
-			await Promise.resolve();
+			// first attempt fires and fails
+			await flushPromises();
+			// advance past the 1s backoff delay
 			await jest.advanceTimersByTimeAsync(1_000);
 			// second attempt fires and succeeds
-			await Promise.resolve();
-			await Promise.resolve();
+			await flushPromises();
 
 			expect(fetchMock).toHaveBeenCalledTimes(2);
 			expect(service.isReady()).toBe(true);
 		});
 
-		it('should remain not ready after all attempts exhaust', async () => {
+		it('should remain not ready after the first failed attempt', async () => {
 			jest.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Network error'));
 
 			void service.onModuleInit();
-			// first attempt fires immediately
-			await Promise.resolve();
+			await flushPromises();
 
 			expect(service.isReady()).toBe(false);
 
@@ -221,12 +224,13 @@ describe('JwksService', () => {
 			const fetchMock = jest.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Network error'));
 
 			void service.onModuleInit();
-			await Promise.resolve();
+			// first attempt fires
+			await flushPromises();
 			service.onModuleDestroy();
 			await jest.runAllTimersAsync();
 
-			// only the first synchronous attempt should have fired before destroy
-			expect(fetchMock.mock.calls.length).toBeLessThanOrEqual(2);
+			// only the first attempt should have fired before destroy cancelled the timer
+			expect(fetchMock).toHaveBeenCalledTimes(1);
 			expect(service.isReady()).toBe(false);
 		});
 
@@ -239,7 +243,7 @@ describe('JwksService', () => {
 			void service.onModuleInit();
 			// exhaust the 10 initial attempts (total delay: 1+2+4+8+16+30+30+30+30 = 151s)
 			await jest.advanceTimersByTimeAsync(200_000);
-			await Promise.resolve();
+			await flushPromises();
 
 			// service is not ready yet
 			expect(service.isReady()).toBe(false);
@@ -252,8 +256,7 @@ describe('JwksService', () => {
 
 			// advance past the 30s background retry interval
 			await jest.advanceTimersByTimeAsync(30_000);
-			await Promise.resolve();
-			await Promise.resolve();
+			await flushPromises();
 
 			expect(service.isReady()).toBe(true);
 
@@ -267,7 +270,7 @@ describe('JwksService', () => {
 			void service.onModuleInit();
 			// exhaust initial attempts
 			await jest.advanceTimersByTimeAsync(200_000);
-			await Promise.resolve();
+			await flushPromises();
 
 			// destroy mid-background-loop (after the sleep but before next fetch)
 			service.onModuleDestroy();
