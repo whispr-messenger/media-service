@@ -229,5 +229,51 @@ describe('JwksService', () => {
 			expect(fetchMock.mock.calls.length).toBeLessThanOrEqual(2);
 			expect(service.isReady()).toBe(false);
 		});
+
+		it('should load the key in background retry after all initial attempts fail', async () => {
+			const fetchMock = jest
+				.spyOn(globalThis, 'fetch')
+				// fail all 10 initial attempts
+				.mockRejectedValue(new Error('Network error'));
+
+			void service.onModuleInit();
+			// exhaust the 10 initial attempts (total delay: 1+2+4+8+16+30+30+30+30 = 151s)
+			await jest.advanceTimersByTimeAsync(200_000);
+			await Promise.resolve();
+
+			// service is not ready yet
+			expect(service.isReady()).toBe(false);
+
+			// now make the background retry succeed
+			fetchMock.mockResolvedValueOnce({
+				ok: true,
+				json: jest.fn().mockResolvedValue({ keys: [ES256_JWK] }),
+			} as unknown as Response);
+
+			// advance past the 30s background retry interval
+			await jest.advanceTimersByTimeAsync(30_000);
+			await Promise.resolve();
+			await Promise.resolve();
+
+			expect(service.isReady()).toBe(true);
+
+			service.onModuleDestroy();
+			await jest.runAllTimersAsync();
+		});
+
+		it('should stop background retry loop when destroyed after sleep', async () => {
+			jest.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Network error'));
+
+			void service.onModuleInit();
+			// exhaust initial attempts
+			await jest.advanceTimersByTimeAsync(200_000);
+			await Promise.resolve();
+
+			// destroy mid-background-loop (after the sleep but before next fetch)
+			service.onModuleDestroy();
+			await jest.runAllTimersAsync();
+
+			expect(service.isReady()).toBe(false);
+		});
 	});
 });
