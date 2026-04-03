@@ -30,6 +30,11 @@ async function bootstrap() {
 
 	createSwaggerDocumentation(app, port, configService, globalPrefix);
 
+	app.enableCors({
+		origin: true,
+		credentials: true,
+	});
+
 	app.useGlobalInterceptors(new LoggingInterceptor());
 
 	app.enableShutdownHooks();
