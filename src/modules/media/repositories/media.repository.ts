@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { EntityManager, Repository } from 'typeorm';
 import { Media } from '../entities/media.entity';
 
 @Injectable()
@@ -12,19 +12,27 @@ export class MediaRepository {
 	// RlsSubscriber. If RLS filtering is required for any of these operations,
 	// wrap the call site in `dataSource.transaction(…)`.
 
-	async save(media: Media): Promise<Media> {
-		return this.repo.save(media);
+	private getRepository(manager?: EntityManager): Repository<Media> {
+		return manager ? manager.getRepository(Media) : this.repo;
 	}
 
-	async findById(id: string): Promise<Media | null> {
-		return this.repo.findOne({ where: { id, isActive: true } });
+	async save(media: Media, manager?: EntityManager): Promise<Media> {
+		return this.getRepository(manager).save(media);
 	}
 
-	async updateSignedUrlExpiry(id: string, signedUrlExpiresAt: Date): Promise<void> {
-		await this.repo.update(id, { signedUrlExpiresAt });
+	async findById(id: string, manager?: EntityManager): Promise<Media | null> {
+		return this.getRepository(manager).findOne({ where: { id, isActive: true } });
 	}
 
-	async softDelete(id: string): Promise<void> {
-		await this.repo.update(id, { isActive: false });
+	async updateSignedUrlExpiry(
+		id: string,
+		signedUrlExpiresAt: Date,
+		manager?: EntityManager
+	): Promise<void> {
+		await this.getRepository(manager).update(id, { signedUrlExpiresAt });
+	}
+
+	async softDelete(id: string, manager?: EntityManager): Promise<void> {
+		await this.getRepository(manager).update(id, { isActive: false });
 	}
 }

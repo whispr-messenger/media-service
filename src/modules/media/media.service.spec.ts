@@ -6,7 +6,7 @@ import {
 	PayloadTooLargeException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { getRepositoryToken } from '@nestjs/typeorm';
+import { getDataSourceToken, getRepositoryToken } from '@nestjs/typeorm';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { getS3ConnectionToken } from 'nestjs-s3';
 import { MediaService } from './media.service';
@@ -76,12 +76,23 @@ const mockRedisClient = {
 	decr: jest.fn().mockResolvedValue(0),
 	expire: jest.fn().mockResolvedValue(1),
 	del: jest.fn().mockResolvedValue(1),
+	publish: jest.fn().mockResolvedValue(1),
 };
 
 const mockS3 = {
 	putObject: jest.fn().mockResolvedValue({}),
 	getObject: jest.fn(),
 	send: jest.fn().mockResolvedValue({}),
+};
+
+const mockEntityManager = {
+	getRepository: jest.fn(),
+};
+
+const mockDataSource = {
+	transaction: jest.fn(async (callback: (manager: typeof mockEntityManager) => Promise<unknown>) =>
+		callback(mockEntityManager)
+	),
 };
 
 const mockConfigService = {
@@ -111,6 +122,7 @@ describe('MediaService', () => {
 				{ provide: QuotaService, useValue: mockQuotaService },
 				{ provide: getS3ConnectionToken('default'), useValue: mockS3 },
 				{ provide: ConfigService, useValue: mockConfigService },
+				{ provide: getDataSourceToken(), useValue: mockDataSource },
 				{ provide: CACHE_MANAGER, useValue: mockCache },
 				{ provide: getRepositoryToken(MediaAccessLog), useValue: mockAccessLogRepo },
 				{ provide: REDIS_CLIENT, useValue: mockRedisClient },
@@ -118,6 +130,37 @@ describe('MediaService', () => {
 		}).compile();
 
 		service = module.get<MediaService>(MediaService);
+	});
+
+	it('wraps RLS-sensitive repository reads and writes in explicit transactions', async () => {
+		const media = makeMedia({ thumbnailPath: 'thumbnails/user-uuid-1/media-uuid-1.bin' });
+		const file: Express.Multer.File = {
+			originalname: 'photo.jpg',
+			mimetype: 'image/jpeg',
+			size: 1024,
+			buffer: jpegBuffer,
+		} as unknown as Express.Multer.File;
+
+		mockMediaRepository.save.mockResolvedValue(media);
+		mockMediaRepository.findById.mockResolvedValue(media);
+		mockMediaRepository.updateSignedUrlExpiry.mockResolvedValue(undefined);
+		mockMediaRepository.softDelete.mockResolvedValue(undefined);
+
+		await service.upload('user-uuid-1', file, MediaContext.MESSAGE);
+		await service.getMetadata('media-uuid-1', 'user-uuid-1');
+		await service.getBlobUrl('media-uuid-1', 'user-uuid-1');
+		await service.getThumbnailUrl('media-uuid-1', 'user-uuid-1');
+		await service.delete('media-uuid-1', 'user-uuid-1');
+
+		expect(mockDataSource.transaction).toHaveBeenCalledTimes(5);
+		expect(mockMediaRepository.save).toHaveBeenCalledWith(expect.any(Media), mockEntityManager);
+		expect(mockMediaRepository.findById).toHaveBeenCalledWith('media-uuid-1', mockEntityManager);
+		expect(mockMediaRepository.updateSignedUrlExpiry).toHaveBeenCalledWith(
+			'media-uuid-1',
+			expect.any(Date),
+			mockEntityManager
+		);
+		expect(mockMediaRepository.softDelete).toHaveBeenCalledWith('media-uuid-1', mockEntityManager);
 	});
 
 	describe('upload()', () => {
@@ -217,9 +260,63 @@ describe('MediaService', () => {
 
 			await service.delete('media-uuid-1', 'user-uuid-1');
 
-			expect(mockMediaRepository.softDelete).toHaveBeenCalledWith('media-uuid-1');
+			expect(mockMediaRepository.softDelete).toHaveBeenCalledWith('media-uuid-1', mockEntityManager);
 			expect(mockCache.del).toHaveBeenCalledWith('media:meta:media-uuid-1');
 			expect(mockQuotaService.recordDelete).toHaveBeenCalledWith('user-uuid-1', 1024);
+		});
+
+		describe('media.deleted event (WHISPR-372)', () => {
+			beforeEach(() => {
+				mockRedisClient.publish.mockClear();
+			});
+
+			it('publishes media.deleted event with mediaId, ownerId and context on successful delete', async () => {
+				const media = makeMedia();
+				mockMediaRepository.findById.mockResolvedValue(media);
+
+				await service.delete('media-uuid-1', 'user-uuid-1');
+
+				// publish is fire-and-forget — wait for microtasks to flush
+				await Promise.resolve();
+
+				expect(mockRedisClient.publish).toHaveBeenCalledWith(
+					'media.deleted',
+					JSON.stringify({
+						mediaId: 'media-uuid-1',
+						ownerId: 'user-uuid-1',
+						context: MediaContext.MESSAGE,
+					})
+				);
+			});
+
+			it('does not publish media.deleted when media is not found', async () => {
+				mockMediaRepository.findById.mockResolvedValue(null);
+
+				await expect(service.delete('missing', 'user-uuid-1')).rejects.toThrow(NotFoundException);
+
+				await Promise.resolve();
+				expect(mockRedisClient.publish).not.toHaveBeenCalled();
+			});
+
+			it('does not publish media.deleted when requester is not the owner', async () => {
+				const media = makeMedia({ ownerId: 'owner-1' });
+				mockMediaRepository.findById.mockResolvedValue(media);
+
+				await expect(service.delete('media-uuid-1', 'other-user')).rejects.toThrow(
+					ForbiddenException
+				);
+
+				await Promise.resolve();
+				expect(mockRedisClient.publish).not.toHaveBeenCalled();
+			});
+
+			it('does not throw when publish fails (fire-and-forget)', async () => {
+				const media = makeMedia();
+				mockMediaRepository.findById.mockResolvedValue(media);
+				mockRedisClient.publish.mockRejectedValueOnce(new Error('Redis connection lost'));
+
+				await expect(service.delete('media-uuid-1', 'user-uuid-1')).resolves.toBeUndefined();
+			});
 		});
 
 		it('throws ForbiddenException when non-owner tries to delete', async () => {
@@ -254,6 +351,26 @@ describe('MediaService', () => {
 			await expect(service.getBlobUrl('media-uuid-1', 'other-user')).rejects.toThrow(
 				ForbiddenException
 			);
+		});
+
+		it('allows any user to download avatar blob (public context)', async () => {
+			const media = makeMedia({ ownerId: 'owner-1', context: MediaContext.AVATAR });
+			mockMediaRepository.findById.mockResolvedValue(media);
+
+			await expect(service.getBlobUrl('media-uuid-1', 'different-user')).resolves.toBe(
+				`http://minio:9000/test-bucket/${media.storagePath}`
+			);
+			expect(mockStorageService.getPublicUrl).toHaveBeenCalledWith(media.storagePath);
+		});
+
+		it('allows any user to download group_icon blob (public context)', async () => {
+			const media = makeMedia({ ownerId: 'owner-1', context: MediaContext.GROUP_ICON });
+			mockMediaRepository.findById.mockResolvedValue(media);
+
+			await expect(service.getBlobUrl('media-uuid-1', 'different-user')).resolves.toBe(
+				`http://minio:9000/test-bucket/${media.storagePath}`
+			);
+			expect(mockStorageService.getPublicUrl).toHaveBeenCalledWith(media.storagePath);
 		});
 	});
 

@@ -20,7 +20,7 @@ import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { Readable } from 'stream';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 import { Media } from './entities/media.entity';
 import { MediaAccessLog } from './entities/media-access-log.entity';
 import { MediaRepository } from './repositories/media.repository';
@@ -101,6 +101,7 @@ export class MediaService {
 		private readonly quotaService: QuotaService,
 		@InjectS3() private readonly s3: S3,
 		private readonly configService: ConfigService,
+		private readonly dataSource: DataSource,
 		@Inject(CACHE_MANAGER) private readonly cache: Cache,
 		@InjectRepository(MediaAccessLog)
 		private readonly accessLogRepo: Repository<MediaAccessLog>,
@@ -146,7 +147,9 @@ export class MediaService {
 			const dedupKey = `dedup:blob:${ownerId}:${context}:${sha256}`;
 			const existingId = await this.cache.get<string>(dedupKey);
 			if (existingId) {
-				const existing = await this.mediaRepository.findById(existingId);
+				const existing = await this.dataSource.transaction((manager) =>
+					this.mediaRepository.findById(existingId, manager)
+				);
 				if (existing) {
 					this.logger.debug(`Dedup hit for sha256=${sha256} → reusing media ${existingId}`);
 					return this.buildUploadResponse(existing, context);
@@ -208,7 +211,7 @@ export class MediaService {
 			media.expiresAt = context === MediaContext.MESSAGE ? this.computeExpiresAt() : null;
 			media.isActive = true;
 
-			await this.mediaRepository.save(media);
+			await this.dataSource.transaction((manager) => this.mediaRepository.save(media, manager));
 
 			// Cache dedup entry
 			await this.cache.set(dedupKey, id, DEDUP_CACHE_TTL_MS);
@@ -234,7 +237,9 @@ export class MediaService {
 			return cached;
 		}
 
-		const media = await this.mediaRepository.findById(id);
+		const media = await this.dataSource.transaction((manager) =>
+			this.mediaRepository.findById(id, manager)
+		);
 		if (!media) {
 			throw new NotFoundException(`Media ${id} not found`);
 		}
@@ -267,14 +272,19 @@ export class MediaService {
 		ipAddress?: string,
 		userAgent?: string
 	): Promise<string> {
-		const media = await this.mediaRepository.findById(id);
-		if (!media) {
-			throw new NotFoundException(`Media ${id} not found`);
-		}
+		const { media, url } = await this.dataSource.transaction(async (manager) => {
+			const media = await this.mediaRepository.findById(id, manager);
+			if (!media) {
+				throw new NotFoundException(`Media ${id} not found`);
+			}
 
-		this.enforceReadAccess(media.context as MediaContext, media.ownerId, requesterId);
+			this.enforceReadAccess(media.context as MediaContext, media.ownerId, requesterId);
 
-		const url = await this.getOrGenerateSignedUrl(media);
+			return {
+				media,
+				url: await this.getOrGenerateSignedUrl(media, manager),
+			};
+		});
 
 		// Async access log (non-blocking)
 		this.writeAccessLog(media.id, requesterId, 'blob', ipAddress, userAgent).catch(() => {});
@@ -292,7 +302,9 @@ export class MediaService {
 		ipAddress?: string,
 		userAgent?: string
 	): Promise<string> {
-		const media = await this.mediaRepository.findById(id);
+		const media = await this.dataSource.transaction((manager) =>
+			this.mediaRepository.findById(id, manager)
+		);
 		if (!media) {
 			throw new NotFoundException(`Media ${id} not found`);
 		}
@@ -325,17 +337,21 @@ export class MediaService {
 	// =========================================================================
 
 	async delete(id: string, requesterId: string, ipAddress?: string, userAgent?: string): Promise<void> {
-		const media = await this.mediaRepository.findById(id);
-		if (!media) {
-			throw new NotFoundException(`Media ${id} not found`);
-		}
+		const media = await this.dataSource.transaction(async (manager) => {
+			const media = await this.mediaRepository.findById(id, manager);
+			if (!media) {
+				throw new NotFoundException(`Media ${id} not found`);
+			}
 
-		if (media.ownerId !== requesterId) {
-			throw new ForbiddenException(`You do not own media ${id}`);
-		}
+			if (media.ownerId !== requesterId) {
+				throw new ForbiddenException(`You do not own media ${id}`);
+			}
 
-		// Soft delete DB record first
-		await this.mediaRepository.softDelete(id);
+			// Soft delete DB record first while the RLS GUC is set.
+			await this.mediaRepository.softDelete(id, manager);
+
+			return media;
+		});
 
 		// Delete underlying S3 objects so storage and quota stay in sync
 		await this.storageService.delete(media.storagePath);
@@ -351,6 +367,18 @@ export class MediaService {
 
 		// Access log
 		this.writeAccessLog(media.id, requesterId, 'delete', ipAddress, userAgent).catch(() => {});
+
+		// WHISPR-372: Publish media.deleted event (fire-and-forget — failure does not affect the delete response)
+		const deletedPayload = JSON.stringify({
+			mediaId: media.id,
+			ownerId: media.ownerId,
+			context: media.context,
+		});
+		this.redisClient.publish('media.deleted', deletedPayload).catch((err: unknown) => {
+			this.logger.error(
+				`Failed to publish media.deleted for media ${id}: ${err instanceof Error ? err.message : String(err)}`
+			);
+		});
 
 		this.logger.debug(`Soft-deleted media ${id} and removed S3 objects`);
 	}
@@ -416,7 +444,7 @@ export class MediaService {
 		}
 	}
 
-	private async getOrGenerateSignedUrl(media: Media): Promise<string> {
+	private async getOrGenerateSignedUrl(media: Media, manager: EntityManager): Promise<string> {
 		if (PUBLIC_CONTEXTS.has(media.context)) {
 			return this.storageService.getPublicUrl(media.storagePath);
 		}
@@ -432,7 +460,7 @@ export class MediaService {
 
 		const expiresAt = new Date(now.getTime() + this.signedUrlExpirySeconds * 1000);
 		const url = await this.generatePresignedUrl(media.storagePath, this.signedUrlExpirySeconds);
-		await this.mediaRepository.updateSignedUrlExpiry(media.id, expiresAt);
+		await this.mediaRepository.updateSignedUrlExpiry(media.id, expiresAt, manager);
 		return url;
 	}
 
