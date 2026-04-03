@@ -9,6 +9,7 @@ import {
 	DEFAULT_FILES_LIMIT,
 	DEFAULT_DAILY_UPLOAD_LIMIT,
 } from './quota.constants';
+import { REDIS_CLIENT } from './media.tokens';
 
 const makeQuota = (overrides: Partial<UserQuota> = {}): UserQuota =>
 	({
@@ -59,6 +60,11 @@ const mockDataSource = {
 	query: jest.fn(),
 };
 
+const mockRedisClient = {
+	set: jest.fn(),
+	publish: jest.fn(),
+};
+
 describe('QuotaService', () => {
 	let service: QuotaService;
 
@@ -70,6 +76,7 @@ describe('QuotaService', () => {
 				QuotaService,
 				{ provide: CACHE_MANAGER, useValue: mockCache },
 				{ provide: DataSource, useValue: mockDataSource },
+				{ provide: REDIS_CLIENT, useValue: mockRedisClient },
 			],
 		}).compile();
 
@@ -228,7 +235,8 @@ describe('QuotaService', () => {
 	});
 
 	describe('recordUpload()', () => {
-		it('executes atomic increment and invalidates cache', async () => {
+		// Helper: set up the transaction mock for a successful quota increment
+		function mockUploadTransaction() {
 			const qb = {
 				update: jest.fn().mockReturnThis(),
 				set: jest.fn().mockReturnThis(),
@@ -240,7 +248,14 @@ describe('QuotaService', () => {
 			mockDataSource.transaction.mockImplementation(async (cb: (m: typeof qb) => Promise<void>) => {
 				await cb({ createQueryBuilder: () => qb } as unknown as typeof qb);
 			});
+			return qb;
+		}
+
+		it('executes atomic increment and invalidates cache', async () => {
+			const qb = mockUploadTransaction();
 			mockCache.del.mockResolvedValue(undefined);
+			// checkAndPublishQuotaAlert reads quota from cache — below threshold, no alert
+			mockCache.get.mockResolvedValue(makeCachedQuota({ storageUsed: 100n }));
 
 			await service.recordUpload('user-1', 512);
 
@@ -282,9 +297,22 @@ describe('QuotaService', () => {
 		});
 
 		it('still resolves when cache.del throws after DB commit (Redis outage)', async () => {
+			mockUploadTransaction();
+			mockCache.del.mockRejectedValue(new Error('Redis connection refused'));
+			// fire-and-forget quota alert will also fail silently
+			mockCache.get.mockRejectedValue(new Error('Redis connection refused'));
+
+			await expect(service.recordUpload('user-1', 512)).resolves.toBeUndefined();
+		});
+	});
+
+	describe('quota.alert events (WHISPR-371)', () => {
+		// Helper: wire a successful upload transaction
+		function mockUploadTransaction() {
 			const qb = {
 				update: jest.fn().mockReturnThis(),
 				set: jest.fn().mockReturnThis(),
+				setParameter: jest.fn().mockReturnThis(),
 				where: jest.fn().mockReturnThis(),
 				setParameters: jest.fn().mockReturnThis(),
 				execute: jest.fn().mockResolvedValue({ affected: 1 }),
@@ -292,9 +320,140 @@ describe('QuotaService', () => {
 			mockDataSource.transaction.mockImplementation(async (cb: (m: typeof qb) => Promise<void>) => {
 				await cb({ createQueryBuilder: () => qb } as unknown as typeof qb);
 			});
-			mockCache.del.mockRejectedValue(new Error('Redis connection refused'));
+			return qb;
+		}
 
-			await expect(service.recordUpload('user-1', 512)).resolves.toBeUndefined();
+		it('publishes quota.alert at 80% threshold when cooldown is not set', async () => {
+			mockUploadTransaction();
+			mockCache.del.mockResolvedValue(undefined);
+			// 80% usage: 859000000 / 1073741824 * 100 = 80 (integer division)
+			mockCache.get.mockResolvedValue(
+				makeCachedQuota({ storageUsed: 859000000n, storageLimit: 1073741824n })
+			);
+			// SET NX returns 'OK' → cooldown not active → publish
+			mockRedisClient.set.mockResolvedValue('OK');
+			mockRedisClient.publish.mockResolvedValue(1);
+
+			await service.recordUpload('user-1', 0);
+
+			// Flush microtask queue to resolve fire-and-forget chain
+			// Flush microtask queue to allow fire-and-forget chain to complete
+			await Promise.resolve();
+			await Promise.resolve();
+			await Promise.resolve();
+
+			expect(mockRedisClient.publish).toHaveBeenCalledWith(
+				'quota.alert',
+				expect.stringContaining('"percent":80')
+			);
+		});
+
+		it('publishes quota.alert at both 80% and 95% thresholds when at 96%', async () => {
+			mockUploadTransaction();
+			mockCache.del.mockResolvedValue(undefined);
+			// 96% usage: 1032000000 / 1073741824 * 100 = 96 (integer division)
+			mockCache.get.mockResolvedValue(
+				makeCachedQuota({ storageUsed: 1032000000n, storageLimit: 1073741824n })
+			);
+			mockRedisClient.set.mockResolvedValue('OK');
+			mockRedisClient.publish.mockResolvedValue(1);
+
+			await service.recordUpload('user-1', 0);
+
+			// Flush microtask queue to allow fire-and-forget chain to complete
+			// Use many flushes: two thresholds each require several awaited calls
+			for (let i = 0; i < 20; i++) {
+				await Promise.resolve(); // eslint-disable-line no-await-in-loop
+			}
+
+			// Both 80% and 95% thresholds triggered
+			const calls = mockRedisClient.publish.mock.calls.map((c: string[]) => c[1] as string);
+			expect(calls.some((p) => p.includes('"percent":80'))).toBe(true);
+			expect(calls.some((p) => p.includes('"percent":95'))).toBe(true);
+		});
+
+		it('does not publish quota.alert when cooldown key is already set', async () => {
+			mockUploadTransaction();
+			mockCache.del.mockResolvedValue(undefined);
+			// 80% usage
+			mockCache.get.mockResolvedValue(
+				makeCachedQuota({ storageUsed: 859000000n, storageLimit: 1073741824n })
+			);
+			// SET NX returns null → cooldown active → no publish
+			mockRedisClient.set.mockResolvedValue(null);
+
+			await service.recordUpload('user-1', 0);
+
+			// Flush microtask queue to allow fire-and-forget chain to complete
+			await Promise.resolve();
+			await Promise.resolve();
+			await Promise.resolve();
+
+			expect(mockRedisClient.publish).not.toHaveBeenCalled();
+		});
+
+		it('does not publish quota.alert when usage is below 80%', async () => {
+			mockUploadTransaction();
+			mockCache.del.mockResolvedValue(undefined);
+			// 50% usage: 536870912 / 1073741824 * 100 = 50
+			mockCache.get.mockResolvedValue(
+				makeCachedQuota({ storageUsed: 536870912n, storageLimit: 1073741824n })
+			);
+
+			await service.recordUpload('user-1', 0);
+
+			// Flush microtask queue to allow fire-and-forget chain to complete
+			await Promise.resolve();
+			await Promise.resolve();
+			await Promise.resolve();
+
+			expect(mockRedisClient.publish).not.toHaveBeenCalled();
+		});
+
+		it('does not publish quota.alert when storageLimit is zero', async () => {
+			mockUploadTransaction();
+			mockCache.del.mockResolvedValue(undefined);
+			mockCache.get.mockResolvedValue(makeCachedQuota({ storageUsed: 0n, storageLimit: 0n }));
+
+			await service.recordUpload('user-1', 0);
+
+			// Flush microtask queue to allow fire-and-forget chain to complete
+			await Promise.resolve();
+			await Promise.resolve();
+			await Promise.resolve();
+
+			expect(mockRedisClient.publish).not.toHaveBeenCalled();
+		});
+
+		it('payload includes userId, storageUsed, storageLimit, percent', async () => {
+			mockUploadTransaction();
+			mockCache.del.mockResolvedValue(undefined);
+			// 80% usage
+			mockCache.get.mockResolvedValue(
+				makeCachedQuota({ storageUsed: 859000000n, storageLimit: 1073741824n })
+			);
+			mockRedisClient.set.mockResolvedValue('OK');
+			mockRedisClient.publish.mockResolvedValue(1);
+
+			await service.recordUpload('user-1', 0);
+
+			// Flush microtask queue to allow fire-and-forget chain to complete
+			await Promise.resolve();
+			await Promise.resolve();
+			await Promise.resolve();
+
+			const call = mockRedisClient.publish.mock.calls[0] as [string, string];
+			expect(call[0]).toBe('quota.alert');
+			const payload = JSON.parse(call[1]) as {
+				userId: string;
+				storageUsed: string;
+				storageLimit: string;
+				percent: number;
+			};
+			expect(payload.userId).toBe('user-1');
+			expect(typeof payload.storageUsed).toBe('string');
+			expect(typeof payload.storageLimit).toBe('string');
+			expect(typeof payload.percent).toBe('number');
 		});
 	});
 
