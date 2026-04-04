@@ -38,7 +38,6 @@ import { UserQuotaResponseDto } from './dto/user-quota-response.dto';
 import { PaginatedMediaResponseDto } from './dto/paginated-media-response.dto';
 
 @ApiTags('Media')
-@ApiHeader({ name: 'x-user-id', description: 'UUID of the authenticated user', required: true })
 @Controller()
 export class MediaController {
 	private readonly logger = new Logger(MediaController.name);
@@ -50,6 +49,7 @@ export class MediaController {
 	// =========================================================================
 
 	@Post('upload')
+	@ApiHeader({ name: 'x-user-id', description: 'UUID of the authenticated user', required: true })
 	@ApiOperation({ summary: 'Upload a media file (blob + optional thumbnail)' })
 	@ApiConsumes('multipart/form-data')
 	@ApiBody({
@@ -145,6 +145,7 @@ export class MediaController {
 	// =========================================================================
 
 	@Get(':id')
+	@ApiHeader({ name: 'x-user-id', description: 'UUID of the authenticated user', required: true })
 	@ApiOperation({ summary: 'Get media metadata' })
 	@ApiResponse({ status: 200, type: MediaMetadataDto })
 	@ApiResponse({ status: 404, description: 'Not found' })
@@ -163,6 +164,7 @@ export class MediaController {
 	// =========================================================================
 
 	@Get(':id/blob')
+	@ApiHeader({ name: 'x-user-id', description: 'UUID of the authenticated user', required: true })
 	@ApiOperation({ summary: 'Redirect to presigned blob URL' })
 	@ApiResponse({ status: 302, description: 'Redirect to signed URL' })
 	@ApiResponse({ status: 404, description: 'Not found' })
@@ -186,6 +188,7 @@ export class MediaController {
 	// =========================================================================
 
 	@Get(':id/thumbnail')
+	@ApiHeader({ name: 'x-user-id', description: 'UUID of the authenticated user', required: true })
 	@ApiOperation({ summary: 'Redirect to presigned thumbnail URL' })
 	@ApiResponse({ status: 302, description: 'Redirect to thumbnail URL' })
 	@ApiResponse({ status: 404, description: 'Not found or no thumbnail' })
@@ -209,6 +212,7 @@ export class MediaController {
 	// =========================================================================
 
 	@Delete(':id')
+	@ApiHeader({ name: 'x-user-id', description: 'UUID of the authenticated user', required: true })
 	@HttpCode(HttpStatus.NO_CONTENT)
 	@ApiOperation({ summary: 'Soft delete media — releases quota' })
 	@ApiResponse({ status: 204, description: 'Deleted' })

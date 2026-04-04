@@ -12,7 +12,7 @@ export class LoggingInterceptor implements NestInterceptor {
 		const response = context.switchToHttp().getResponse<Response>();
 		const { method, url, ip } = request;
 		const userAgent = request.get('User-Agent') || '';
-		const userId = request.headers['x-user-id'] as string | undefined;
+		const userId = (request as any).user?.userId || (request.headers['x-user-id'] as string | undefined);
 		const startTime = Date.now();
 
 		return next.handle().pipe(
@@ -33,19 +33,21 @@ export class LoggingInterceptor implements NestInterceptor {
 						})
 					);
 				},
-				error: (error) => {
+				error: (error: unknown) => {
 					const duration = Date.now() - startTime;
+					const status = error instanceof Object && 'status' in error ? (error as any).status : 500;
+					const message = error instanceof Error ? error.message : String(error);
 					this.logger.error(
 						JSON.stringify({
 							method,
 							url,
-							statusCode: error.status || 500,
+							statusCode: status,
 							duration,
 							userId: userId || null,
 							contentLength: 0,
 							ip,
 							userAgent,
-							error: error.message,
+							error: message,
 						})
 					);
 				},

@@ -14,7 +14,7 @@ describe('EventsService', () => {
 		jest.clearAllMocks();
 
 		const module: TestingModule = await Test.createTestingModule({
-			providers: [EventsService, { provide: 'REDIS_CLIENT', useValue: mockClient }],
+			providers: [EventsService, { provide: 'EVENTS_REDIS_CLIENT', useValue: mockClient }],
 		}).compile();
 
 		service = module.get<EventsService>(EventsService);

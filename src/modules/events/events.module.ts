@@ -7,7 +7,7 @@ import { EventsService } from './events.service';
 	imports: [
 		ClientsModule.registerAsync([
 			{
-				name: 'REDIS_CLIENT',
+				name: 'EVENTS_REDIS_CLIENT',
 				imports: [ConfigModule],
 				inject: [ConfigService],
 				useFactory: (configService: ConfigService) => ({

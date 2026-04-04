@@ -435,7 +435,7 @@ export class MediaService {
 		let usagePercent = 0;
 		if (rawStorageLimit > 0n) {
 			const percentTimes100 = (rawStorageUsed * 10000n) / rawStorageLimit;
-			usagePercent = Number(percentTimes100) / 100;
+			usagePercent = Math.min(100, Number(percentTimes100) / 100);
 		}
 
 		return {

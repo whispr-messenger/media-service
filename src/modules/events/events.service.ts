@@ -1,12 +1,12 @@
-import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ClientProxy } from '@nestjs/microservices';
 import { Inject } from '@nestjs/common';
 
 @Injectable()
-export class EventsService implements OnModuleDestroy {
+export class EventsService implements OnModuleInit, OnModuleDestroy {
 	private readonly logger = new Logger(EventsService.name);
 
-	constructor(@Inject('REDIS_CLIENT') private readonly client: ClientProxy) {}
+	constructor(@Inject('EVENTS_REDIS_CLIENT') private readonly client: ClientProxy) {}
 
 	async onModuleInit(): Promise<void> {
 		try {
@@ -23,7 +23,10 @@ export class EventsService implements OnModuleDestroy {
 
 	emit(pattern: string, data: any): void {
 		this.client.emit(pattern, data).subscribe({
-			error: (err) => this.logger.error(`Failed to emit event "${pattern}": ${err.message}`),
+			error: (err: unknown) =>
+				this.logger.error(
+					`Failed to emit event "${pattern}": ${err instanceof Error ? err.message : String(err)}`
+				),
 		});
 	}
 }
