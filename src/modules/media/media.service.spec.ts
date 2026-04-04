@@ -71,6 +71,7 @@ const mockCache = {
 };
 
 const mockAccessLogRepo = {
+	create: jest.fn().mockImplementation((data: any) => data),
 	save: jest.fn().mockResolvedValue(undefined),
 };
 
@@ -109,16 +110,16 @@ const mockMediaRepo = {
 	findAndCount: jest.fn(),
 };
 
+const mockEntityManager = {
+	getRepository: (entity: any) => {
+		if (entity === UserQuota) return mockUserQuotaRepo;
+		if (entity === Media) return mockMediaRepo;
+		return {};
+	},
+};
+
 const mockDataSource = {
-	transaction: jest.fn((cb: (manager: any) => any) =>
-		cb({
-			getRepository: (entity: any) => {
-				if (entity === UserQuota) return mockUserQuotaRepo;
-				if (entity === Media) return mockMediaRepo;
-				return {};
-			},
-		})
-	),
+	transaction: jest.fn((cb: (manager: any) => any) => cb(mockEntityManager)),
 };
 
 const mockMetricsService = {
@@ -420,8 +421,8 @@ describe('MediaService', () => {
 	describe('getUserQuota', () => {
 		it('should return existing user quota with calculated usagePercent', async () => {
 			const quota = new UserQuota();
-			quota.storageUsed = 536870912;
-			quota.storageLimit = 1073741824;
+			quota.storageUsed = BigInt(536870912);
+			quota.storageLimit = BigInt(1073741824);
 			quota.filesCount = 50;
 			quota.filesLimit = 1000;
 			quota.dailyUploads = 5;

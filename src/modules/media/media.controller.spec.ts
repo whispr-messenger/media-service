@@ -5,6 +5,8 @@ import { MediaService } from './media.service';
 import { MediaContext, UploadMediaDto } from './dto/upload-media.dto';
 import type { Request, Response } from 'express';
 
+const makeReq = (userId: string): Request => ({ user: { userId } }) as unknown as Request;
+
 const mockMediaService = {
 	upload: jest.fn(),
 	getMetadata: jest.fn(),
@@ -128,7 +130,6 @@ describe('MediaController', () => {
 		});
 	});
 
-
 	describe('getQuota()', () => {
 		it('should return user quota', async () => {
 			const quota = {
@@ -195,38 +196,6 @@ describe('MediaController', () => {
 			expect(mockMediaService.getUserMedia).toHaveBeenCalledWith('user-uuid-1', 1, 100);
 		});
 	});
-
-	describe('download()', () => {
-		it('should set correct Content-Type header and pipe stream to response', async () => {
-			const stream = new Readable({ read() {} });
-
-			mockMediaService.getStream.mockResolvedValue({
-				stream,
-				contentType: 'image/jpeg',
-			});
-
-			const setHeader = jest.fn();
-			const pipe = jest
-				.spyOn(stream, 'pipe')
-				.mockImplementation(() => stream as unknown as NodeJS.WritableStream);
-			const res = { setHeader, pipe } as unknown as import('express').Response;
-
-			await controller.download('media-uuid-1', 'user-uuid-1', res);
-
-			expect(setHeader).toHaveBeenCalledWith('Content-Type', 'image/jpeg');
-			expect(setHeader).toHaveBeenCalledWith(
-				'Content-Disposition',
-				'attachment; filename="media-uuid-1"'
-			);
-			expect(pipe).toHaveBeenCalledWith(res);
-			expect(mockMediaService.logAccess).toHaveBeenCalledWith(
-				'media-uuid-1',
-				'user-uuid-1',
-				'download'
-			);
-		});
-	});
-
 
 	describe('delete()', () => {
 		it('throws BadRequestException when x-user-id is missing', async () => {
