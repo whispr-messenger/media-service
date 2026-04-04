@@ -91,6 +91,7 @@ const CONTEXT_MIME_ALLOWLIST: Record<MediaContext, Set<string>> = {
 const META_CACHE_TTL_MS = 30 * 60 * 1000; // 30 min
 const DEDUP_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const SEMAPHORE_TTL_SECONDS = 30 * 60; // 30 min safety net TTL in seconds
+const SEMAPHORE_TTL_REFRESH_INTERVAL_MS = 5 * 60 * 1000; // refresh every 5 min while uploading
 
 const MAX_CONCURRENT_UPLOADS = 3;
 
@@ -138,100 +139,102 @@ export class MediaService {
 		await this.acquireSemaphore(ownerId);
 
 		try {
-			// WHISPR-356: Pre-upload quota check
-			await this.quotaService.enforceQuota(ownerId, file.size);
+			return await this.runWithSemaphoreTtlRefresh(ownerId, async () => {
+				// WHISPR-356: Pre-upload quota check
+				await this.quotaService.enforceQuota(ownerId, file.size);
 
-			// WHISPR-361: Blob size limits per context
-			this.enforceContextSizeLimit(file.size, context);
+				// WHISPR-361: Blob size limits per context
+				this.enforceContextSizeLimit(file.size, context);
 
-			// WHISPR-360: MIME allowlist + magic bytes validation
-			if (!CONTEXT_MIME_ALLOWLIST[context].has(file.mimetype)) {
-				throw new UnsupportedMediaTypeException(
-					`MIME type '${file.mimetype}' is not allowed for context '${context}'`
-				);
-			}
-			const blobBuffer = file.buffer ?? Buffer.alloc(0);
-			validateMagicBytes(blobBuffer, file.mimetype);
-
-			// WHISPR-362: Blob deduplication via SHA-256 (scoped per owner+context)
-			const sha256 = createHash('sha256').update(blobBuffer).digest('hex');
-			const dedupKey = `dedup:blob:${ownerId}:${context}:${sha256}`;
-			const existingId = await this.cache.get<string>(dedupKey);
-			if (existingId) {
-				const existing = await this.dataSource.transaction((manager) =>
-					this.mediaRepository.findById(existingId, manager)
-				);
-				if (existing) {
-					this.logger.debug(`Dedup hit for sha256=${sha256} → reusing media ${existingId}`);
-					return this.buildUploadResponse(existing, context);
-				}
-			}
-
-			const id = randomUUID();
-			const storageContext = this.contextToStorageContext(context);
-			const storagePath = this.storageService.buildPath(storageContext, ownerId, id);
-
-			this.logger.debug(`Uploading file to ${storagePath}`);
-			const blobStream = file.stream ?? Readable.from(blobBuffer);
-			await this.storageService.upload(storagePath, blobStream, file.mimetype, file.size);
-
-			let thumbnailPath: string | null = null;
-			if (thumbnailFile) {
-				// Validate thumbnail: only safe image MIME types, max 5 MB, magic-bytes check
-				const THUMBNAIL_MAX_BYTES = 5 * 1024 * 1024;
-				const THUMBNAIL_ALLOWED_MIME = new Set([
-					'image/jpeg',
-					'image/png',
-					'image/gif',
-					'image/webp',
-					'image/heic',
-					'image/heif',
-				]);
-				if (!THUMBNAIL_ALLOWED_MIME.has(thumbnailFile.mimetype)) {
+				// WHISPR-360: MIME allowlist + magic bytes validation
+				if (!CONTEXT_MIME_ALLOWLIST[context].has(file.mimetype)) {
 					throw new UnsupportedMediaTypeException(
-						`Thumbnail MIME type '${thumbnailFile.mimetype}' is not allowed`
+						`MIME type '${file.mimetype}' is not allowed for context '${context}'`
 					);
 				}
-				if (thumbnailFile.size > THUMBNAIL_MAX_BYTES) {
-					throw new PayloadTooLargeException(
-						`Thumbnail size ${thumbnailFile.size} exceeds the 5 MB limit`
+				const blobBuffer = file.buffer ?? Buffer.alloc(0);
+				validateMagicBytes(blobBuffer, file.mimetype);
+
+				// WHISPR-362: Blob deduplication via SHA-256 (scoped per owner+context)
+				const sha256 = createHash('sha256').update(blobBuffer).digest('hex');
+				const dedupKey = `dedup:blob:${ownerId}:${context}:${sha256}`;
+				const existingId = await this.cache.get<string>(dedupKey);
+				if (existingId) {
+					const existing = await this.dataSource.transaction((manager) =>
+						this.mediaRepository.findById(existingId, manager)
 					);
+					if (existing) {
+						this.logger.debug(`Dedup hit for sha256=${sha256} → reusing media ${existingId}`);
+						return this.buildUploadResponse(existing, context);
+					}
 				}
-				const thumbBuffer = thumbnailFile.buffer ?? Buffer.alloc(0);
-				validateMagicBytes(thumbBuffer, thumbnailFile.mimetype);
 
-				const thumbnailStoragePath = this.storageService.buildPath('thumbnails', ownerId, id);
-				const thumbStream = thumbnailFile.stream ?? Readable.from(thumbBuffer);
-				await this.storageService.upload(
-					thumbnailStoragePath,
-					thumbStream,
-					thumbnailFile.mimetype,
-					thumbnailFile.size
-				);
-				thumbnailPath = thumbnailStoragePath;
-			}
+				const id = randomUUID();
+				const storageContext = this.contextToStorageContext(context);
+				const storagePath = this.storageService.buildPath(storageContext, ownerId, id);
 
-			const media = new Media();
-			media.id = id;
-			media.ownerId = ownerId;
-			media.context = context;
-			media.storagePath = storagePath;
-			media.thumbnailPath = thumbnailPath;
-			media.contentType = file.mimetype;
-			media.blobSize = file.size;
-			media.expiresAt = context === MediaContext.MESSAGE ? this.computeExpiresAt() : null;
-			media.isActive = true;
+				this.logger.debug(`Uploading file to ${storagePath}`);
+				const blobStream = file.stream ?? Readable.from(blobBuffer);
+				await this.storageService.upload(storagePath, blobStream, file.mimetype, file.size);
 
-			await this.dataSource.transaction((manager) => this.mediaRepository.save(media, manager));
+				let thumbnailPath: string | null = null;
+				if (thumbnailFile) {
+					// Validate thumbnail: only safe image MIME types, max 5 MB, magic-bytes check
+					const THUMBNAIL_MAX_BYTES = 5 * 1024 * 1024;
+					const THUMBNAIL_ALLOWED_MIME = new Set([
+						'image/jpeg',
+						'image/png',
+						'image/gif',
+						'image/webp',
+						'image/heic',
+						'image/heif',
+					]);
+					if (!THUMBNAIL_ALLOWED_MIME.has(thumbnailFile.mimetype)) {
+						throw new UnsupportedMediaTypeException(
+							`Thumbnail MIME type '${thumbnailFile.mimetype}' is not allowed`
+						);
+					}
+					if (thumbnailFile.size > THUMBNAIL_MAX_BYTES) {
+						throw new PayloadTooLargeException(
+							`Thumbnail size ${thumbnailFile.size} exceeds the 5 MB limit`
+						);
+					}
+					const thumbBuffer = thumbnailFile.buffer ?? Buffer.alloc(0);
+					validateMagicBytes(thumbBuffer, thumbnailFile.mimetype);
 
-			// Cache dedup entry
-			await this.cache.set(dedupKey, id, DEDUP_CACHE_TTL_MS);
+					const thumbnailStoragePath = this.storageService.buildPath('thumbnails', ownerId, id);
+					const thumbStream = thumbnailFile.stream ?? Readable.from(thumbBuffer);
+					await this.storageService.upload(
+						thumbnailStoragePath,
+						thumbStream,
+						thumbnailFile.mimetype,
+						thumbnailFile.size
+					);
+					thumbnailPath = thumbnailStoragePath;
+				}
 
-			// WHISPR-357: Update quota
-			await this.quotaService.recordUpload(ownerId, file.size);
+				const media = new Media();
+				media.id = id;
+				media.ownerId = ownerId;
+				media.context = context;
+				media.storagePath = storagePath;
+				media.thumbnailPath = thumbnailPath;
+				media.contentType = file.mimetype;
+				media.blobSize = file.size;
+				media.expiresAt = context === MediaContext.MESSAGE ? this.computeExpiresAt() : null;
+				media.isActive = true;
 
-			this.metricsService.uploadsTotal.inc();
-			return this.buildUploadResponse(media, context);
+				await this.dataSource.transaction((manager) => this.mediaRepository.save(media, manager));
+
+				// Cache dedup entry
+				await this.cache.set(dedupKey, id, DEDUP_CACHE_TTL_MS);
+
+				// WHISPR-357: Update quota
+				await this.quotaService.recordUpload(ownerId, file.size);
+
+				this.metricsService.uploadsTotal.inc();
+				return this.buildUploadResponse(media, context);
+			});
 		} finally {
 			await this.releaseSemaphore(ownerId);
 		}
@@ -521,6 +524,29 @@ export class MediaService {
 		const remaining = Number(await this.redisClient.decr(key));
 		if (remaining <= 0) {
 			await this.redisClient.del(key);
+		}
+	}
+
+	private async runWithSemaphoreTtlRefresh<T>(userId: string, operation: () => Promise<T>): Promise<T> {
+		const key = `upload:semaphore:${userId}`;
+		const refresh = async () => {
+			try {
+				await this.redisClient.expire(key, SEMAPHORE_TTL_SECONDS);
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				this.logger.warn(`Failed to refresh upload semaphore TTL for user ${userId}: ${message}`);
+			}
+		};
+
+		const interval = globalThis.setInterval(() => {
+			void refresh();
+		}, SEMAPHORE_TTL_REFRESH_INTERVAL_MS);
+		interval.unref?.();
+
+		try {
+			return await operation();
+		} finally {
+			globalThis.clearInterval(interval);
 		}
 	}
 

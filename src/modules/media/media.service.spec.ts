@@ -176,8 +176,8 @@ describe('MediaService', () => {
 		await service.getThumbnailUrl('media-uuid-1', 'user-uuid-1');
 		await service.delete('media-uuid-1', 'user-uuid-1');
 
-		expect(mockDataSource.transaction).toHaveBeenCalledTimes(5);
-		expect(mockMediaRepository.save).toHaveBeenCalledWith(expect.any(Media), mockEntityManager);
+		expect(mockDataSource.transaction).toHaveBeenCalledTimes(4);
+		expect(mockMediaRepository.save).toHaveBeenCalledWith(expect.any(Media));
 		expect(mockMediaRepository.findById).toHaveBeenCalledWith('media-uuid-1', mockEntityManager);
 		expect(mockMediaRepository.updateSignedUrlExpiry).toHaveBeenCalledWith(
 			'media-uuid-1',
@@ -206,6 +206,37 @@ describe('MediaService', () => {
 			expect(mockMediaRepository.save).toHaveBeenCalled();
 			expect(mockQuotaService.recordUpload).toHaveBeenCalled();
 			expect(result).toHaveProperty('mediaId');
+		});
+
+		it('refreshes semaphore TTL while an upload is in progress', async () => {
+			jest.useFakeTimers();
+
+			try {
+				const media = makeMedia();
+				mockMediaRepository.save.mockResolvedValue(media);
+
+				let resolveUpload: (() => void) | undefined;
+				mockStorageService.upload.mockImplementationOnce(
+					() =>
+						new Promise<void>((resolve) => {
+							resolveUpload = resolve;
+						})
+				);
+
+				const uploadPromise = service.upload('user-uuid-1', file, MediaContext.MESSAGE);
+				await Promise.resolve();
+
+				expect(mockRedisClient.expire).toHaveBeenCalledTimes(1);
+
+				await jest.advanceTimersByTimeAsync(5 * 60 * 1000);
+
+				expect(mockRedisClient.expire).toHaveBeenCalledTimes(2);
+
+				resolveUpload?.();
+				await uploadPromise;
+			} finally {
+				jest.useRealTimers();
+			}
 		});
 
 		it('throws 429 HttpException when semaphore is at max', async () => {
