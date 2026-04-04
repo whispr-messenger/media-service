@@ -177,7 +177,7 @@ describe('MediaService', () => {
 		await service.delete('media-uuid-1', 'user-uuid-1');
 
 		expect(mockDataSource.transaction).toHaveBeenCalledTimes(5);
-		expect(mockMediaRepository.save).toHaveBeenCalledWith(expect.any(Media));
+		expect(mockMediaRepository.save).toHaveBeenCalledWith(expect.any(Media), mockEntityManager);
 		expect(mockMediaRepository.findById).toHaveBeenCalledWith('media-uuid-1', mockEntityManager);
 		expect(mockMediaRepository.updateSignedUrlExpiry).toHaveBeenCalledWith(
 			'media-uuid-1',
