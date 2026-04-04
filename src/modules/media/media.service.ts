@@ -213,6 +213,12 @@ export class MediaService {
 
 			await this.dataSource.transaction((manager) => this.mediaRepository.save(media, manager));
 
+			// Only moderate image uploads in message context
+			if (context === MediaContext.MESSAGE && file.mimetype.startsWith('image/')) {
+				media.moderationStatus = 'pending';
+				await this.publishModerationEvent(media);
+			}
+
 			// Cache dedup entry
 			await this.cache.set(dedupKey, id, DEDUP_CACHE_TTL_MS);
 
@@ -397,6 +403,27 @@ export class MediaService {
 	}
 
 	// =========================================================================
+	// PATCH /media/v1/:id/moderation — Moderation verdict
+	// =========================================================================
+
+	async updateModerationStatus(
+		id: string,
+		status: string,
+		score?: number,
+		category?: string
+	): Promise<void> {
+		await this.dataSource.transaction(async (manager) => {
+			const media = await this.mediaRepository.findById(id, manager);
+			if (!media) throw new NotFoundException(`Media ${id} not found`);
+			media.moderationStatus = status;
+			if (score !== undefined) media.moderationScore = score;
+			if (category) media.moderationCategory = category;
+			await this.mediaRepository.save(media, manager);
+		});
+		this.logger.log(`Media ${id} moderation updated: ${status} (score=${score}, category=${category})`);
+	}
+
+	// =========================================================================
 	// Private helpers
 	// =========================================================================
 
@@ -503,6 +530,23 @@ export class MediaService {
 			context: media.context as MediaContext,
 			size: media.blobSize,
 		};
+	}
+
+	private async publishModerationEvent(media: Media): Promise<void> {
+		try {
+			await this.redisClient.publish(
+				'media.uploaded',
+				JSON.stringify({
+					mediaId: media.id,
+					ownerId: media.ownerId,
+					storagePath: media.storagePath,
+					contentType: media.contentType,
+				})
+			);
+			this.logger.log(`Published moderation event for media ${media.id}`);
+		} catch (err) {
+			this.logger.warn(`Failed to publish moderation event for media ${media.id}: ${err}`);
+		}
 	}
 
 	private async writeAccessLog(
