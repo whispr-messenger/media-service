@@ -12,6 +12,8 @@ import { HealthModule } from './modules/health/health.module';
 import { MediaModule } from './modules/media/media.module';
 import { JwksModule } from './modules/jwks/jwks.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { EventsModule } from './modules/events/events.module';
+import { MetricsModule } from './modules/metrics/metrics.module';
 
 @Module({
 	imports: [
@@ -29,6 +31,8 @@ import { AuthModule } from './modules/auth/auth.module';
 		AuthModule,
 		HealthModule,
 		MediaModule,
+		EventsModule,
+		MetricsModule,
 	],
 })
 export class AppModule {}

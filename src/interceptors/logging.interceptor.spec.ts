@@ -26,8 +26,13 @@ describe('LoggingInterceptor', () => {
 			url: '/test',
 			ip: '127.0.0.1',
 			get: jest.fn().mockReturnValue('test-agent'),
+			headers: {},
+			user: { userId: 'user-123' },
 		};
-		mockResponse = { statusCode: 200 };
+		mockResponse = {
+			statusCode: 200,
+			getHeader: jest.fn().mockReturnValue('1234'),
+		};
 		jest.spyOn(interceptor['logger'], 'log').mockImplementation(() => undefined);
 		jest.spyOn(interceptor['logger'], 'error').mockImplementation(() => undefined);
 	});
@@ -42,22 +47,50 @@ describe('LoggingInterceptor', () => {
 		expect(value).toEqual({ result: 'data' });
 	});
 
-	it('completes successfully on a normal response', async () => {
+	it('logs structured JSON on success', async () => {
 		const context = makeContext(mockRequest, mockResponse);
 		const callHandler = makeCallHandler(of('ok'));
 
 		const result$ = interceptor.intercept(context, callHandler);
+		await firstValueFrom(result$);
 
-		await expect(firstValueFrom(result$)).resolves.toBe('ok');
+		expect(interceptor['logger'].log).toHaveBeenCalled();
+		const logArg = (interceptor['logger'].log as jest.Mock).mock.calls[0][0];
+		const parsed = JSON.parse(logArg);
+		expect(parsed.method).toBe('GET');
+		expect(parsed.url).toBe('/test');
+		expect(parsed.statusCode).toBe(200);
+		expect(parsed.userId).toBe('user-123');
+		expect(typeof parsed.duration).toBe('number');
+		expect(parsed.contentLength).toBe(1234);
 	});
 
-	it('propagates errors from next.handle()', async () => {
+	it('logs structured JSON on error', async () => {
 		const context = makeContext(mockRequest, mockResponse);
-		const error = new Error('something went wrong');
+		const error = Object.assign(new Error('something went wrong'), { status: 400 });
 		const callHandler = makeCallHandler(throwError(() => error));
 
 		const result$ = interceptor.intercept(context, callHandler);
 
 		await expect(firstValueFrom(result$)).rejects.toThrow('something went wrong');
+
+		expect(interceptor['logger'].error).toHaveBeenCalled();
+		const logArg = (interceptor['logger'].error as jest.Mock).mock.calls[0][0];
+		const parsed = JSON.parse(logArg);
+		expect(parsed.statusCode).toBe(400);
+		expect(parsed.error).toBe('something went wrong');
+	});
+
+	it('handles missing user gracefully', async () => {
+		delete (mockRequest as any).user;
+		const context = makeContext(mockRequest, mockResponse);
+		const callHandler = makeCallHandler(of('ok'));
+
+		const result$ = interceptor.intercept(context, callHandler);
+		await firstValueFrom(result$);
+
+		const logArg = (interceptor['logger'].log as jest.Mock).mock.calls[0][0];
+		const parsed = JSON.parse(logArg);
+		expect(parsed.userId).toBeNull();
 	});
 });
