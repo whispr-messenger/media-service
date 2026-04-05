@@ -12,7 +12,7 @@ export class LoggingInterceptor implements NestInterceptor {
 		const response = context.switchToHttp().getResponse<Response>();
 		const { method, url, ip } = request;
 		const userAgent = request.get('User-Agent') || '';
-		const userId = (request as any).user?.userId || (request.headers['x-user-id'] as string | undefined);
+		const userId = (request as any).user?.userId;
 		const startTime = Date.now();
 
 		return next.handle().pipe(

@@ -26,7 +26,8 @@ describe('LoggingInterceptor', () => {
 			url: '/test',
 			ip: '127.0.0.1',
 			get: jest.fn().mockReturnValue('test-agent'),
-			headers: { 'x-user-id': 'user-123' },
+			headers: {},
+			user: { userId: 'user-123' },
 		};
 		mockResponse = {
 			statusCode: 200,
@@ -80,8 +81,8 @@ describe('LoggingInterceptor', () => {
 		expect(parsed.error).toBe('something went wrong');
 	});
 
-	it('handles missing x-user-id header gracefully', async () => {
-		mockRequest.headers = {};
+	it('handles missing user gracefully', async () => {
+		delete (mockRequest as any).user;
 		const context = makeContext(mockRequest, mockResponse);
 		const callHandler = makeCallHandler(of('ok'));
 

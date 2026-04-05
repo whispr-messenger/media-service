@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, VersioningType } from '@nestjs/common';
+import { INestApplication, VersioningType, ExecutionContext } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { CanActivate } from '@nestjs/common';
 import { AppModule } from '../src/app.module';
@@ -7,10 +7,14 @@ import { AppModule } from '../src/app.module';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const request = require('supertest');
 
-// Bypass JWT guard for integration tests — auth is validated at gateway level in production.
-// The media-service trusts the x-user-id header forwarded by the gateway.
+// Bypass JWT guard for integration tests — populate request.user from the x-user-id header.
 class AllowAllGuard implements CanActivate {
-	canActivate(): boolean {
+	canActivate(context: ExecutionContext): boolean {
+		const request = context.switchToHttp().getRequest();
+		const userId = request.headers['x-user-id'] as string | undefined;
+		if (userId) {
+			request.user = { userId };
+		}
 		return true;
 	}
 }
@@ -152,10 +156,10 @@ describe('Upload Pipeline (e2e, Docker)', () => {
 	}, 30000);
 
 	// =========================================================================
-	// Missing x-user-id header — 400 Bad Request
+	// Missing authenticated user — 400 Bad Request
 	// =========================================================================
 
-	it('rejects upload without x-user-id header (400)', async () => {
+	it('rejects upload without authenticated user (400)', async () => {
 		const fileBuffer = Buffer.concat([JPEG_MAGIC, Buffer.alloc(512)]);
 
 		const res = await request(app.getHttpServer())

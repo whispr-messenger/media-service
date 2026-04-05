@@ -11,6 +11,10 @@ describe('MetricsController', () => {
 		controller = new MetricsController(metricsService);
 	});
 
+	afterEach(() => {
+		metricsService.onModuleDestroy();
+	});
+
 	it('should be defined', () => {
 		expect(controller).toBeDefined();
 	});

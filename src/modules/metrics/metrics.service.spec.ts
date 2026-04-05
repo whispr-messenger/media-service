@@ -8,6 +8,10 @@ describe('MetricsService', () => {
 		service.onModuleInit();
 	});
 
+	afterEach(() => {
+		service.onModuleDestroy();
+	});
+
 	it('should be defined', () => {
 		expect(service).toBeDefined();
 	});

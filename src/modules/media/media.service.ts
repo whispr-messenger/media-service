@@ -34,6 +34,11 @@ import { REDIS_CLIENT } from './media.tokens';
 import { UserQuotaResponseDto } from './dto/user-quota-response.dto';
 import { PaginatedMediaResponseDto } from './dto/paginated-media-response.dto';
 import { MetricsService } from '../metrics/metrics.service';
+import {
+	DEFAULT_STORAGE_LIMIT_BYTES,
+	DEFAULT_FILES_LIMIT,
+	DEFAULT_DAILY_UPLOAD_LIMIT,
+} from './quota.constants';
 
 // Blob size limits per context (in bytes)
 const CONTEXT_SIZE_LIMITS: Record<MediaContext, number> = {
@@ -99,10 +104,6 @@ const MAX_CONCURRENT_UPLOADS = 3;
 export class MediaService {
 	private readonly logger = new Logger(MediaService.name);
 	private readonly signedUrlExpirySeconds: number;
-
-	private static readonly DEFAULT_STORAGE_LIMIT = 1073741824; // 1 GB
-	private static readonly DEFAULT_FILES_LIMIT = 1000;
-	private static readonly DEFAULT_DAILY_UPLOAD_LIMIT = 100;
 
 	constructor(
 		private readonly mediaRepository: MediaRepository,
@@ -421,21 +422,21 @@ export class MediaService {
 		);
 
 		const rawStorageUsed = quota?.storageUsed ?? 0n;
-		const rawStorageLimit = quota?.storageLimit ?? BigInt(MediaService.DEFAULT_STORAGE_LIMIT);
+		const rawStorageLimit = quota?.storageLimit ?? BigInt(DEFAULT_STORAGE_LIMIT_BYTES);
 		const maxSafe = BigInt(Number.MAX_SAFE_INTEGER);
 		const storageUsed = rawStorageUsed > maxSafe ? Number.MAX_SAFE_INTEGER : Number(rawStorageUsed);
 		const storageLimit = rawStorageLimit > maxSafe ? Number.MAX_SAFE_INTEGER : Number(rawStorageLimit);
 
 		const filesCount = quota?.filesCount ?? 0;
-		const filesLimit = quota?.filesLimit ?? MediaService.DEFAULT_FILES_LIMIT;
+		const filesLimit = quota?.filesLimit ?? DEFAULT_FILES_LIMIT;
 		const dailyUploads = quota?.dailyUploads ?? 0;
-		const dailyUploadLimit = quota?.dailyUploadLimit ?? MediaService.DEFAULT_DAILY_UPLOAD_LIMIT;
+		const dailyUploadLimit = quota?.dailyUploadLimit ?? DEFAULT_DAILY_UPLOAD_LIMIT;
 		const quotaDate = quota?.quotaDate ?? null;
 
 		let usagePercent = 0;
 		if (rawStorageLimit > 0n) {
 			const percentTimes100 = (rawStorageUsed * 10000n) / rawStorageLimit;
-			usagePercent = Math.min(100, Number(percentTimes100) / 100);
+			usagePercent = Math.min(100, Math.max(0, Number(percentTimes100) / 100));
 		}
 
 		return {

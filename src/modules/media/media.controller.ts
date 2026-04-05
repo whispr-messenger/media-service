@@ -5,7 +5,6 @@ import {
 	Delete,
 	Param,
 	Query,
-	Headers,
 	UploadedFiles,
 	UseInterceptors,
 	Res,
@@ -22,7 +21,6 @@ import {
 	ApiOperation,
 	ApiResponse,
 	ApiConsumes,
-	ApiHeader,
 	ApiBody,
 	ApiQuery,
 } from '@nestjs/swagger';
@@ -49,7 +47,6 @@ export class MediaController {
 	// =========================================================================
 
 	@Post('upload')
-	@ApiHeader({ name: 'x-user-id', description: 'UUID of the authenticated user', required: true })
 	@ApiOperation({ summary: 'Upload a media file (blob + optional thumbnail)' })
 	@ApiConsumes('multipart/form-data')
 	@ApiBody({
@@ -76,23 +73,24 @@ export class MediaController {
 		])
 	)
 	async upload(
-		@Headers('x-user-id') headerOwnerId: string,
+		@Req() req: Request,
 		@UploadedFiles()
 		files: { file?: Express.Multer.File[]; thumbnail?: Express.Multer.File[] },
 		@Body() dto: UploadMediaDto
 	): Promise<UploadMediaResponseDto> {
+		const authenticatedUserId = (req as any).user?.userId as string;
 		const file = files?.file?.[0];
 		const thumbnail = files?.thumbnail?.[0];
 
 		if (!file) {
 			throw new BadRequestException('No file provided');
 		}
-		if (!headerOwnerId) {
-			throw new BadRequestException('Missing x-user-id header');
+		if (!authenticatedUserId) {
+			throw new BadRequestException('Missing authenticated user');
 		}
 		// The ownerId in the body must match the authenticated user
-		const ownerId = dto.ownerId ?? headerOwnerId;
-		if (ownerId !== headerOwnerId) {
+		const ownerId = dto.ownerId ?? authenticatedUserId;
+		if (ownerId !== authenticatedUserId) {
 			throw new BadRequestException('ownerId must match the authenticated user');
 		}
 
@@ -145,16 +143,13 @@ export class MediaController {
 	// =========================================================================
 
 	@Get(':id')
-	@ApiHeader({ name: 'x-user-id', description: 'UUID of the authenticated user', required: true })
 	@ApiOperation({ summary: 'Get media metadata' })
 	@ApiResponse({ status: 200, type: MediaMetadataDto })
 	@ApiResponse({ status: 404, description: 'Not found' })
-	async getMetadata(
-		@Param('id') id: string,
-		@Headers('x-user-id') requesterId: string
-	): Promise<MediaMetadataDto> {
+	async getMetadata(@Param('id') id: string, @Req() req: Request): Promise<MediaMetadataDto> {
+		const requesterId = (req as any).user?.userId as string;
 		if (!requesterId) {
-			throw new BadRequestException('Missing x-user-id header');
+			throw new BadRequestException('Missing authenticated user');
 		}
 		return this.mediaService.getMetadata(id, requesterId);
 	}
@@ -164,18 +159,17 @@ export class MediaController {
 	// =========================================================================
 
 	@Get(':id/blob')
-	@ApiHeader({ name: 'x-user-id', description: 'UUID of the authenticated user', required: true })
 	@ApiOperation({ summary: 'Redirect to presigned blob URL' })
 	@ApiResponse({ status: 302, description: 'Redirect to signed URL' })
 	@ApiResponse({ status: 404, description: 'Not found' })
 	async getBlobUrl(
 		@Param('id') id: string,
-		@Headers('x-user-id') requesterId: string,
 		@Req() req: Request,
 		@Res() res: Response
 	): Promise<void> {
+		const requesterId = (req as any).user?.userId as string;
 		if (!requesterId) {
-			throw new BadRequestException('Missing x-user-id header');
+			throw new BadRequestException('Missing authenticated user');
 		}
 		const ip = (req.headers['x-forwarded-for'] as string) ?? req.socket?.remoteAddress;
 		const ua = req.headers['user-agent'];
@@ -188,18 +182,17 @@ export class MediaController {
 	// =========================================================================
 
 	@Get(':id/thumbnail')
-	@ApiHeader({ name: 'x-user-id', description: 'UUID of the authenticated user', required: true })
 	@ApiOperation({ summary: 'Redirect to presigned thumbnail URL' })
 	@ApiResponse({ status: 302, description: 'Redirect to thumbnail URL' })
 	@ApiResponse({ status: 404, description: 'Not found or no thumbnail' })
 	async getThumbnailUrl(
 		@Param('id') id: string,
-		@Headers('x-user-id') requesterId: string,
 		@Req() req: Request,
 		@Res() res: Response
 	): Promise<void> {
+		const requesterId = (req as any).user?.userId as string;
 		if (!requesterId) {
-			throw new BadRequestException('Missing x-user-id header');
+			throw new BadRequestException('Missing authenticated user');
 		}
 		const ip = (req.headers['x-forwarded-for'] as string) ?? req.socket?.remoteAddress;
 		const ua = req.headers['user-agent'];
@@ -212,19 +205,15 @@ export class MediaController {
 	// =========================================================================
 
 	@Delete(':id')
-	@ApiHeader({ name: 'x-user-id', description: 'UUID of the authenticated user', required: true })
 	@HttpCode(HttpStatus.NO_CONTENT)
 	@ApiOperation({ summary: 'Soft delete media — releases quota' })
 	@ApiResponse({ status: 204, description: 'Deleted' })
 	@ApiResponse({ status: 403, description: 'Not owner' })
 	@ApiResponse({ status: 404, description: 'Not found' })
-	async delete(
-		@Param('id') id: string,
-		@Headers('x-user-id') requesterId: string,
-		@Req() req: Request
-	): Promise<void> {
+	async delete(@Param('id') id: string, @Req() req: Request): Promise<void> {
+		const requesterId = (req as any).user?.userId as string;
 		if (!requesterId) {
-			throw new BadRequestException('Missing x-user-id header');
+			throw new BadRequestException('Missing authenticated user');
 		}
 		const ip = (req.headers['x-forwarded-for'] as string) ?? req.socket?.remoteAddress;
 		const ua = req.headers['user-agent'];
