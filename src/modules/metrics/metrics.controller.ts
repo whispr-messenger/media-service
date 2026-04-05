@@ -1,10 +1,12 @@
-import { Controller, Get, Res } from '@nestjs/common';
+import { Controller, Get, Res, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { Response } from 'express';
 import { Public } from '../auth/public.decorator';
 import { MetricsService } from './metrics.service';
+import { MetricsGuard } from './metrics.guard';
 
 @Public()
+@UseGuards(MetricsGuard)
 @ApiTags('Metrics')
 @Controller()
 export class MetricsController {
