@@ -13,7 +13,9 @@ export class EventsService implements OnModuleInit, OnModuleDestroy {
 			await this.client.connect();
 			this.logger.log('Redis transport client connected');
 		} catch (error) {
-			this.logger.error(`Failed to connect Redis transport: ${error instanceof Error ? error.message : String(error)}`);
+			this.logger.error(
+				`Failed to connect Redis transport: ${error instanceof Error ? error.message : String(error)}`
+			);
 		}
 	}
 

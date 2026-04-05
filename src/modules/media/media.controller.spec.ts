@@ -53,7 +53,11 @@ describe('MediaController', () => {
 			};
 			mockMediaService.upload.mockResolvedValue(expected);
 
-			const result = await controller.upload(makeReq('user-uuid-1'), { file: [file], thumbnail: [] }, dto);
+			const result = await controller.upload(
+				makeReq('user-uuid-1'),
+				{ file: [file], thumbnail: [] },
+				dto
+			);
 
 			expect(result).toEqual(expected);
 		});

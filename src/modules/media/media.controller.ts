@@ -16,14 +16,7 @@ import {
 	Body,
 } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
-import {
-	ApiTags,
-	ApiOperation,
-	ApiResponse,
-	ApiConsumes,
-	ApiBody,
-	ApiQuery,
-} from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiConsumes, ApiBody, ApiQuery } from '@nestjs/swagger';
 import { Response, Request } from 'express';
 import { MediaService } from './media.service';
 import {
@@ -162,11 +155,7 @@ export class MediaController {
 	@ApiOperation({ summary: 'Redirect to presigned blob URL' })
 	@ApiResponse({ status: 302, description: 'Redirect to signed URL' })
 	@ApiResponse({ status: 404, description: 'Not found' })
-	async getBlobUrl(
-		@Param('id') id: string,
-		@Req() req: Request,
-		@Res() res: Response
-	): Promise<void> {
+	async getBlobUrl(@Param('id') id: string, @Req() req: Request, @Res() res: Response): Promise<void> {
 		const requesterId = (req as any).user?.userId as string;
 		if (!requesterId) {
 			throw new BadRequestException('Missing authenticated user');
@@ -185,11 +174,7 @@ export class MediaController {
 	@ApiOperation({ summary: 'Redirect to presigned thumbnail URL' })
 	@ApiResponse({ status: 302, description: 'Redirect to thumbnail URL' })
 	@ApiResponse({ status: 404, description: 'Not found or no thumbnail' })
-	async getThumbnailUrl(
-		@Param('id') id: string,
-		@Req() req: Request,
-		@Res() res: Response
-	): Promise<void> {
+	async getThumbnailUrl(@Param('id') id: string, @Req() req: Request, @Res() res: Response): Promise<void> {
 		const requesterId = (req as any).user?.userId as string;
 		if (!requesterId) {
 			throw new BadRequestException('Missing authenticated user');
