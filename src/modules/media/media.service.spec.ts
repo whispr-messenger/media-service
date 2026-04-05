@@ -6,6 +6,7 @@ import {
 	PayloadTooLargeException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { DataSource } from 'typeorm';
 import { getDataSourceToken, getRepositoryToken } from '@nestjs/typeorm';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { getS3ConnectionToken } from 'nestjs-s3';
@@ -17,6 +18,8 @@ import { MediaAccessLog } from './entities/media-access-log.entity';
 import { Media } from './entities/media.entity';
 import { MediaContext } from './dto/upload-media.dto';
 import { REDIS_CLIENT } from './media.tokens';
+import { UserQuota } from './entities/user-quota.entity';
+import { MetricsService } from '../metrics/metrics.service';
 
 jest.mock('@aws-sdk/s3-request-presigner', () => ({
 	getSignedUrl: jest.fn().mockResolvedValue('https://presigned.url/file'),
@@ -68,6 +71,7 @@ const mockCache = {
 };
 
 const mockAccessLogRepo = {
+	create: jest.fn().mockImplementation((data: any) => data),
 	save: jest.fn().mockResolvedValue(undefined),
 };
 
@@ -85,16 +89,6 @@ const mockS3 = {
 	send: jest.fn().mockResolvedValue({}),
 };
 
-const mockEntityManager = {
-	getRepository: jest.fn(),
-};
-
-const mockDataSource = {
-	transaction: jest.fn(async (callback: (manager: typeof mockEntityManager) => Promise<unknown>) =>
-		callback(mockEntityManager)
-	),
-};
-
 const mockConfigService = {
 	get: jest.fn((key: string, defaultValue?: unknown) => {
 		const config: Record<string, unknown> = {
@@ -107,6 +101,32 @@ const mockConfigService = {
 
 // A minimal JPEG buffer (just the magic bytes)
 const jpegBuffer = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46]);
+
+const mockUserQuotaRepo = {
+	findOne: jest.fn(),
+};
+
+const mockMediaRepo = {
+	findAndCount: jest.fn(),
+};
+
+const mockEntityManager = {
+	getRepository: (entity: any) => {
+		if (entity === UserQuota) return mockUserQuotaRepo;
+		if (entity === Media) return mockMediaRepo;
+		return {};
+	},
+};
+
+const mockDataSource = {
+	transaction: jest.fn((cb: (manager: any) => any) => cb(mockEntityManager)),
+};
+
+const mockMetricsService = {
+	uploadsTotal: { inc: jest.fn() },
+	downloadsTotal: { inc: jest.fn() },
+	deletesTotal: { inc: jest.fn() },
+};
 
 describe('MediaService', () => {
 	let service: MediaService;
@@ -124,8 +144,12 @@ describe('MediaService', () => {
 				{ provide: ConfigService, useValue: mockConfigService },
 				{ provide: getDataSourceToken(), useValue: mockDataSource },
 				{ provide: CACHE_MANAGER, useValue: mockCache },
+				{ provide: getRepositoryToken(UserQuota), useValue: mockUserQuotaRepo },
+				{ provide: getRepositoryToken(Media), useValue: mockMediaRepo },
 				{ provide: getRepositoryToken(MediaAccessLog), useValue: mockAccessLogRepo },
 				{ provide: REDIS_CLIENT, useValue: mockRedisClient },
+				{ provide: MetricsService, useValue: mockMetricsService },
+				{ provide: DataSource, useValue: mockDataSource },
 			],
 		}).compile();
 
@@ -152,8 +176,8 @@ describe('MediaService', () => {
 		await service.getThumbnailUrl('media-uuid-1', 'user-uuid-1');
 		await service.delete('media-uuid-1', 'user-uuid-1');
 
-		expect(mockDataSource.transaction).toHaveBeenCalledTimes(4);
-		expect(mockMediaRepository.save).toHaveBeenCalledWith(expect.any(Media));
+		expect(mockDataSource.transaction).toHaveBeenCalledTimes(5);
+		expect(mockMediaRepository.save).toHaveBeenCalledWith(expect.any(Media), mockEntityManager);
 		expect(mockMediaRepository.findById).toHaveBeenCalledWith('media-uuid-1', mockEntityManager);
 		expect(mockMediaRepository.updateSignedUrlExpiry).toHaveBeenCalledWith(
 			'media-uuid-1',
@@ -422,6 +446,106 @@ describe('MediaService', () => {
 			const url = await service.getThumbnailUrl('media-uuid-1', 'user-uuid-1');
 
 			expect(url).toBe('https://presigned.url/file');
+		});
+	});
+
+	describe('getUserQuota', () => {
+		it('should return existing user quota with calculated usagePercent', async () => {
+			const quota = new UserQuota();
+			quota.storageUsed = BigInt(536870912);
+			quota.storageLimit = BigInt(1073741824);
+			quota.filesCount = 50;
+			quota.filesLimit = 1000;
+			quota.dailyUploads = 5;
+			quota.dailyUploadLimit = 100;
+			quota.quotaDate = '2026-03-22';
+
+			mockUserQuotaRepo.findOne.mockResolvedValue(quota);
+
+			const result = await service.getUserQuota('user-uuid-1');
+
+			expect(result.storageUsed).toBe(536870912);
+			expect(result.storageLimit).toBe(1073741824);
+			expect(result.usagePercent).toBe(50);
+			expect(result.quotaDate).toBe('2026-03-22');
+		});
+
+		it('should return default values when no quota exists', async () => {
+			mockUserQuotaRepo.findOne.mockResolvedValue(null);
+
+			const result = await service.getUserQuota('user-uuid-1');
+
+			expect(result.storageUsed).toBe(0);
+			expect(result.storageLimit).toBe(1073741824);
+			expect(result.filesCount).toBe(0);
+			expect(result.filesLimit).toBe(1000);
+			expect(result.dailyUploads).toBe(0);
+			expect(result.dailyUploadLimit).toBe(100);
+			expect(result.quotaDate).toBeNull();
+			expect(result.usagePercent).toBe(0);
+		});
+	});
+
+	describe('getUserMedia', () => {
+		it('should return paginated media list', async () => {
+			const media1 = new Media();
+			media1.id = 'media-1';
+			media1.contentType = 'image/jpeg';
+			media1.blobSize = 1024;
+			media1.context = 'messages';
+			media1.createdAt = new Date();
+
+			mockMediaRepo.findAndCount.mockResolvedValue([[media1], 1]);
+
+			const result = await service.getUserMedia('user-uuid-1', 1, 20);
+
+			expect(result.items).toHaveLength(1);
+			expect(result.total).toBe(1);
+			expect(result.page).toBe(1);
+			expect(result.limit).toBe(20);
+			expect(result.totalPages).toBe(1);
+			expect(mockMediaRepo.findAndCount).toHaveBeenCalledWith({
+				where: { ownerId: 'user-uuid-1', isActive: true },
+				order: { createdAt: 'DESC' },
+				skip: 0,
+				take: 20,
+			});
+		});
+
+		it('should calculate totalPages correctly', async () => {
+			mockMediaRepo.findAndCount.mockResolvedValue([[], 45]);
+
+			const result = await service.getUserMedia('user-uuid-1', 1, 20);
+
+			expect(result.totalPages).toBe(3);
+		});
+	});
+
+	describe('logAccess', () => {
+		it('should create and save an access log entry', () => {
+			service.logAccess('media-1', 'user-1', 'download');
+
+			expect(mockAccessLogRepo.create).toHaveBeenCalledWith({
+				mediaId: 'media-1',
+				accessorId: 'user-1',
+				accessType: 'download',
+				accessedAt: expect.any(Date),
+			});
+			expect(mockAccessLogRepo.save).toHaveBeenCalled();
+		});
+
+		it('should handle null accessorId', () => {
+			service.logAccess('media-1', null, 'presigned_url');
+
+			expect(mockAccessLogRepo.create).toHaveBeenCalledWith(
+				expect.objectContaining({ accessorId: null })
+			);
+		});
+
+		it('should catch save errors without throwing', async () => {
+			mockAccessLogRepo.save.mockRejectedValueOnce(new Error('DB error'));
+
+			expect(() => service.logAccess('media-1', 'user-1', 'download')).not.toThrow();
 		});
 	});
 });

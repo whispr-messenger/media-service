@@ -18,7 +18,9 @@ async function bootstrap() {
 
 	app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
 
-	app.setGlobalPrefix(globalPrefix);
+	app.setGlobalPrefix(globalPrefix, {
+		exclude: ['metrics'],
+	});
 
 	app.enableVersioning({
 		type: VersioningType.URI,

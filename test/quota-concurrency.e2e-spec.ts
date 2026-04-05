@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, VersioningType } from '@nestjs/common';
+import { INestApplication, VersioningType, ExecutionContext } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { CanActivate } from '@nestjs/common';
 import { DataSource } from 'typeorm';
@@ -8,9 +8,14 @@ import { AppModule } from '../src/app.module';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const request = require('supertest');
 
-// Bypass JWT guard for integration tests.
+// Bypass JWT guard for integration tests — populate request.user from the x-user-id header.
 class AllowAllGuard implements CanActivate {
-	canActivate(): boolean {
+	canActivate(context: ExecutionContext): boolean {
+		const request = context.switchToHttp().getRequest();
+		const userId = request.headers['x-user-id'] as string | undefined;
+		if (userId) {
+			request.user = { userId };
+		}
 		return true;
 	}
 }
