@@ -10,7 +10,8 @@ export class MetricsGuard implements CanActivate {
 		const apiKey = this.configService.get<string>('METRICS_API_KEY');
 
 		if (!apiKey) {
-			return true;
+			const env = this.configService.get<string>('NODE_ENV', 'production');
+			return env === 'development' || env === 'test';
 		}
 
 		const request = context.switchToHttp().getRequest<Request>();
