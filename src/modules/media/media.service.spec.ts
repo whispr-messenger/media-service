@@ -208,6 +208,37 @@ describe('MediaService', () => {
 			expect(result).toHaveProperty('mediaId');
 		});
 
+		it('refreshes semaphore TTL while an upload is in progress', async () => {
+			jest.useFakeTimers();
+
+			try {
+				const media = makeMedia();
+				mockMediaRepository.save.mockResolvedValue(media);
+
+				let resolveUpload: (() => void) | undefined;
+				mockStorageService.upload.mockImplementationOnce(
+					() =>
+						new Promise<void>((resolve) => {
+							resolveUpload = resolve;
+						})
+				);
+
+				const uploadPromise = service.upload('user-uuid-1', file, MediaContext.MESSAGE);
+				await Promise.resolve();
+
+				expect(mockRedisClient.expire).toHaveBeenCalledTimes(1);
+
+				await jest.advanceTimersByTimeAsync(5 * 60 * 1000);
+
+				expect(mockRedisClient.expire).toHaveBeenCalledTimes(2);
+
+				resolveUpload?.();
+				await uploadPromise;
+			} finally {
+				jest.useRealTimers();
+			}
+		});
+
 		it('throws 429 HttpException when semaphore is at max', async () => {
 			// Simulate counter already at MAX+1 after INCR (4 = over the limit of 3)
 			mockRedisClient.incr.mockResolvedValueOnce(4);
@@ -418,30 +449,103 @@ describe('MediaService', () => {
 		});
 	});
 
-	describe('updateModerationStatus()', () => {
-		it('updates moderation fields on existing media', async () => {
-			const media = makeMedia();
-			mockMediaRepository.findById.mockResolvedValue(media);
-			mockMediaRepository.save.mockResolvedValue(media);
+	describe('getUserQuota', () => {
+		it('should return existing user quota with calculated usagePercent', async () => {
+			const quota = new UserQuota();
+			quota.storageUsed = BigInt(536870912);
+			quota.storageLimit = BigInt(1073741824);
+			quota.filesCount = 50;
+			quota.filesLimit = 1000;
+			quota.dailyUploads = 5;
+			quota.dailyUploadLimit = 100;
+			quota.quotaDate = '2026-03-22';
 
-			await service.updateModerationStatus('media-uuid-1', 'approved', 0.95, 'safe');
+			mockUserQuotaRepo.findOne.mockResolvedValue(quota);
 
-			expect(mockMediaRepository.save).toHaveBeenCalledWith(
-				expect.objectContaining({
-					moderationStatus: 'approved',
-					moderationScore: 0.95,
-					moderationCategory: 'safe',
-				}),
-				mockEntityManager
+			const result = await service.getUserQuota('user-uuid-1');
+
+			expect(result.storageUsed).toBe(536870912);
+			expect(result.storageLimit).toBe(1073741824);
+			expect(result.usagePercent).toBe(50);
+			expect(result.quotaDate).toBe('2026-03-22');
+		});
+
+		it('should return default values when no quota exists', async () => {
+			mockUserQuotaRepo.findOne.mockResolvedValue(null);
+
+			const result = await service.getUserQuota('user-uuid-1');
+
+			expect(result.storageUsed).toBe(0);
+			expect(result.storageLimit).toBe(1073741824);
+			expect(result.filesCount).toBe(0);
+			expect(result.filesLimit).toBe(1000);
+			expect(result.dailyUploads).toBe(0);
+			expect(result.dailyUploadLimit).toBe(100);
+			expect(result.quotaDate).toBeNull();
+			expect(result.usagePercent).toBe(0);
+		});
+	});
+
+	describe('getUserMedia', () => {
+		it('should return paginated media list', async () => {
+			const media1 = new Media();
+			media1.id = 'media-1';
+			media1.contentType = 'image/jpeg';
+			media1.blobSize = 1024;
+			media1.context = 'messages';
+			media1.createdAt = new Date();
+
+			mockMediaRepo.findAndCount.mockResolvedValue([[media1], 1]);
+
+			const result = await service.getUserMedia('user-uuid-1', 1, 20);
+
+			expect(result.items).toHaveLength(1);
+			expect(result.total).toBe(1);
+			expect(result.page).toBe(1);
+			expect(result.limit).toBe(20);
+			expect(result.totalPages).toBe(1);
+			expect(mockMediaRepo.findAndCount).toHaveBeenCalledWith({
+				where: { ownerId: 'user-uuid-1', isActive: true },
+				order: { createdAt: 'DESC' },
+				skip: 0,
+				take: 20,
+			});
+		});
+
+		it('should calculate totalPages correctly', async () => {
+			mockMediaRepo.findAndCount.mockResolvedValue([[], 45]);
+
+			const result = await service.getUserMedia('user-uuid-1', 1, 20);
+
+			expect(result.totalPages).toBe(3);
+		});
+	});
+
+	describe('logAccess', () => {
+		it('should create and save an access log entry', () => {
+			service.logAccess('media-1', 'user-1', 'download');
+
+			expect(mockAccessLogRepo.create).toHaveBeenCalledWith({
+				mediaId: 'media-1',
+				accessorId: 'user-1',
+				accessType: 'download',
+				accessedAt: expect.any(Date),
+			});
+			expect(mockAccessLogRepo.save).toHaveBeenCalled();
+		});
+
+		it('should handle null accessorId', () => {
+			service.logAccess('media-1', null, 'presigned_url');
+
+			expect(mockAccessLogRepo.create).toHaveBeenCalledWith(
+				expect.objectContaining({ accessorId: null })
 			);
 		});
 
-		it('throws NotFoundException when media does not exist', async () => {
-			mockMediaRepository.findById.mockResolvedValue(null);
+		it('should catch save errors without throwing', async () => {
+			mockAccessLogRepo.save.mockRejectedValueOnce(new Error('DB error'));
 
-			await expect(service.updateModerationStatus('missing', 'approved')).rejects.toThrow(
-				NotFoundException
-			);
+			expect(() => service.logAccess('media-1', 'user-1', 'download')).not.toThrow();
 		});
 	});
 });
