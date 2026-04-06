@@ -17,6 +17,7 @@ const mockMediaService = {
 	getUserQuota: jest.fn(),
 	getUserMedia: jest.fn(),
 	logAccess: jest.fn(),
+	updateModerationStatus: jest.fn(),
 };
 
 describe('MediaController', () => {
@@ -218,6 +219,40 @@ describe('MediaController', () => {
 				undefined
 			);
 			expect(result).toBeUndefined();
+		});
+	});
+
+	describe('updateModeration()', () => {
+		const VALID_UUID = '123e4567-e89b-12d3-a456-426614174000';
+
+		it('calls updateModerationStatus with status only', async () => {
+			mockMediaService.updateModerationStatus.mockResolvedValue(undefined);
+
+			await controller.updateModeration(VALID_UUID, { status: 'approved' });
+
+			expect(mockMediaService.updateModerationStatus).toHaveBeenCalledWith(
+				VALID_UUID,
+				'approved',
+				undefined,
+				undefined
+			);
+		});
+
+		it('calls updateModerationStatus with status, score and category', async () => {
+			mockMediaService.updateModerationStatus.mockResolvedValue(undefined);
+
+			await controller.updateModeration(VALID_UUID, {
+				status: 'rejected',
+				score: 0.92,
+				category: 'NSFW',
+			});
+
+			expect(mockMediaService.updateModerationStatus).toHaveBeenCalledWith(
+				VALID_UUID,
+				'rejected',
+				0.92,
+				'NSFW'
+			);
 		});
 	});
 });

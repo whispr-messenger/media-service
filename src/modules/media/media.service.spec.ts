@@ -548,4 +548,113 @@ describe('MediaService', () => {
 			expect(() => service.logAccess('media-1', 'user-1', 'download')).not.toThrow();
 		});
 	});
+
+	describe('moderation', () => {
+		describe('updateModerationStatus()', () => {
+			it('should update moderation status with score and category', async () => {
+				const media = makeMedia({ moderationStatus: 'pending' });
+				mockMediaRepository.findById.mockResolvedValue(media);
+				mockMediaRepository.save.mockResolvedValue(media);
+
+				await service.updateModerationStatus('media-uuid-1', 'rejected', 0.95, 'NSFW');
+
+				expect(mockMediaRepository.findById).toHaveBeenCalledWith('media-uuid-1', mockEntityManager);
+				expect(mockMediaRepository.save).toHaveBeenCalledWith(
+					expect.objectContaining({
+						moderationStatus: 'rejected',
+						moderationScore: 0.95,
+						moderationCategory: 'NSFW',
+					}),
+					mockEntityManager
+				);
+			});
+
+			it('should update moderation status without score and category', async () => {
+				const media = makeMedia();
+				mockMediaRepository.findById.mockResolvedValue(media);
+				mockMediaRepository.save.mockResolvedValue(media);
+
+				await service.updateModerationStatus('media-uuid-1', 'approved');
+
+				expect(mockMediaRepository.save).toHaveBeenCalledWith(
+					expect.objectContaining({ moderationStatus: 'approved' }),
+					mockEntityManager
+				);
+			});
+
+			it('should throw NotFoundException when media does not exist', async () => {
+				mockMediaRepository.findById.mockResolvedValue(null);
+
+				await expect(service.updateModerationStatus('missing-id', 'approved')).rejects.toThrow(
+					NotFoundException
+				);
+			});
+		});
+
+		describe('publishModerationEvent (via upload)', () => {
+			const imageFile: Express.Multer.File = {
+				originalname: 'photo.jpg',
+				mimetype: 'image/jpeg',
+				size: 1024,
+				buffer: jpegBuffer,
+			} as unknown as Express.Multer.File;
+
+			beforeEach(() => {
+				mockQuotaService.enforceQuota.mockResolvedValue(undefined);
+				mockQuotaService.recordUpload.mockResolvedValue(undefined);
+				mockCache.get.mockResolvedValue(null);
+			});
+
+			it('should publish media.uploaded event for image in MESSAGE context', async () => {
+				const media = makeMedia();
+				mockMediaRepository.save.mockResolvedValue(media);
+				mockRedisClient.publish.mockClear();
+
+				await service.upload('user-uuid-1', imageFile, MediaContext.MESSAGE);
+
+				// Wait for fire-and-forget promise
+				await new Promise((resolve) => setImmediate(resolve));
+
+				expect(mockRedisClient.publish).toHaveBeenCalledWith(
+					'media.uploaded',
+					expect.stringContaining('"mediaId"')
+				);
+			});
+
+			it('should not publish for non-image uploads', async () => {
+				const media = makeMedia({ contentType: 'application/pdf' });
+				mockMediaRepository.save.mockResolvedValue(media);
+				mockRedisClient.publish.mockClear();
+
+				const pdfFile: Express.Multer.File = {
+					originalname: 'doc.pdf',
+					mimetype: 'application/pdf',
+					size: 1024,
+					buffer: Buffer.from([0x25, 0x50, 0x44, 0x46]),
+				} as unknown as Express.Multer.File;
+
+				await service.upload('user-uuid-1', pdfFile, MediaContext.MESSAGE);
+				await new Promise((resolve) => setImmediate(resolve));
+
+				const publishCalls = mockRedisClient.publish.mock.calls.filter(
+					(call) => call[0] === 'media.uploaded'
+				);
+				expect(publishCalls).toHaveLength(0);
+			});
+
+			it('should not publish for AVATAR context', async () => {
+				const media = makeMedia({ context: MediaContext.AVATAR });
+				mockMediaRepository.save.mockResolvedValue(media);
+				mockRedisClient.publish.mockClear();
+
+				await service.upload('user-uuid-1', imageFile, MediaContext.AVATAR);
+				await new Promise((resolve) => setImmediate(resolve));
+
+				const publishCalls = mockRedisClient.publish.mock.calls.filter(
+					(call) => call[0] === 'media.uploaded'
+				);
+				expect(publishCalls).toHaveLength(0);
+			});
+		});
+	});
 });
