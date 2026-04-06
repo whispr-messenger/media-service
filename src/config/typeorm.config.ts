@@ -70,6 +70,7 @@ async function typeOrmModuleOptionsFactory(configService: ConfigService): Promis
 	return {
 		...databaseConfig,
 		...dataSourceOptions,
+		autoLoadEntities: true,
 	} as TypeOrmModuleOptions;
 }
 
