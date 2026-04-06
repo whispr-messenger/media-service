@@ -3,6 +3,7 @@ import {
 	Post,
 	Get,
 	Delete,
+	Patch,
 	Param,
 	Query,
 	UploadedFiles,
@@ -14,6 +15,7 @@ import {
 	BadRequestException,
 	Logger,
 	Body,
+	ParseUUIDPipe,
 } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiResponse, ApiConsumes, ApiBody, ApiQuery } from '@nestjs/swagger';
@@ -183,6 +185,21 @@ export class MediaController {
 		const ua = req.headers['user-agent'];
 		const url = await this.mediaService.getThumbnailUrl(id, requesterId, ip, ua);
 		res.redirect(302, url);
+	}
+
+	// =========================================================================
+	// PATCH /media/v1/:id/moderation — Moderation verdict
+	// =========================================================================
+
+	@Patch(':id/moderation')
+	@ApiOperation({ summary: 'Update moderation status (called by moderation-service)' })
+	@ApiResponse({ status: 200, description: 'Moderation status updated' })
+	@ApiResponse({ status: 404, description: 'Not found' })
+	async updateModeration(
+		@Param('id', ParseUUIDPipe) id: string,
+		@Body() body: { status: string; score?: number; category?: string }
+	): Promise<void> {
+		await this.mediaService.updateModerationStatus(id, body.status, body.score, body.category);
 	}
 
 	// =========================================================================
