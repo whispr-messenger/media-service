@@ -22,7 +22,6 @@ import { Readable } from 'stream';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
 import { Media } from './entities/media.entity';
-import { UserQuota } from './entities/user-quota.entity';
 import { MediaAccessLog } from './entities/media-access-log.entity';
 import { MediaRepository } from './repositories/media.repository';
 import { StorageService, StorageContext } from './storage.service';
@@ -31,14 +30,6 @@ import { validateMagicBytes } from './magic-bytes.validator';
 import { createClient } from '@redis/client';
 import { MediaContext, UploadMediaResponseDto, MediaMetadataDto } from './dto/upload-media.dto';
 import { REDIS_CLIENT } from './media.tokens';
-import { UserQuotaResponseDto } from './dto/user-quota-response.dto';
-import { PaginatedMediaResponseDto } from './dto/paginated-media-response.dto';
-import { MetricsService } from '../metrics/metrics.service';
-import {
-	DEFAULT_STORAGE_LIMIT_BYTES,
-	DEFAULT_FILES_LIMIT,
-	DEFAULT_DAILY_UPLOAD_LIMIT,
-} from './quota.constants';
 
 // Blob size limits per context (in bytes)
 const CONTEXT_SIZE_LIMITS: Record<MediaContext, number> = {
@@ -96,7 +87,6 @@ const CONTEXT_MIME_ALLOWLIST: Record<MediaContext, Set<string>> = {
 const META_CACHE_TTL_MS = 30 * 60 * 1000; // 30 min
 const DEDUP_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const SEMAPHORE_TTL_SECONDS = 30 * 60; // 30 min safety net TTL in seconds
-const SEMAPHORE_TTL_REFRESH_INTERVAL_MS = 5 * 60 * 1000; // refresh every 5 min while uploading
 
 const MAX_CONCURRENT_UPLOADS = 3;
 
@@ -113,12 +103,9 @@ export class MediaService {
 		private readonly configService: ConfigService,
 		private readonly dataSource: DataSource,
 		@Inject(CACHE_MANAGER) private readonly cache: Cache,
-		@InjectRepository(UserQuota) private readonly userQuotaRepo: Repository<UserQuota>,
-		@InjectRepository(Media) private readonly mediaRepo: Repository<Media>,
 		@InjectRepository(MediaAccessLog)
 		private readonly accessLogRepo: Repository<MediaAccessLog>,
-		@Inject(REDIS_CLIENT) private readonly redisClient: ReturnType<typeof createClient>,
-		private readonly metricsService: MetricsService
+		@Inject(REDIS_CLIENT) private readonly redisClient: ReturnType<typeof createClient>
 	) {
 		this.signedUrlExpirySeconds = this.configService.get<number>(
 			'SIGNED_URL_EXPIRY_SECONDS',
@@ -140,102 +127,105 @@ export class MediaService {
 		await this.acquireSemaphore(ownerId);
 
 		try {
-			return await this.runWithSemaphoreTtlRefresh(ownerId, async () => {
-				// WHISPR-356: Pre-upload quota check
-				await this.quotaService.enforceQuota(ownerId, file.size);
+			// WHISPR-356: Pre-upload quota check
+			await this.quotaService.enforceQuota(ownerId, file.size);
 
-				// WHISPR-361: Blob size limits per context
-				this.enforceContextSizeLimit(file.size, context);
+			// WHISPR-361: Blob size limits per context
+			this.enforceContextSizeLimit(file.size, context);
 
-				// WHISPR-360: MIME allowlist + magic bytes validation
-				if (!CONTEXT_MIME_ALLOWLIST[context].has(file.mimetype)) {
+			// WHISPR-360: MIME allowlist + magic bytes validation
+			if (!CONTEXT_MIME_ALLOWLIST[context].has(file.mimetype)) {
+				throw new UnsupportedMediaTypeException(
+					`MIME type '${file.mimetype}' is not allowed for context '${context}'`
+				);
+			}
+			const blobBuffer = file.buffer ?? Buffer.alloc(0);
+			validateMagicBytes(blobBuffer, file.mimetype);
+
+			// WHISPR-362: Blob deduplication via SHA-256 (scoped per owner+context)
+			const sha256 = createHash('sha256').update(blobBuffer).digest('hex');
+			const dedupKey = `dedup:blob:${ownerId}:${context}:${sha256}`;
+			const existingId = await this.cache.get<string>(dedupKey);
+			if (existingId) {
+				const existing = await this.dataSource.transaction((manager) =>
+					this.mediaRepository.findById(existingId, manager)
+				);
+				if (existing) {
+					this.logger.debug(`Dedup hit for sha256=${sha256} → reusing media ${existingId}`);
+					return this.buildUploadResponse(existing, context);
+				}
+			}
+
+			const id = randomUUID();
+			const storageContext = this.contextToStorageContext(context);
+			const storagePath = this.storageService.buildPath(storageContext, ownerId, id);
+
+			this.logger.debug(`Uploading file to ${storagePath}`);
+			const blobStream = file.stream ?? Readable.from(blobBuffer);
+			await this.storageService.upload(storagePath, blobStream, file.mimetype, file.size);
+
+			let thumbnailPath: string | null = null;
+			if (thumbnailFile) {
+				// Validate thumbnail: only safe image MIME types, max 5 MB, magic-bytes check
+				const THUMBNAIL_MAX_BYTES = 5 * 1024 * 1024;
+				const THUMBNAIL_ALLOWED_MIME = new Set([
+					'image/jpeg',
+					'image/png',
+					'image/gif',
+					'image/webp',
+					'image/heic',
+					'image/heif',
+				]);
+				if (!THUMBNAIL_ALLOWED_MIME.has(thumbnailFile.mimetype)) {
 					throw new UnsupportedMediaTypeException(
-						`MIME type '${file.mimetype}' is not allowed for context '${context}'`
+						`Thumbnail MIME type '${thumbnailFile.mimetype}' is not allowed`
 					);
 				}
-				const blobBuffer = file.buffer ?? Buffer.alloc(0);
-				validateMagicBytes(blobBuffer, file.mimetype);
-
-				// WHISPR-362: Blob deduplication via SHA-256 (scoped per owner+context)
-				const sha256 = createHash('sha256').update(blobBuffer).digest('hex');
-				const dedupKey = `dedup:blob:${ownerId}:${context}:${sha256}`;
-				const existingId = await this.cache.get<string>(dedupKey);
-				if (existingId) {
-					const existing = await this.dataSource.transaction((manager) =>
-						this.mediaRepository.findById(existingId, manager)
+				if (thumbnailFile.size > THUMBNAIL_MAX_BYTES) {
+					throw new PayloadTooLargeException(
+						`Thumbnail size ${thumbnailFile.size} exceeds the 5 MB limit`
 					);
-					if (existing) {
-						this.logger.debug(`Dedup hit for sha256=${sha256} → reusing media ${existingId}`);
-						return this.buildUploadResponse(existing, context);
-					}
 				}
+				const thumbBuffer = thumbnailFile.buffer ?? Buffer.alloc(0);
+				validateMagicBytes(thumbBuffer, thumbnailFile.mimetype);
 
-				const id = randomUUID();
-				const storageContext = this.contextToStorageContext(context);
-				const storagePath = this.storageService.buildPath(storageContext, ownerId, id);
+				const thumbnailStoragePath = this.storageService.buildPath('thumbnails', ownerId, id);
+				const thumbStream = thumbnailFile.stream ?? Readable.from(thumbBuffer);
+				await this.storageService.upload(
+					thumbnailStoragePath,
+					thumbStream,
+					thumbnailFile.mimetype,
+					thumbnailFile.size
+				);
+				thumbnailPath = thumbnailStoragePath;
+			}
 
-				this.logger.debug(`Uploading file to ${storagePath}`);
-				const blobStream = file.stream ?? Readable.from(blobBuffer);
-				await this.storageService.upload(storagePath, blobStream, file.mimetype, file.size);
+			const media = new Media();
+			media.id = id;
+			media.ownerId = ownerId;
+			media.context = context;
+			media.storagePath = storagePath;
+			media.thumbnailPath = thumbnailPath;
+			media.contentType = file.mimetype;
+			media.blobSize = file.size;
+			media.expiresAt = context === MediaContext.MESSAGE ? this.computeExpiresAt() : null;
+			media.isActive = true;
 
-				let thumbnailPath: string | null = null;
-				if (thumbnailFile) {
-					// Validate thumbnail: only safe image MIME types, max 5 MB, magic-bytes check
-					const THUMBNAIL_MAX_BYTES = 5 * 1024 * 1024;
-					const THUMBNAIL_ALLOWED_MIME = new Set([
-						'image/jpeg',
-						'image/png',
-						'image/gif',
-						'image/webp',
-						'image/heic',
-						'image/heif',
-					]);
-					if (!THUMBNAIL_ALLOWED_MIME.has(thumbnailFile.mimetype)) {
-						throw new UnsupportedMediaTypeException(
-							`Thumbnail MIME type '${thumbnailFile.mimetype}' is not allowed`
-						);
-					}
-					if (thumbnailFile.size > THUMBNAIL_MAX_BYTES) {
-						throw new PayloadTooLargeException(
-							`Thumbnail size ${thumbnailFile.size} exceeds the 5 MB limit`
-						);
-					}
-					const thumbBuffer = thumbnailFile.buffer ?? Buffer.alloc(0);
-					validateMagicBytes(thumbBuffer, thumbnailFile.mimetype);
+			await this.dataSource.transaction((manager) => this.mediaRepository.save(media, manager));
 
-					const thumbnailStoragePath = this.storageService.buildPath('thumbnails', ownerId, id);
-					const thumbStream = thumbnailFile.stream ?? Readable.from(thumbBuffer);
-					await this.storageService.upload(
-						thumbnailStoragePath,
-						thumbStream,
-						thumbnailFile.mimetype,
-						thumbnailFile.size
-					);
-					thumbnailPath = thumbnailStoragePath;
-				}
+			// Only moderate image uploads in message context
+			if (context === MediaContext.MESSAGE && file.mimetype.startsWith('image/')) {
+				media.moderationStatus = 'pending';
+				await this.publishModerationEvent(media);
+			}
 
-				const media = new Media();
-				media.id = id;
-				media.ownerId = ownerId;
-				media.context = context;
-				media.storagePath = storagePath;
-				media.thumbnailPath = thumbnailPath;
-				media.contentType = file.mimetype;
-				media.blobSize = file.size;
-				media.expiresAt = context === MediaContext.MESSAGE ? this.computeExpiresAt() : null;
-				media.isActive = true;
+			// Cache dedup entry
+			await this.cache.set(dedupKey, id, DEDUP_CACHE_TTL_MS);
 
-				await this.dataSource.transaction((manager) => this.mediaRepository.save(media, manager));
+			// WHISPR-357: Update quota
+			await this.quotaService.recordUpload(ownerId, file.size);
 
-				// Cache dedup entry
-				await this.cache.set(dedupKey, id, DEDUP_CACHE_TTL_MS);
-
-				// WHISPR-357: Update quota
-				await this.quotaService.recordUpload(ownerId, file.size);
-
-				this.metricsService.uploadsTotal.inc();
-				return this.buildUploadResponse(media, context);
-			});
+			return this.buildUploadResponse(media, context);
 		} finally {
 			await this.releaseSemaphore(ownerId);
 		}
@@ -413,71 +403,24 @@ export class MediaService {
 	}
 
 	// =========================================================================
-	// GET /media/v1/quota — WHISPR-368
+	// PATCH /media/v1/:id/moderation — Moderation verdict
 	// =========================================================================
 
-	async getUserQuota(userId: string): Promise<UserQuotaResponseDto> {
-		const quota = await this.dataSource.transaction((manager) =>
-			manager.getRepository(UserQuota).findOne({ where: { userId } })
-		);
-
-		const rawStorageUsed = quota?.storageUsed ?? 0n;
-		const rawStorageLimit = quota?.storageLimit ?? BigInt(DEFAULT_STORAGE_LIMIT_BYTES);
-		const maxSafe = BigInt(Number.MAX_SAFE_INTEGER);
-		const storageUsed = rawStorageUsed > maxSafe ? Number.MAX_SAFE_INTEGER : Number(rawStorageUsed);
-		const storageLimit = rawStorageLimit > maxSafe ? Number.MAX_SAFE_INTEGER : Number(rawStorageLimit);
-
-		const filesCount = quota?.filesCount ?? 0;
-		const filesLimit = quota?.filesLimit ?? DEFAULT_FILES_LIMIT;
-		const dailyUploads = quota?.dailyUploads ?? 0;
-		const dailyUploadLimit = quota?.dailyUploadLimit ?? DEFAULT_DAILY_UPLOAD_LIMIT;
-		const quotaDate = quota?.quotaDate ?? null;
-
-		let usagePercent = 0;
-		if (rawStorageLimit > 0n) {
-			const percentTimes100 = (rawStorageUsed * 10000n) / rawStorageLimit;
-			usagePercent = Math.min(100, Math.max(0, Number(percentTimes100) / 100));
-		}
-
-		return {
-			storageUsed,
-			storageLimit,
-			filesCount,
-			filesLimit,
-			dailyUploads,
-			dailyUploadLimit,
-			quotaDate,
-			usagePercent,
-		};
-	}
-
-	// =========================================================================
-	// GET /media/v1/my-media — WHISPR-369
-	// =========================================================================
-
-	async getUserMedia(userId: string, page: number, limit: number): Promise<PaginatedMediaResponseDto> {
-		const [items, total] = await this.dataSource.transaction((manager) =>
-			manager.getRepository(Media).findAndCount({
-				where: { ownerId: userId, isActive: true },
-				order: { createdAt: 'DESC' },
-				skip: (page - 1) * limit,
-				take: limit,
-			})
-		);
-
-		return {
-			items: items.map((m) => ({
-				id: m.id,
-				contentType: m.contentType,
-				blobSize: m.blobSize,
-				context: m.context,
-				createdAt: m.createdAt,
-			})),
-			total,
-			page,
-			limit,
-			totalPages: Math.ceil(total / limit),
-		};
+	async updateModerationStatus(
+		id: string,
+		status: string,
+		score?: number,
+		category?: string
+	): Promise<void> {
+		await this.dataSource.transaction(async (manager) => {
+			const media = await this.mediaRepository.findById(id, manager);
+			if (!media) throw new NotFoundException(`Media ${id} not found`);
+			media.moderationStatus = status;
+			if (score !== undefined) media.moderationScore = score;
+			if (category) media.moderationCategory = category;
+			await this.mediaRepository.save(media, manager);
+		});
+		this.logger.log(`Media ${id} moderation updated: ${status} (score=${score}, category=${category})`);
 	}
 
 	// =========================================================================
@@ -525,29 +468,6 @@ export class MediaService {
 		const remaining = Number(await this.redisClient.decr(key));
 		if (remaining <= 0) {
 			await this.redisClient.del(key);
-		}
-	}
-
-	private async runWithSemaphoreTtlRefresh<T>(userId: string, operation: () => Promise<T>): Promise<T> {
-		const key = `upload:semaphore:${userId}`;
-		const refresh = async () => {
-			try {
-				await this.redisClient.expire(key, SEMAPHORE_TTL_SECONDS);
-			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				this.logger.warn(`Failed to refresh upload semaphore TTL for user ${userId}: ${message}`);
-			}
-		};
-
-		const interval = globalThis.setInterval(() => {
-			void refresh();
-		}, SEMAPHORE_TTL_REFRESH_INTERVAL_MS);
-		interval.unref?.();
-
-		try {
-			return await operation();
-		} finally {
-			globalThis.clearInterval(interval);
 		}
 	}
 
@@ -612,6 +532,23 @@ export class MediaService {
 		};
 	}
 
+	private async publishModerationEvent(media: Media): Promise<void> {
+		try {
+			await this.redisClient.publish(
+				'media.uploaded',
+				JSON.stringify({
+					mediaId: media.id,
+					ownerId: media.ownerId,
+					storagePath: media.storagePath,
+					contentType: media.contentType,
+				})
+			);
+			this.logger.log(`Published moderation event for media ${media.id}`);
+		} catch (err) {
+			this.logger.warn(`Failed to publish moderation event for media ${media.id}: ${err}`);
+		}
+	}
+
 	private async writeAccessLog(
 		mediaId: string,
 		accessorId: string | null,
@@ -628,19 +565,5 @@ export class MediaService {
 		log.ipAddress = ipAddress ?? null;
 		log.userAgent = userAgent?.slice(0, 512) ?? null;
 		await this.accessLogRepo.save(log);
-	}
-
-	logAccess(mediaId: string, accessorId: string | null, accessType: string): void {
-		const log = this.accessLogRepo.create({
-			mediaId,
-			accessorId,
-			accessType,
-			accessedAt: new Date(),
-		});
-
-		this.accessLogRepo.save(log).catch((error: unknown) => {
-			const msg = error instanceof Error ? error.message : String(error);
-			this.logger.error(`Failed to write access log for media ${mediaId}: ${msg}`);
-		});
 	}
 }
