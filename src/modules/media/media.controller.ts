@@ -29,6 +29,7 @@ import {
 } from './dto/upload-media.dto';
 import { UserQuotaResponseDto } from './dto/user-quota-response.dto';
 import { PaginatedMediaResponseDto } from './dto/paginated-media-response.dto';
+import { Public } from '../auth/public.decorator';
 
 @ApiTags('Media')
 @Controller()
@@ -192,7 +193,8 @@ export class MediaController {
 	// =========================================================================
 
 	@Patch(':id/moderation')
-	@ApiOperation({ summary: 'Update moderation status (called by moderation-service)' })
+	@Public()
+	@ApiOperation({ summary: 'Update moderation status (called by moderation-service, internal)' })
 	@ApiResponse({ status: 200, description: 'Moderation status updated' })
 	@ApiResponse({ status: 404, description: 'Not found' })
 	async updateModeration(
