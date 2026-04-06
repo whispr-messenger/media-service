@@ -439,9 +439,9 @@ describe('MediaService', () => {
 		it('throws NotFoundException when media does not exist', async () => {
 			mockMediaRepository.findById.mockResolvedValue(null);
 
-			await expect(
-				service.updateModerationStatus('missing', 'approved')
-			).rejects.toThrow(NotFoundException);
+			await expect(service.updateModerationStatus('missing', 'approved')).rejects.toThrow(
+				NotFoundException
+			);
 		});
 	});
 });
