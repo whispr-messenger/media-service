@@ -44,8 +44,8 @@ function getDataSourceOptions(configService: ConfigService): DataSourceOptions {
 	return {
 		// RDBMS type. You must specify what database engine you use
 		type: 'postgres',
-		// Entities, or Entity Schemas, to be loaded and used for this data source.
-		entities: [__dirname + '/**/*.entity{.ts,.js}'],
+		// Entities loaded via TypeOrmModule.forFeature() in each module
+		// autoLoadEntities is set at module level instead of glob pattern
 		// Indicates if logging is enabled or not. If set to true then query and error logging will be enabled.
 		logging: configService.get('DB_LOGGING', 'false') === 'true',
 		// Migrations to be loaded and used for this data source
@@ -70,6 +70,7 @@ async function typeOrmModuleOptionsFactory(configService: ConfigService): Promis
 	return {
 		...databaseConfig,
 		...dataSourceOptions,
+		autoLoadEntities: true,
 	} as TypeOrmModuleOptions;
 }
 
