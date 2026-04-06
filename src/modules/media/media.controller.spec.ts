@@ -49,32 +49,28 @@ describe('MediaController', () => {
 			};
 			mockMediaService.upload.mockResolvedValue(expected);
 
-			const result = await controller.upload(
-				'user-uuid-1',
-				{ file: [file], thumbnail: [] },
-				dto
-			);
+			const result = await controller.upload('user-uuid-1', { file: [file], thumbnail: [] }, dto);
 
 			expect(result).toEqual(expected);
 		});
 
 		it('throws BadRequestException when no file is provided', async () => {
-			await expect(
-				controller.upload('user-uuid-1', { file: [], thumbnail: [] }, dto)
-			).rejects.toThrow(BadRequestException);
+			await expect(controller.upload('user-uuid-1', { file: [], thumbnail: [] }, dto)).rejects.toThrow(
+				BadRequestException
+			);
 		});
 
 		it('throws BadRequestException when x-user-id header is missing', async () => {
-			await expect(
-				controller.upload('', { file: [file], thumbnail: [] }, dto)
-			).rejects.toThrow(BadRequestException);
+			await expect(controller.upload('', { file: [file], thumbnail: [] }, dto)).rejects.toThrow(
+				BadRequestException
+			);
 		});
 
 		it('throws BadRequestException when ownerId does not match authenticated user', async () => {
 			const mismatchDto: UploadMediaDto = { context: MediaContext.MESSAGE, ownerId: 'other-user' };
-			await expect(
-				controller.upload('user-uuid-1', { file: [file] }, mismatchDto)
-			).rejects.toThrow(BadRequestException);
+			await expect(controller.upload('user-uuid-1', { file: [file] }, mismatchDto)).rejects.toThrow(
+				BadRequestException
+			);
 		});
 	});
 
@@ -109,7 +105,9 @@ describe('MediaController', () => {
 			const res = { redirect: jest.fn() } as unknown as Response;
 			const req = { headers: {}, socket: {} } as unknown as Request;
 
-			await expect(controller.getBlobUrl('media-id', '', req, res)).rejects.toThrow(BadRequestException);
+			await expect(controller.getBlobUrl('media-id', '', req, res)).rejects.toThrow(
+				BadRequestException
+			);
 		});
 	});
 
@@ -134,7 +132,11 @@ describe('MediaController', () => {
 
 		it('calls mediaService.delete and returns void', async () => {
 			mockMediaService.delete.mockResolvedValue(undefined);
-			const req = { headers: { 'x-forwarded-for': '1.2.3.4' }, socket: {}, get: jest.fn() } as unknown as Request;
+			const req = {
+				headers: { 'x-forwarded-for': '1.2.3.4' },
+				socket: {},
+				get: jest.fn(),
+			} as unknown as Request;
 
 			const result = await controller.delete('media-id', 'user-uuid-1', req);
 
@@ -162,7 +164,7 @@ describe('MediaController', () => {
 				'media-uuid-1',
 				'approved',
 				0.95,
-				'safe',
+				'safe'
 			);
 		});
 
@@ -175,7 +177,7 @@ describe('MediaController', () => {
 				'media-uuid-1',
 				'rejected',
 				undefined,
-				undefined,
+				undefined
 			);
 		});
 	});
