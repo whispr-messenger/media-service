@@ -27,8 +27,9 @@ import { REDIS_CLIENT } from './media.tokens';
 			useFactory: async (configService: ConfigService) => {
 				const host = configService.get('REDIS_HOST', 'redis');
 				const port = configService.get('REDIS_PORT', 6379);
+				const username = configService.get('REDIS_USERNAME', undefined);
 				const password = configService.get('REDIS_PASSWORD', undefined);
-				const client = createClient({ socket: { host, port }, password });
+				const client = createClient({ socket: { host, port }, username, password });
 				await client.connect();
 				return client;
 			},
