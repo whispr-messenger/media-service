@@ -3,11 +3,21 @@ name: 🚀 CI Pipeline
 on:
   push:
     branches: [main, develop, deploy/preprod]
+    paths-ignore:
+      - 'k8s/**'
+      - '**.md'
+      - 'documentation/**'
+      - '.github/workflows/cd.yml'
   pull_request:
     branches: [main, develop, deploy/preprod]
+    paths-ignore:
+      - 'k8s/**'
+      - '**.md'
+      - 'documentation/**'
+      - '.github/workflows/cd.yml'
 
 permissions:
-  contents: read
+  contents: write
   checks: write
   pull-requests: write
   packages: write
@@ -54,3 +64,28 @@ jobs:
     with:
       ref: ${{ github.ref }}
       should_deploy: ${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/deploy/preprod') && github.event_name == 'push' }}
+
+  # ================================
+  # Deploy Gate (breaks the uses->uses chain forbidden by GitHub Actions)
+  # ================================
+  deploy_gate:
+    name: 🔒 Deploy Gate
+    runs-on: ubuntu-latest
+    needs: [docker]
+    if: needs.docker.result == 'success' && github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - run: echo "Docker succeeded, proceeding to deploy"
+
+  # ================================
+  # Deploy (only on main push, after Docker succeeds)
+  # ================================
+  deploy:
+    name: 🚀 Deploy
+    needs: [deploy_gate]
+    uses: ./.github/workflows/cd.yml
+    with:
+      commit_sha: ${{ github.sha }}
+      ref: main
+    secrets:
+      ACTIONS_CD: ${{ secrets.ACTIONS_CD }}
+      ACTIONS_CD_PRIVATE_KEY: ${{ secrets.ACTIONS_CD_PRIVATE_KEY }}
