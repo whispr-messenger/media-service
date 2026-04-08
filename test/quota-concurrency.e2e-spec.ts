@@ -70,7 +70,7 @@ describe('Quota Concurrency (e2e, Docker)', () => {
 
 	function uploadJpeg(userId: string, fileBuffer: Buffer): Promise<any> {
 		return request(app.getHttpServer())
-			.post('/media/v1/upload')
+			.post('/media/upload')
 			.set('x-user-id', userId)
 			.field('context', 'message')
 			.attach('file', fileBuffer, { filename: 'file.jpg', contentType: 'image/jpeg' });

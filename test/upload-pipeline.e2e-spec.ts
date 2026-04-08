@@ -63,7 +63,7 @@ describe('Upload Pipeline (e2e, Docker)', () => {
 		const fileBuffer = Buffer.concat([JPEG_MAGIC, Buffer.alloc(512)]);
 
 		const res = await request(app.getHttpServer())
-			.post('/media/v1/upload')
+			.post('/media/upload')
 			.set('x-user-id', USER_ID_1)
 			.field('context', 'message')
 			.attach('file', fileBuffer, { filename: 'test.jpg', contentType: 'image/jpeg' })
@@ -85,7 +85,7 @@ describe('Upload Pipeline (e2e, Docker)', () => {
 		const fileBuffer = Buffer.concat([JPEG_MAGIC, Buffer.alloc(512)]);
 
 		const res = await request(app.getHttpServer())
-			.post('/media/v1/upload')
+			.post('/media/upload')
 			.set('x-user-id', USER_ID_1)
 			.field('context', 'avatar')
 			.attach('file', fileBuffer, { filename: 'avatar.jpg', contentType: 'image/jpeg' })
@@ -109,14 +109,14 @@ describe('Upload Pipeline (e2e, Docker)', () => {
 		]);
 
 		const res1 = await request(app.getHttpServer())
-			.post('/media/v1/upload')
+			.post('/media/upload')
 			.set('x-user-id', USER_ID_2)
 			.field('context', 'message')
 			.attach('file', fileBuffer, { filename: 'dedup.png', contentType: 'image/png' })
 			.expect(201);
 
 		const res2 = await request(app.getHttpServer())
-			.post('/media/v1/upload')
+			.post('/media/upload')
 			.set('x-user-id', USER_ID_2)
 			.field('context', 'message')
 			.attach('file', fileBuffer, { filename: 'dedup.png', contentType: 'image/png' })
@@ -134,7 +134,7 @@ describe('Upload Pipeline (e2e, Docker)', () => {
 		const fileBuffer = Buffer.concat([PNG_MAGIC, Buffer.alloc(512)]);
 
 		const res = await request(app.getHttpServer())
-			.post('/media/v1/upload')
+			.post('/media/upload')
 			.set('x-user-id', USER_ID_1)
 			.field('context', 'message')
 			.attach('file', fileBuffer, { filename: 'fake.jpg', contentType: 'image/jpeg' });
@@ -148,7 +148,7 @@ describe('Upload Pipeline (e2e, Docker)', () => {
 
 	it('rejects upload with no file attached (400)', async () => {
 		const res = await request(app.getHttpServer())
-			.post('/media/v1/upload')
+			.post('/media/upload')
 			.set('x-user-id', USER_ID_1)
 			.field('context', 'message');
 
@@ -163,7 +163,7 @@ describe('Upload Pipeline (e2e, Docker)', () => {
 		const fileBuffer = Buffer.concat([JPEG_MAGIC, Buffer.alloc(512)]);
 
 		const res = await request(app.getHttpServer())
-			.post('/media/v1/upload')
+			.post('/media/upload')
 			.field('context', 'message')
 			.attach('file', fileBuffer, { filename: 'test.jpg', contentType: 'image/jpeg' });
 
@@ -178,7 +178,7 @@ describe('Upload Pipeline (e2e, Docker)', () => {
 		const fileBuffer = Buffer.concat([JPEG_MAGIC, Buffer.alloc(256)]);
 
 		const uploadRes = await request(app.getHttpServer())
-			.post('/media/v1/upload')
+			.post('/media/upload')
 			.set('x-user-id', USER_ID_1)
 			.field('context', 'message')
 			.attach('file', fileBuffer, { filename: 'meta-test.jpg', contentType: 'image/jpeg' })
@@ -187,7 +187,7 @@ describe('Upload Pipeline (e2e, Docker)', () => {
 		const mediaId = uploadRes.body.mediaId;
 
 		const metaRes = await request(app.getHttpServer())
-			.get(`/media/v1/${mediaId}`)
+			.get(`/media/${mediaId}`)
 			.set('x-user-id', USER_ID_1)
 			.expect(200);
 
@@ -205,7 +205,7 @@ describe('Upload Pipeline (e2e, Docker)', () => {
 		const fileBuffer = Buffer.concat([JPEG_MAGIC, Buffer.alloc(256)]);
 
 		const uploadRes = await request(app.getHttpServer())
-			.post('/media/v1/upload')
+			.post('/media/upload')
 			.set('x-user-id', USER_ID_1)
 			.field('context', 'message')
 			.attach('file', fileBuffer, { filename: 'private.jpg', contentType: 'image/jpeg' });
@@ -214,7 +214,7 @@ describe('Upload Pipeline (e2e, Docker)', () => {
 		const mediaId = uploadRes.body.mediaId;
 
 		const metaRes = await request(app.getHttpServer())
-			.get(`/media/v1/${mediaId}`)
+			.get(`/media/${mediaId}`)
 			.set('x-user-id', USER_ID_2);
 
 		expect(metaRes.status).toBe(403);
