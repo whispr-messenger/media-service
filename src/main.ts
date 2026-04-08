@@ -1,5 +1,5 @@
 import { NestFactory } from '@nestjs/core';
-import { Logger, ValidationPipe, VersioningType } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { ConfigService } from '@nestjs/config';
 import helmet from 'helmet';
@@ -20,12 +20,6 @@ async function bootstrap() {
 
 	app.setGlobalPrefix(globalPrefix, {
 		exclude: ['metrics'],
-	});
-
-	app.enableVersioning({
-		type: VersioningType.URI,
-		defaultVersion: '1',
-		prefix: 'v',
 	});
 
 	createSwaggerDocumentation(app, port, configService, globalPrefix);
