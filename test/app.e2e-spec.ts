@@ -57,7 +57,7 @@ describe('HealthController (e2e)', () => {
 
 	describe('Health Check', () => {
 		it('should return application info', async () => {
-			const response = await request(app.getHttpServer()).get('/media/health').expect(200);
+			const response = await request(app.getHttpServer()).get('/media/v1/health').expect(200);
 			expect(response).toBeDefined();
 			expect(response.body).toBeDefined();
 			expect(response.body.status).toBeDefined();

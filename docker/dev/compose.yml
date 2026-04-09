@@ -92,7 +92,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "curl -f http://localhost:${HTTP_PORT}/media/health/ready || exit 1",
+          "curl -f http://localhost:${HTTP_PORT}/media/v1/health/ready || exit 1",
         ]
       interval: 10s
       timeout: 5s
