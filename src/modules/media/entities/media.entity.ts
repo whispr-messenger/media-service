@@ -39,16 +39,7 @@ export class Media {
 	@Column({ name: 'is_active', type: 'boolean', default: true })
 	isActive: boolean;
 
-	@Column({ name: 'moderation_status', type: 'varchar', length: 32, default: 'none' })
-	moderationStatus: string;
-
-	@Column({ name: 'moderation_score', type: 'float', nullable: true })
-	moderationScore: number | null;
-
-	@Column({ name: 'moderation_category', type: 'varchar', length: 128, nullable: true })
-	moderationCategory: string | null;
-
-	@CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
+@CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
 	createdAt: Date;
 
 	@UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
