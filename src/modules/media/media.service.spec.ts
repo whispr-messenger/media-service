@@ -56,6 +56,7 @@ const mockStorageService = {
 	upload: jest.fn().mockResolvedValue(undefined),
 	download: jest.fn(),
 	delete: jest.fn().mockResolvedValue(undefined),
+	exists: jest.fn().mockResolvedValue(true),
 };
 
 const mockQuotaService = {
@@ -259,6 +260,18 @@ describe('MediaService', () => {
 
 			expect(result.mediaId).toBe('existing-media-id');
 			expect(mockStorageService.upload).not.toHaveBeenCalled();
+		});
+
+		it('ignores dedup cache hit when blob is missing', async () => {
+			mockCache.get.mockResolvedValueOnce('existing-media-id');
+			const existingMedia = makeMedia({ id: 'existing-media-id' });
+			mockMediaRepository.findById.mockResolvedValue(existingMedia);
+			mockStorageService.exists.mockResolvedValueOnce(false);
+
+			const result = await service.upload('user-uuid-1', file, MediaContext.MESSAGE);
+
+			expect(result.mediaId).not.toBe('existing-media-id');
+			expect(mockStorageService.upload).toHaveBeenCalled();
 		});
 
 		it('throws PayloadTooLargeException when quota is exceeded', async () => {

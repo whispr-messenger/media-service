@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectS3, S3 } from 'nestjs-s3';
-import { DeleteObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
+import { DeleteObjectCommand, HeadObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { Readable } from 'stream';
 
 export type StorageContext = 'messages' | 'avatars' | 'group_icons' | 'thumbnails';
@@ -80,5 +80,19 @@ export class StorageService {
 				Key: storagePath,
 			})
 		);
+	}
+
+	async exists(storagePath: string): Promise<boolean> {
+		try {
+			await this.s3.send(
+				new HeadObjectCommand({
+					Bucket: this.bucket,
+					Key: storagePath,
+				})
+			);
+			return true;
+		} catch {
+			return false;
+		}
 	}
 }

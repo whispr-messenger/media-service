@@ -1,4 +1,4 @@
-import { Module, OnModuleDestroy } from '@nestjs/common';
+import { Logger, Module, OnModuleDestroy } from '@nestjs/common';
 import { APP_INTERCEPTOR, ModuleRef } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -29,7 +29,20 @@ import { REDIS_CLIENT } from './media.tokens';
 				const port = configService.get('REDIS_PORT', 6379);
 				const username = configService.get('REDIS_USERNAME', undefined);
 				const password = configService.get('REDIS_PASSWORD', undefined);
-				const client = createClient({ socket: { host, port }, username, password });
+				const logger = new Logger('MediaRedisClient');
+				const client = createClient({
+					socket: {
+						host,
+						port,
+						reconnectStrategy: (retries) => Math.min(retries * 200, 2000),
+					},
+					username,
+					password,
+				});
+				client.on('error', (err) => {
+					const message = err instanceof Error ? err.message : String(err);
+					logger.error(message);
+				});
 				await client.connect();
 				return client;
 			},

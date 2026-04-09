@@ -11,8 +11,9 @@ services:
       - POSTGRES_INITDB_ARGS=${POSTGRES_INITDB_ARGS}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     ports:
-      - "${POSTGRES_PORT}:${POSTGRES_PORT}"
+      - "5434:${POSTGRES_PORT}"
     networks:
       - whispr-network
     restart: unless-stopped
@@ -30,7 +31,7 @@ services:
       - ./redis.conf:/usr/local/etc/redis/redis.conf
     command: redis-server /usr/local/etc/redis/redis.conf
     ports:
-      - "${REDIS_PORT}:${REDIS_PORT}"
+      - "6381:${REDIS_PORT}"
     networks:
       - whispr-network
     healthcheck:

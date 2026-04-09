@@ -134,6 +134,17 @@ export class MediaController {
 		return this.mediaService.getUserMedia(userId, page, limit);
 	}
 
+	@Get('public/:id')
+	@Public()
+	@ApiOperation({ summary: 'Public blob stream (avatars / group icons)' })
+	@ApiResponse({ status: 200, description: 'Blob stream' })
+	@ApiResponse({ status: 404, description: 'Not found' })
+	async getPublicBlob(@Param('id', ParseUUIDPipe) id: string, @Res() res: Response): Promise<void> {
+		const { stream, contentType } = await this.mediaService.getPublicStream(id);
+		res.setHeader('Content-Type', contentType);
+		stream.pipe(res);
+	}
+
 	// =========================================================================
 	// GET /media/v1/:id — WHISPR-364
 	// =========================================================================

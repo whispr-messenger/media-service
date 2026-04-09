@@ -1,21 +1,14 @@
--- Script d'initialisation PostgreSQL pour dev container
-
--- Extensions nécessaires
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
--- Créer la base de données de test
-CREATE DATABASE testing OWNER dev_user;
+DO $$
+BEGIN
+	IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'media_app') THEN
+		CREATE ROLE media_app LOGIN PASSWORD 'media_password';
+	END IF;
+END
+$$;
 
--- Permissions
-GRANT ALL PRIVILEGES ON DATABASE development TO dev_user;
-GRANT ALL PRIVILEGES ON DATABASE testing TO dev_user;
-
--- Se connecter à la DB dev
-\c development;
-
--- Créer le schéma et les permissions
-GRANT CREATE ON SCHEMA public TO dev_user;
-GRANT USAGE ON SCHEMA public TO dev_user;
-
----
+ALTER DATABASE whispr_media OWNER TO media_app;
+CREATE SCHEMA IF NOT EXISTS media AUTHORIZATION media_app;
+GRANT ALL PRIVILEGES ON SCHEMA media TO media_app;

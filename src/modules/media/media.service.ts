@@ -104,6 +104,7 @@ const MAX_CONCURRENT_UPLOADS = 3;
 export class MediaService {
 	private readonly logger = new Logger(MediaService.name);
 	private readonly signedUrlExpirySeconds: number;
+	private readonly publicBaseUrl: string;
 
 	constructor(
 		private readonly mediaRepository: MediaRepository,
@@ -124,6 +125,8 @@ export class MediaService {
 			'SIGNED_URL_EXPIRY_SECONDS',
 			7 * 24 * 60 * 60
 		);
+		const raw = this.configService.get<string>('PUBLIC_BASE_URL', 'http://127.0.0.1:8080');
+		this.publicBaseUrl = raw.replace(/\/+$/, '');
 	}
 
 	// =========================================================================
@@ -165,8 +168,19 @@ export class MediaService {
 						this.mediaRepository.findById(existingId, manager)
 					);
 					if (existing) {
-						this.logger.debug(`Dedup hit for sha256=${sha256} → reusing media ${existingId}`);
-						return this.buildUploadResponse(existing, context);
+						const blobExists = await this.storageService.exists(existing.storagePath);
+						if (blobExists) {
+							this.logger.debug(`Dedup hit for sha256=${sha256} → reusing media ${existingId}`);
+							const base = this.buildUploadResponse(existing, context);
+							if (context === MediaContext.MESSAGE) {
+								const url = await this.dataSource.transaction((manager) =>
+									this.getOrGenerateSignedUrl(existing, manager)
+								);
+								return { ...base, url };
+							}
+							return base;
+						}
+						await this.cache.del(dedupKey);
 					}
 				}
 
@@ -242,7 +256,14 @@ export class MediaService {
 					);
 				}
 
-				return this.buildUploadResponse(media, context);
+				const base = this.buildUploadResponse(media, context);
+				if (context === MediaContext.MESSAGE) {
+					const url = await this.dataSource.transaction((manager) =>
+						this.getOrGenerateSignedUrl(media, manager)
+					);
+					return { ...base, url };
+				}
+				return base;
 			});
 		} finally {
 			await this.releaseSemaphore(ownerId);
@@ -270,10 +291,15 @@ export class MediaService {
 
 		this.enforceReadAccess(media.context as MediaContext, media.ownerId, requesterId);
 
+		const isPublic = PUBLIC_CONTEXTS.has(media.context as MediaContext);
 		const dto: MediaMetadataDto = {
 			id: media.id,
 			ownerId: media.ownerId,
 			context: media.context as MediaContext,
+			url: isPublic ? this.buildPublicBlobUrl(media.id) : null,
+			thumbnailUrl: null,
+			mimeType: media.contentType,
+			sizeBytes: media.blobSize,
 			contentType: media.contentType,
 			blobSize: media.blobSize,
 			expiresAt: media.expiresAt,
@@ -284,6 +310,23 @@ export class MediaService {
 
 		await this.cache.set(cacheKey, dto, META_CACHE_TTL_MS);
 		return dto;
+	}
+
+	async getPublicStream(id: string): Promise<{ stream: Readable; contentType: string }> {
+		const media = await this.mediaRepository.findById(id);
+		if (!media || !media.isActive) {
+			throw new NotFoundException(`Media ${id} not found`);
+		}
+		const context = media.context as MediaContext;
+		if (!PUBLIC_CONTEXTS.has(context)) {
+			throw new NotFoundException(`Media ${id} not found`);
+		}
+		try {
+			const stream = await this.storageService.download(media.storagePath);
+			return { stream, contentType: media.contentType };
+		} catch {
+			throw new NotFoundException(`Media ${id} not found`);
+		}
 	}
 
 	// =========================================================================
@@ -606,10 +649,8 @@ export class MediaService {
 
 	private buildUploadResponse(media: Media, context: MediaContext): UploadMediaResponseDto {
 		const isPublic = PUBLIC_CONTEXTS.has(context);
-		const url =
-			isPublic && media.storagePath ? this.storageService.getPublicUrl(media.storagePath) : null;
-		const thumbnailUrl =
-			isPublic && media.thumbnailPath ? this.storageService.getPublicUrl(media.thumbnailPath) : null;
+		const url = isPublic ? this.buildPublicBlobUrl(media.id) : null;
+		const thumbnailUrl = null;
 		return {
 			mediaId: media.id,
 			url,
@@ -618,6 +659,10 @@ export class MediaService {
 			context: media.context as MediaContext,
 			size: media.blobSize,
 		};
+	}
+
+	private buildPublicBlobUrl(id: string): string {
+		return `${this.publicBaseUrl}/media/v1/public/${id}`;
 	}
 
 	private async writeAccessLog(

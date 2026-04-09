@@ -49,6 +49,18 @@ export class MediaMetadataDto {
 	@ApiProperty({ enum: MediaContext })
 	context: MediaContext;
 
+	@ApiPropertyOptional({ description: 'Public URL for avatars/group icons' })
+	url: string | null;
+
+	@ApiPropertyOptional({ description: 'Public URL for thumbnail (if any)' })
+	thumbnailUrl: string | null;
+
+	@ApiProperty({ description: 'MIME type of the blob' })
+	mimeType: string;
+
+	@ApiProperty({ description: 'Blob size in bytes' })
+	sizeBytes: number;
+
 	@ApiProperty()
 	contentType: string;
 
