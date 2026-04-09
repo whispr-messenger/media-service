@@ -39,7 +39,7 @@ export class MediaController {
 	constructor(private readonly mediaService: MediaService) {}
 
 	// =========================================================================
-	// POST /media/upload — WHISPR-359
+	// POST /media/v1/upload — WHISPR-359
 	// =========================================================================
 
 	@Post('upload')
@@ -97,7 +97,7 @@ export class MediaController {
 	}
 
 	// =========================================================================
-	// GET /media/quota — WHISPR-368
+	// GET /media/v1/quota — WHISPR-368
 	// =========================================================================
 
 	@Get('quota')
@@ -109,7 +109,7 @@ export class MediaController {
 	}
 
 	// =========================================================================
-	// GET /media/my-media — WHISPR-375
+	// GET /media/v1/my-media — WHISPR-375
 	// =========================================================================
 
 	@Get('my-media')
@@ -135,7 +135,7 @@ export class MediaController {
 	}
 
 	// =========================================================================
-	// GET /media/:id — WHISPR-364
+	// GET /media/v1/:id — WHISPR-364
 	// =========================================================================
 
 	@Get(':id')
@@ -151,7 +151,7 @@ export class MediaController {
 	}
 
 	// =========================================================================
-	// GET /media/:id/blob — WHISPR-365
+	// GET /media/v1/:id/blob — WHISPR-365
 	// =========================================================================
 
 	@Get(':id/blob')
@@ -170,7 +170,7 @@ export class MediaController {
 	}
 
 	// =========================================================================
-	// GET /media/:id/thumbnail — WHISPR-366
+	// GET /media/v1/:id/thumbnail — WHISPR-366
 	// =========================================================================
 
 	@Get(':id/thumbnail')
@@ -189,7 +189,7 @@ export class MediaController {
 	}
 
 	// =========================================================================
-	// PATCH /media/:id/moderation — Moderation verdict
+	// PATCH /media/v1/:id/moderation — Moderation verdict
 	// =========================================================================
 
 	@Patch(':id/moderation')
@@ -205,7 +205,7 @@ export class MediaController {
 	}
 
 	// =========================================================================
-	// DELETE /media/:id — WHISPR-367
+	// DELETE /media/v1/:id — WHISPR-367
 	// =========================================================================
 
 	@Delete(':id')
