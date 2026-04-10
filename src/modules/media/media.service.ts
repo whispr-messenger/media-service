@@ -127,7 +127,7 @@ export class MediaService {
 	}
 
 	// =========================================================================
-	// POST /media/upload — WHISPR-359
+	// POST /media/v1/upload — WHISPR-359
 	// =========================================================================
 
 	async upload(
@@ -243,7 +243,7 @@ export class MediaService {
 	}
 
 	// =========================================================================
-	// GET /media/:id — WHISPR-364
+	// GET /media/v1/:id — WHISPR-364
 	// =========================================================================
 
 	async getMetadata(id: string, requesterId: string): Promise<MediaMetadataDto> {
@@ -280,7 +280,7 @@ export class MediaService {
 	}
 
 	// =========================================================================
-	// GET /media/:id/blob — WHISPR-365
+	// GET /media/v1/:id/blob — WHISPR-365
 	// =========================================================================
 
 	async getBlobUrl(
@@ -310,7 +310,7 @@ export class MediaService {
 	}
 
 	// =========================================================================
-	// GET /media/:id/thumbnail — WHISPR-366
+	// GET /media/v1/:id/thumbnail — WHISPR-366
 	// =========================================================================
 
 	async getThumbnailUrl(
@@ -350,7 +350,7 @@ export class MediaService {
 	}
 
 	// =========================================================================
-	// DELETE /media/:id — WHISPR-367
+	// DELETE /media/v1/:id — WHISPR-367
 	// =========================================================================
 
 	async delete(id: string, requesterId: string, ipAddress?: string, userAgent?: string): Promise<void> {
@@ -414,7 +414,7 @@ export class MediaService {
 	}
 
 	// =========================================================================
-	// GET /media/quota — WHISPR-368
+	// GET /media/v1/quota — WHISPR-368
 	// =========================================================================
 
 	async getUserQuota(userId: string): Promise<UserQuotaResponseDto> {
@@ -453,7 +453,7 @@ export class MediaService {
 	}
 
 	// =========================================================================
-	// GET /media/my-media — WHISPR-369
+	// GET /media/v1/my-media — WHISPR-369
 	// =========================================================================
 
 	async getUserMedia(userId: string, page: number, limit: number): Promise<PaginatedMediaResponseDto> {
