@@ -598,11 +598,10 @@ export class MediaService {
 	}
 
 	private buildUploadResponse(media: Media, context: MediaContext): UploadMediaResponseDto {
-		const isPublic = PUBLIC_CONTEXTS.has(context);
-		const url =
-			isPublic && media.storagePath ? this.storageService.getPublicUrl(media.storagePath) : null;
-		const thumbnailUrl =
-			isPublic && media.thumbnailPath ? this.storageService.getPublicUrl(media.thumbnailPath) : null;
+		const url = media.storagePath ? this.storageService.getPublicUrl(media.storagePath) : null;
+		const thumbnailUrl = media.thumbnailPath
+			? this.storageService.getPublicUrl(media.thumbnailPath)
+			: null;
 		return {
 			mediaId: media.id,
 			url,
