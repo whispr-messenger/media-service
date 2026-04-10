@@ -597,7 +597,7 @@ export class MediaService {
 		return new Date(Date.now() + ttlDays * 24 * 60 * 60 * 1000);
 	}
 
-	private buildUploadResponse(media: Media, context: MediaContext): UploadMediaResponseDto {
+	private buildUploadResponse(media: Media, _context: MediaContext): UploadMediaResponseDto {
 		const url = media.storagePath ? this.storageService.getPublicUrl(media.storagePath) : null;
 		const thumbnailUrl = media.thumbnailPath
 			? this.storageService.getPublicUrl(media.thumbnailPath)
