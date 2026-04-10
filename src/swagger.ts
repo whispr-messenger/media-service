@@ -3,13 +3,12 @@ import { ConfigService } from '@nestjs/config';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerCustomOptions, SwaggerModule } from '@nestjs/swagger';
 
-function buildSwaggerDocument(port: number) {
+function buildSwaggerDocument(_port: number) {
 	return new DocumentBuilder()
 		.setTitle('Media Service')
 		.setDescription('API documentation for the Media Service')
 		.setVersion('1.0')
-		.addServer(`http://localhost:${port}`, 'Development')
-		.addServer('https://whispr.epitech-msc2026.me', 'Production')
+		.addServer('/', 'Current host')
 		.build();
 }
 
