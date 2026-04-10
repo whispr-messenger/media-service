@@ -55,6 +55,19 @@ describe('check-env', () => {
 		Object.assign(process.env, allRequiredVars);
 	}
 
+	describe('runEnvChecks in non-production with JWT_JWKS_FILE only', () => {
+		it('should pass when JWT_JWKS_FILE is set without JWT_JWKS_URL', () => {
+			setAllRequired();
+			process.env.NODE_ENV = 'development';
+			delete process.env.JWT_JWKS_URL;
+			process.env.JWT_JWKS_FILE = 'scripts/dev/jwks.json';
+
+			expect(() => runEnvChecks()).not.toThrow();
+
+			expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('JWT_JWKS_FILE is set'));
+		});
+	});
+
 	describe('runEnvChecks with all required variables', () => {
 		beforeEach(() => {
 			setAllRequired();
@@ -176,7 +189,7 @@ describe('check-env', () => {
 			);
 		});
 
-		it('should throw error when JWT_JWKS_URL is missing', () => {
+		it('should throw error when JWT_JWKS_URL is missing in production', () => {
 			setAllRequired();
 			delete process.env.JWT_JWKS_URL;
 
@@ -184,6 +197,17 @@ describe('check-env', () => {
 
 			expect(consoleErrorSpy).toHaveBeenCalledWith(
 				expect.stringContaining('JWT_JWKS_URL is NOT set (REQUIRED)')
+			);
+		});
+
+		it('should throw when JWT_JWKS_FILE is set in production', () => {
+			setAllRequired();
+			process.env.JWT_JWKS_FILE = 'scripts/dev/jwks.json';
+
+			expect(() => runEnvChecks()).toThrow('Missing required environment variables');
+
+			expect(consoleErrorSpy).toHaveBeenCalledWith(
+				expect.stringContaining('JWT_JWKS_FILE must not be set in production')
 			);
 		});
 

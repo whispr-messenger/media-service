@@ -27,11 +27,15 @@
 		"test:e2e:docker:run": "jest --config ./test/docker/jest-docker-e2e.json",
 		"test:e2e:docker:cleanup": "ts-node test/docker/docker-e2e-runner.ts --cleanup",
 		"typeorm": "typeorm-ts-node-commonjs",
-		"migration:generate": "npm run typeorm -- migration:generate -d src/config/typeorm.config.ts",
-		"migration:run": "npm run typeorm -- migration:run -d src/config/typeorm.config.ts",
-		"migration:revert": "npm run typeorm -- migration:revert -d src/config/typeorm.config.ts",
+		"migration:generate": "npm run typeorm -- migration:generate -d src/config/typeorm.datasource.ts",
+		"migration:run": "npm run typeorm -- migration:run -d src/config/typeorm.datasource.ts",
+		"migration:revert": "npm run typeorm -- migration:revert -d src/config/typeorm.datasource.ts",
 		"docker:build": "docker build -t media-service .",
 		"docker:run": "docker run -p 3000:3000 media-service",
+		"redis:up": "docker compose -f docker-compose.redis.yml up -d",
+		"redis:down": "docker compose -f docker-compose.redis.yml down",
+		"dev:stack:up": "docker compose -f docker-compose.dev.yml up -d",
+		"dev:stack:down": "docker compose -f docker-compose.dev.yml down",
 		"prepare": "husky"
 	},
 	"dependencies": {

@@ -49,8 +49,30 @@ export default function runEnvChecks(): void {
 	checkRequired('DB_PASSWORD');
 	checkRequired('DB_NAME');
 
-	// Auth
-	checkRequired('JWT_JWKS_URL');
+	// Auth — production : URL uniquement (JWT_JWKS_FILE interdit, aligné sur env-validation.schema)
+	const jwksFile = process.env.JWT_JWKS_FILE?.trim() ?? '';
+	const jwksUrl = process.env.JWT_JWKS_URL?.trim() ?? '';
+	if (process.env.NODE_ENV === 'production') {
+		if (jwksFile) {
+			console.error(
+				`${colors.red}✗${colors.reset} JWT_JWKS_FILE must not be set in production (use JWT_JWKS_URL)`
+			);
+			missingVars++;
+		}
+		checkRequired('JWT_JWKS_URL');
+	} else if (!jwksUrl && !jwksFile) {
+		console.error(
+			`${colors.red}✗${colors.reset} Either JWT_JWKS_URL or JWT_JWKS_FILE must be set (REQUIRED)`
+		);
+		missingVars++;
+	} else {
+		if (jwksUrl) {
+			console.log(`${colors.green}✓${colors.reset} JWT_JWKS_URL is set`);
+		}
+		if (jwksFile) {
+			console.log(`${colors.green}✓${colors.reset} JWT_JWKS_FILE is set`);
+		}
+	}
 
 	// Redis
 	checkRequired('REDIS_HOST');

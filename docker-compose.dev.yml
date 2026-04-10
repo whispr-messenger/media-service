@@ -1,0 +1,47 @@
+# Stack locale dev/test : MinIO (S3) + Redis + création du bucket applicatif.
+# L’API Nest reste lancée sur la machine hôte (`npm run start:dev`) : Postman → localhost:3002.
+# PostgreSQL : à part (install local ou autre conteneur) — voir .env.example (DB_*).
+# Non utilisé en production.
+#
+# Prérequis : Docker Desktop (Windows).
+# Commande : npm run dev:stack:up
+# Arrêt : npm run dev:stack:down
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: media-service-redis-dev
+    ports:
+      - '6379:6379'
+    command: redis-server --bind 0.0.0.0 --protected-mode no
+
+  minio:
+    image: minio/minio:latest
+    container_name: media-service-minio
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ':9001'
+    volumes:
+      - media_service_minio_data:/data
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: media-service-minio-init
+    depends_on:
+      - minio
+    entrypoint: /bin/sh
+    command: >
+      -c "
+      for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+        mc alias set local http://minio:9000 minioadmin minioadmin && break;
+        sleep 1;
+      done;
+      mc mb local/whispr-media --ignore-existing
+      "
+
+volumes:
+  media_service_minio_data:

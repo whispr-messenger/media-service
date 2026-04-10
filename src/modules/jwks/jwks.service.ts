@@ -1,6 +1,8 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createPublicKey, KeyObject } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 
 const FETCH_TIMEOUT_MS = 5000;
 const BACKOFF_INITIAL_MS = 1_000;
@@ -98,32 +100,48 @@ export class JwksService implements OnModuleInit, OnModuleDestroy {
 	}
 
 	async loadPublicKey(): Promise<void> {
-		const jwksUri = this.configService.getOrThrow<string>('JWT_JWKS_URL');
-
-		const controller = new AbortController();
-		const timeout = globalThis.setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-
-		let response: Response;
-		try {
-			response = await fetch(jwksUri, { signal: controller.signal });
-		} catch (error) {
-			const reason =
-				error.name === 'AbortError' ? `timed out after ${FETCH_TIMEOUT_MS}ms` : error.message;
-			this.logger.error(`Failed to fetch JWKS: ${reason}`);
-			throw new Error(`JWKS fetch failed: ${reason}`);
-		} finally {
-			globalThis.clearTimeout(timeout);
-		}
-
-		if (!response.ok) {
-			throw new Error(`JWKS endpoint returned HTTP ${response.status}`);
-		}
+		const filePath = this.configService.get<string>('JWT_JWKS_FILE')?.trim();
 
 		let document: JwksDocument;
-		try {
-			document = (await response.json()) as JwksDocument;
-		} catch (error) {
-			throw new Error(`Failed to parse JWKS response: ${error.message}`);
+		if (filePath) {
+			const absolute = resolve(process.cwd(), filePath);
+			try {
+				const raw = await readFile(absolute, 'utf8');
+				document = JSON.parse(raw) as JwksDocument;
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				throw new Error(`Failed to read JWKS file ${absolute}: ${message}`);
+			}
+			this.logger.log(`Loaded JWKS from file: ${absolute}`);
+		} else {
+			const jwksUri = this.configService.getOrThrow<string>('JWT_JWKS_URL');
+
+			const controller = new AbortController();
+			const timeout = globalThis.setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+			let response: Response;
+			try {
+				response = await fetch(jwksUri, { signal: controller.signal });
+			} catch (error) {
+				const err = error as Error & { name?: string };
+				const reason =
+					err.name === 'AbortError' ? `timed out after ${FETCH_TIMEOUT_MS}ms` : err.message;
+				this.logger.error(`Failed to fetch JWKS: ${reason}`);
+				throw new Error(`JWKS fetch failed: ${reason}`);
+			} finally {
+				globalThis.clearTimeout(timeout);
+			}
+
+			if (!response.ok) {
+				throw new Error(`JWKS endpoint returned HTTP ${response.status}`);
+			}
+
+			try {
+				document = (await response.json()) as JwksDocument;
+			} catch (error) {
+				const err = error as Error;
+				throw new Error(`Failed to parse JWKS response: ${err.message}`);
+			}
 		}
 
 		const ecKey = document.keys?.find(

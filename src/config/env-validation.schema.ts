@@ -15,7 +15,9 @@ export const envValidationSchema = Joi.object({
 	REDIS_HOST: Joi.string().required(),
 	REDIS_PORT: Joi.number().port().required(),
 	REDIS_PASSWORD: Joi.string().optional().allow(''),
-	JWT_JWKS_URL: Joi.string().uri().required(),
+	JWT_JWKS_URL: Joi.string().uri().optional(),
+	/** Chemin relatif au cwd : charge le JWKS depuis le disque (prioritaire sur JWT_JWKS_URL). */
+	JWT_JWKS_FILE: Joi.string().optional(),
 	S3_ACCESS_KEY_ID: Joi.string().required(),
 	S3_SECRET_ACCESS_KEY: Joi.string().required(),
 	S3_ENDPOINT: Joi.string().required(),
@@ -23,4 +25,24 @@ export const envValidationSchema = Joi.object({
 	SIGNED_URL_EXPIRY_SECONDS: Joi.number().integer().positive().max(604800).optional().default(604800),
 	MESSAGE_BLOB_TTL_DAYS: Joi.number().integer().positive().optional().default(30),
 	THUMBNAIL_BLOB_TTL_DAYS: Joi.number().integer().positive().optional().default(30),
-}).options({ allowUnknown: true });
+})
+	.custom((value, helpers) => {
+		const file = value.JWT_JWKS_FILE && String(value.JWT_JWKS_FILE).trim() !== '';
+		const url = value.JWT_JWKS_URL && String(value.JWT_JWKS_URL).trim() !== '';
+		if (!file && !url) {
+			return helpers.error('any.custom', {
+				message: 'Either JWT_JWKS_URL or JWT_JWKS_FILE must be set',
+			});
+		}
+		return value;
+	})
+	.custom((value, helpers) => {
+		const file = value.JWT_JWKS_FILE && String(value.JWT_JWKS_FILE).trim() !== '';
+		if (value.NODE_ENV === 'production' && file) {
+			return helpers.error('any.custom', {
+				message: 'JWT_JWKS_FILE is not allowed in production; use JWT_JWKS_URL',
+			});
+		}
+		return value;
+	})
+	.options({ allowUnknown: true });

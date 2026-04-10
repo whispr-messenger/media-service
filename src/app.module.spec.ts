@@ -82,13 +82,19 @@ describe('AppModule env validation schema', () => {
 		expect(error!.details.some((d) => d.path.includes('REDIS_HOST'))).toBe(true);
 	});
 
-	it('should fail when JWT_JWKS_URL is missing', () => {
+	it('should fail when JWT_JWKS_URL is missing and JWT_JWKS_FILE is not set', () => {
 		const { error } = envValidationSchema.validate(
 			{ ...validEnv, JWT_JWKS_URL: undefined },
 			{ abortEarly: false }
 		);
 		expect(error).toBeDefined();
-		expect(error!.details.some((d) => d.path.includes('JWT_JWKS_URL'))).toBe(true);
+		expect(
+			error!.details.some(
+				(d) =>
+					(d.context as { message?: string })?.message ===
+					'Either JWT_JWKS_URL or JWT_JWKS_FILE must be set'
+			)
+		).toBe(true);
 	});
 
 	it('should fail when JWT_JWKS_URL is not a valid URI', () => {
@@ -98,6 +104,38 @@ describe('AppModule env validation schema', () => {
 		);
 		expect(error).toBeDefined();
 		expect(error!.details.some((d) => d.path.includes('JWT_JWKS_URL'))).toBe(true);
+	});
+
+	it('should pass with JWT_JWKS_FILE instead of JWT_JWKS_URL in development', () => {
+		const { error } = envValidationSchema.validate(
+			{
+				...validEnv,
+				NODE_ENV: 'development',
+				JWT_JWKS_URL: undefined,
+				JWT_JWKS_FILE: 'scripts/dev/jwks.json',
+			},
+			{ abortEarly: false }
+		);
+		expect(error).toBeUndefined();
+	});
+
+	it('should fail when JWT_JWKS_FILE is set in production', () => {
+		const { error } = envValidationSchema.validate(
+			{
+				...validEnv,
+				NODE_ENV: 'production',
+				JWT_JWKS_FILE: 'scripts/dev/jwks.json',
+			},
+			{ abortEarly: false }
+		);
+		expect(error).toBeDefined();
+		expect(
+			error!.details.some(
+				(d) =>
+					(d.context as { message?: string })?.message ===
+					'JWT_JWKS_FILE is not allowed in production; use JWT_JWKS_URL'
+			)
+		).toBe(true);
 	});
 
 	it('should fail when S3_ENDPOINT is missing', () => {
@@ -131,6 +169,7 @@ describe('AppModule env validation schema', () => {
 			{ abortEarly: false }
 		);
 		expect(error).toBeDefined();
-		expect(error!.details.length).toBeGreaterThanOrEqual(3);
+		expect(error!.details.some((d) => d.path.includes('DB_HOST'))).toBe(true);
+		expect(error!.details.some((d) => d.path.includes('REDIS_HOST'))).toBe(true);
 	});
 });

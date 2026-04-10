@@ -62,14 +62,14 @@ Le Media Service est un microservice NestJS haute performance conçu pour gérer
 
 ## Installation
 
-### Prérequis
-- Node.js 18+
-- Docker & Docker Compose
-- PostgreSQL 15+
-- Redis 7+
-- Compte Google Cloud avec Storage API
+**Premier démarrage (PostgreSQL, migrations, rôle `media_app`, Docker Redis/MinIO, puis `npm run start:dev`) :** voir le guide pas à pas **[GUIDE_PREMIER_DEMARRAGE.md](./GUIDE_PREMIER_DEMARRAGE.md)**.
 
-### Installation Locale
+### Prérequis
+- Node.js **≥ 22** et npm **≥ 10**
+- Docker & Docker Compose (pour Redis + MinIO en local, voir `docker-compose.dev.yml`)
+- PostgreSQL **≥ 15**
+
+### Installation Locale (rappel)
 
 1. **Cloner le repository**
 ```bash
@@ -85,17 +85,14 @@ npm install
 3. **Configurer l'environnement**
 ```bash
 cp .env.example .env
-# Éditer .env avec vos configurations
+# Éditer .env — détails dans GUIDE_PREMIER_DEMARRAGE.md
 ```
 
-4. **Configurer la base de données**
-```bash
-npm run prisma:generate
-npm run prisma:migrate
-```
+4. **Base de données et migrations** — suivre **[GUIDE_PREMIER_DEMARRAGE.md](./GUIDE_PREMIER_DEMARRAGE.md)** (`migration:run`, `create-media-app-role.sql`).
 
-5. **Démarrer en mode développement**
+5. **Démarrer Redis + MinIO puis l’API**
 ```bash
+npm run dev:stack:up
 npm run start:dev
 ```
 

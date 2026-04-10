@@ -21,6 +21,7 @@ describe('JwksService', () => {
 	let service: JwksService;
 
 	const mockConfigService = {
+		get: jest.fn().mockReturnValue(undefined),
 		getOrThrow: jest.fn().mockReturnValue('https://auth-service/.well-known/jwks.json'),
 	};
 

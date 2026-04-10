@@ -31,10 +31,16 @@ export class AddResetDailyUploadsFunction1742800000000 implements MigrationInter
 			REVOKE EXECUTE ON FUNCTION media.reset_daily_uploads() FROM PUBLIC;
 		`);
 
-		// Grant EXECUTE to the application DB role (media_user) so the cron job
-		// can invoke the function without needing superuser privileges.
+		// Grant EXECUTE to the application DB role when it exists (prod / Docker).
+		// Local dev often connects as postgres without creating media_user.
 		await queryRunner.query(`
-			GRANT EXECUTE ON FUNCTION media.reset_daily_uploads() TO media_user;
+			DO $grant$
+			BEGIN
+				IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'media_user') THEN
+					EXECUTE 'GRANT EXECUTE ON FUNCTION media.reset_daily_uploads() TO media_user';
+				END IF;
+			END
+			$grant$;
 		`);
 	}
 
