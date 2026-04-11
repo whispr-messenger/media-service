@@ -6,6 +6,11 @@ import { createClient } from '@redis/client';
 import { UserQuota } from './entities/user-quota.entity';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { REDIS_CLIENT } from './media.tokens';
+import {
+	DEFAULT_STORAGE_LIMIT_BYTES,
+	DEFAULT_FILES_LIMIT,
+	DEFAULT_DAILY_UPLOAD_LIMIT,
+} from './quota.constants';
 
 // @keyv/redis (used by cache-manager v7) passes TTL to Redis as PX (milliseconds).
 // The global CacheModule default (ttl: 900) is also milliseconds = 0.9 s.
@@ -270,7 +275,16 @@ export class QuotaService {
 					.createQueryBuilder()
 					.insert()
 					.into(UserQuota)
-					.values({ userId, quotaDate: () => 'CURRENT_DATE' })
+					.values({
+						userId,
+						storageUsed: BigInt(0),
+						storageLimit: BigInt(DEFAULT_STORAGE_LIMIT_BYTES),
+						filesCount: 0,
+						filesLimit: DEFAULT_FILES_LIMIT,
+						dailyUploads: 0,
+						dailyUploadLimit: DEFAULT_DAILY_UPLOAD_LIMIT,
+						quotaDate: () => 'CURRENT_DATE',
+					})
 					.orIgnore()
 					.execute();
 				row = await repo.findOne({ where: { userId } });
