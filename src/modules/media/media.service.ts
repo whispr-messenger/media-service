@@ -235,13 +235,6 @@ export class MediaService {
 
 				this.metricsService.uploadsTotal.inc();
 
-				// Publish moderation event for image uploads
-				if (context === MediaContext.MESSAGE && file.mimetype.startsWith('image/')) {
-					this.publishModerationEvent(media).catch((err) =>
-						this.logger.warn(`Failed to publish moderation event for ${media.id}: ${err}`)
-					);
-				}
-
 				return this.buildUploadResponse(media, context);
 			});
 		} finally {
@@ -604,12 +597,11 @@ export class MediaService {
 		return new Date(Date.now() + ttlDays * 24 * 60 * 60 * 1000);
 	}
 
-	private buildUploadResponse(media: Media, context: MediaContext): UploadMediaResponseDto {
-		const isPublic = PUBLIC_CONTEXTS.has(context);
-		const url =
-			isPublic && media.storagePath ? this.storageService.getPublicUrl(media.storagePath) : null;
-		const thumbnailUrl =
-			isPublic && media.thumbnailPath ? this.storageService.getPublicUrl(media.thumbnailPath) : null;
+	private buildUploadResponse(media: Media, _context: MediaContext): UploadMediaResponseDto {
+		const url = media.storagePath ? this.storageService.getPublicUrl(media.storagePath) : null;
+		const thumbnailUrl = media.thumbnailPath
+			? this.storageService.getPublicUrl(media.thumbnailPath)
+			: null;
 		return {
 			mediaId: media.id,
 			url,
@@ -636,40 +628,6 @@ export class MediaService {
 		log.ipAddress = ipAddress ?? null;
 		log.userAgent = userAgent?.slice(0, 512) ?? null;
 		await this.accessLogRepo.save(log);
-	}
-
-	// =========================================================================
-	// Moderation
-	// =========================================================================
-
-	private async publishModerationEvent(media: Media): Promise<void> {
-		await this.redisClient.publish(
-			'media.uploaded',
-			JSON.stringify({
-				mediaId: media.id,
-				ownerId: media.ownerId,
-				storagePath: media.storagePath,
-				contentType: media.contentType,
-			})
-		);
-		this.logger.log(`Published moderation event for media ${media.id}`);
-	}
-
-	async updateModerationStatus(
-		id: string,
-		status: string,
-		score?: number,
-		category?: string
-	): Promise<void> {
-		await this.dataSource.transaction(async (manager) => {
-			const media = await this.mediaRepository.findById(id, manager);
-			if (!media) throw new NotFoundException(`Media ${id} not found`);
-			media.moderationStatus = status;
-			if (score !== undefined) media.moderationScore = score;
-			if (category) media.moderationCategory = category;
-			await this.mediaRepository.save(media, manager);
-		});
-		this.logger.log(`Media ${id} moderation: ${status} (score=${score}, category=${category})`);
 	}
 
 	logAccess(mediaId: string, accessorId: string | null, accessType: string): void {

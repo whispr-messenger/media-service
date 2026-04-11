@@ -12,6 +12,7 @@ export class StorageService {
 	readonly bucket: string;
 	private readonly forcePathStyle: boolean;
 	private readonly endpoint: string;
+	private readonly publicEndpoint: string;
 
 	constructor(
 		@InjectS3() private readonly s3: S3,
@@ -20,13 +21,15 @@ export class StorageService {
 		this.bucket = this.configService.get<string>('S3_BUCKET', 'whispr-media');
 		this.forcePathStyle = this.configService.get<boolean>('S3_FORCE_PATH_STYLE', false);
 		this.endpoint = this.configService.get<string>('S3_ENDPOINT', '');
+		this.publicEndpoint = this.configService.get<string>('S3_PUBLIC_ENDPOINT', this.endpoint);
 	}
 
 	getPublicUrl(storagePath: string): string {
+		const base = this.publicEndpoint || this.endpoint;
 		if (this.forcePathStyle) {
-			return `${this.endpoint}/${this.bucket}/${storagePath}`;
+			return `${base}/${this.bucket}/${storagePath}`;
 		}
-		const url = new URL(this.endpoint);
+		const url = new URL(base);
 		return `${url.protocol}//${this.bucket}.${url.host}/${storagePath}`;
 	}
 

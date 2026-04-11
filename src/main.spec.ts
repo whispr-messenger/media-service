@@ -46,6 +46,7 @@ describe('Bootstrap setup (main.ts)', () => {
 			use: mockUse,
 			useGlobalPipes: mockUseGlobalPipes,
 			enableShutdownHooks: mockEnableShutdownHooks,
+			enableCors: jest.fn(),
 			listen: mockListen,
 			setGlobalPrefix: mockSetGlobalPrefix,
 			enableVersioning: mockEnableVersioning,
