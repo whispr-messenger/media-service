@@ -43,9 +43,6 @@ USER node
 
 ENV NODE_ENV=production
 
-# Expose ports (documentation only)
-EXPOSE 3003 50053
-
 # Health check — use node explicitly (no shell in minimal images)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD ["node", "dist/docker/health-check.js"]
