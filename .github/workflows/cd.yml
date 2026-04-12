@@ -87,11 +87,21 @@ jobs:
           # Store COMMIT_SHA as output for use in subsequent steps
           echo "commit_sha=${COMMIT_SHA}" >> $GITHUB_OUTPUT
 
+      - name: Determine infrastructure branch
+        id: infra_branch
+        run: |
+          TRIGGER_BRANCH="${{ inputs.ref || 'main' }}"
+          if [ "$TRIGGER_BRANCH" = "main" ]; then
+            echo "branch=main" >> $GITHUB_OUTPUT
+          else
+            echo "branch=deploy/preprod" >> $GITHUB_OUTPUT
+          fi
+
       - name: Checkout infrastructure repository
         uses: actions/checkout@v4
         with:
           repository: whispr-messenger/infrastructure
-          ref: main
+          ref: ${{ steps.infra_branch.outputs.branch }}
           token: ${{ steps.generate_token.outputs.token }}
 
       - name: Update image tag in deployment
@@ -115,18 +125,40 @@ jobs:
           echo "Image tag: $IMAGE_TAG"
           echo "Updating deployment image to: ${FULL_IMAGE}"
 
-          # Update the deployment manifest in the infrastructure repository
-          yq -i ".spec.template.spec.containers[0].image = \"${FULL_IMAGE}\"" k8s/whispr/production/media-service/deployment.yaml
+          TRIGGER_BRANCH="${{ inputs.ref || 'main' }}"
 
-          # Update the migration job manifest so PreSync always uses the same image
-          yq -i ".spec.template.spec.containers[0].image = \"${FULL_IMAGE}\"" k8s/whispr/production/media-service/migration-job.yaml
+          if [ "$TRIGGER_BRANCH" = "main" ]; then
+            # Main branch: update all three directories (our prod, colleagues production, our preprod)
+            echo "Updating prod, production, and preprod manifests..."
+
+            yq -i ".spec.template.spec.containers[0].image = \"${FULL_IMAGE}\"" k8s/whispr/prod/media-service/deployment.yaml
+            yq -i ".spec.template.spec.containers[0].image = \"${FULL_IMAGE}\"" k8s/whispr/production/media-service/deployment.yaml
+            yq -i ".spec.template.spec.containers[0].image = \"${FULL_IMAGE}\"" k8s/whispr/production/media-service/migration-job.yaml
+            yq -i ".spec.template.spec.containers[0].image = \"${FULL_IMAGE}\"" k8s/whispr/preprod/media-service/deployment.yaml
+          else
+            # deploy/preprod branch: update only preprod
+            echo "Updating preprod manifest only..."
+
+            yq -i ".spec.template.spec.containers[0].image = \"${FULL_IMAGE}\"" k8s/whispr/preprod/media-service/deployment.yaml
+          fi
 
       - name: Verify update
         run: |
-          echo "Updated deployment manifest:"
-          yq '.spec.template.spec.containers[0].image' k8s/whispr/production/media-service/deployment.yaml
-          echo "Updated migration job manifest:"
-          yq '.spec.template.spec.containers[0].image' k8s/whispr/production/media-service/migration-job.yaml
+          TRIGGER_BRANCH="${{ inputs.ref || 'main' }}"
+
+          if [ "$TRIGGER_BRANCH" = "main" ]; then
+            echo "Updated prod deployment manifest:"
+            yq '.spec.template.spec.containers[0].image' k8s/whispr/prod/media-service/deployment.yaml
+            echo "Updated production deployment manifest:"
+            yq '.spec.template.spec.containers[0].image' k8s/whispr/production/media-service/deployment.yaml
+            echo "Updated production migration job manifest:"
+            yq '.spec.template.spec.containers[0].image' k8s/whispr/production/media-service/migration-job.yaml
+            echo "Updated preprod deployment manifest:"
+            yq '.spec.template.spec.containers[0].image' k8s/whispr/preprod/media-service/deployment.yaml
+          else
+            echo "Updated preprod deployment manifest:"
+            yq '.spec.template.spec.containers[0].image' k8s/whispr/preprod/media-service/deployment.yaml
+          fi
 
       - name: Commit and push changes
         run: |
@@ -134,7 +166,7 @@ jobs:
           git config --local user.name "github-actions[bot]"
 
           # Check if there are changes to commit
-          if git diff --quiet k8s/whispr/production/media-service/deployment.yaml k8s/whispr/production/media-service/migration-job.yaml; then
+          if git diff --quiet; then
             echo "No changes to commit"
             exit 0
           fi
@@ -149,7 +181,13 @@ jobs:
             COMMIT_MSG="🔧 chore(deploy/media-service): update image to ${COMMIT_SHA:0:7}"
           fi
 
-          git add k8s/whispr/production/media-service/deployment.yaml k8s/whispr/production/media-service/migration-job.yaml
+          TRIGGER_BRANCH="${{ inputs.ref || 'main' }}"
+
+          git add -A k8s/whispr/
           git commit -m "${COMMIT_MSG}"
 
-          git push https://x-access-token:${{ steps.generate_token.outputs.token }}@github.com/whispr-messenger/infrastructure.git main
+          if [ "$TRIGGER_BRANCH" = "main" ]; then
+            git push https://x-access-token:${{ steps.generate_token.outputs.token }}@github.com/whispr-messenger/infrastructure.git main
+          else
+            git push https://x-access-token:${{ steps.generate_token.outputs.token }}@github.com/whispr-messenger/infrastructure.git HEAD:deploy/preprod
+          fi
