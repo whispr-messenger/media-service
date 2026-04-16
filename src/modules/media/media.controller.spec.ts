@@ -44,10 +44,10 @@ describe('MediaController', () => {
 
 		it('should return UploadMediaResponseDto on success', async () => {
 			const expected = {
-				mediaId: 'media-uuid-1',
+				media_id: 'media-uuid-1',
 				url: 'http://minio/messages/photo.jpg',
-				thumbnailUrl: null,
-				expiresAt: null,
+				thumbnail_url: null,
+				expires_at: null,
 				context: MediaContext.MESSAGE,
 				size: 2048,
 			};

@@ -205,7 +205,10 @@ describe('MediaService', () => {
 			expect(mockStorageService.upload).toHaveBeenCalled();
 			expect(mockMediaRepository.save).toHaveBeenCalled();
 			expect(mockQuotaService.recordUpload).toHaveBeenCalled();
-			expect(result).toHaveProperty('mediaId');
+			expect(result).toHaveProperty('media_id');
+			expect(result).toHaveProperty('url');
+			expect(result).toHaveProperty('thumbnail_url');
+			expect(result).toHaveProperty('expires_at');
 		});
 
 		it('refreshes semaphore TTL while an upload is in progress', async () => {
@@ -257,7 +260,7 @@ describe('MediaService', () => {
 
 			const result = await service.upload('user-uuid-1', file, MediaContext.MESSAGE);
 
-			expect(result.mediaId).toBe('existing-media-id');
+			expect(result.media_id).toBe('existing-media-id');
 			expect(mockStorageService.upload).not.toHaveBeenCalled();
 		});
 
