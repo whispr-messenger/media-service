@@ -16,7 +16,7 @@ import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Cache } from 'cache-manager';
 import { randomUUID } from 'crypto';
 import { createHash } from 'node:crypto';
-import { GetObjectCommand } from '@aws-sdk/client-s3';
+import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { Readable } from 'stream';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -104,6 +104,14 @@ const MAX_CONCURRENT_UPLOADS = 3;
 export class MediaService {
 	private readonly logger = new Logger(MediaService.name);
 	private readonly signedUrlExpirySeconds: number;
+	/**
+	 * Second S3 client dédié à la génération d'URLs présignées publiques.
+	 * Lorsque `S3_PUBLIC_ENDPOINT` est défini et diffère de `S3_ENDPOINT`,
+	 * on signe avec cet endpoint pour que le navigateur puisse joindre MinIO
+	 * sans passer par le DNS interne du cluster. Si `S3_PUBLIC_ENDPOINT`
+	 * n'est pas défini, on retombe sur le client S3 standard.
+	 */
+	private readonly presigner: S3Client | null;
 
 	constructor(
 		private readonly mediaRepository: MediaRepository,
@@ -124,6 +132,45 @@ export class MediaService {
 			'SIGNED_URL_EXPIRY_SECONDS',
 			7 * 24 * 60 * 60
 		);
+		this.presigner = this.buildPresignerClient();
+	}
+
+	private buildPresignerClient(): S3Client | null {
+		const publicEndpoint = this.configService.get<string>('S3_PUBLIC_ENDPOINT');
+		const internalEndpoint = this.configService.get<string>('S3_ENDPOINT');
+		if (!publicEndpoint || publicEndpoint === internalEndpoint) {
+			// Rien à faire : les URLs présignées signées par `this.s3` seront déjà
+			// sur le bon hostname (cas prod sans isolation cluster).
+			return null;
+		}
+
+		const accessKeyId = this.configService.get<string>('S3_ACCESS_KEY_ID');
+		const secretAccessKey = this.configService.get<string>('S3_SECRET_ACCESS_KEY');
+		if (!accessKeyId || !secretAccessKey) {
+			this.logger.warn(
+				'S3_PUBLIC_ENDPOINT set but credentials missing — falling back to internal S3 client for presigning'
+			);
+			return null;
+		}
+
+		const region = this.configService.get<string>('S3_REGION', 'us-east-1');
+		const forcePathStyleRaw = this.configService.get<string | boolean>('S3_FORCE_PATH_STYLE', 'false');
+		const forcePathStyle = forcePathStyleRaw === true || forcePathStyleRaw === 'true';
+
+		this.logger.log(
+			`Presigning client configured: endpoint=${publicEndpoint} pathStyle=${forcePathStyle}`
+		);
+
+		return new S3Client({
+			endpoint: publicEndpoint,
+			region,
+			forcePathStyle,
+			credentials: { accessKeyId, secretAccessKey },
+		});
+	}
+
+	private get presignerClient(): S3 | S3Client {
+		return this.presigner ?? (this.s3 as unknown as S3Client);
 	}
 
 	// =========================================================================
@@ -166,7 +213,7 @@ export class MediaService {
 					);
 					if (existing) {
 						this.logger.debug(`Dedup hit for sha256=${sha256} → reusing media ${existingId}`);
-						return this.buildUploadResponse(existing, context);
+						return await this.buildUploadResponse(existing, context);
 					}
 				}
 
@@ -235,7 +282,7 @@ export class MediaService {
 
 				this.metricsService.uploadsTotal.inc();
 
-				return this.buildUploadResponse(media, context);
+				return await this.buildUploadResponse(media, context);
 			});
 		} finally {
 			await this.releaseSemaphore(ownerId);
@@ -339,7 +386,7 @@ export class MediaService {
 				Bucket: this.storageService.bucket,
 				Key: media.thumbnailPath,
 			});
-			url = await getSignedUrl(this.s3 as never, command, {
+			url = await getSignedUrl(this.presignerClient as never, command, {
 				expiresIn: this.signedUrlExpirySeconds,
 			});
 		}
@@ -577,7 +624,7 @@ export class MediaService {
 			Bucket: this.storageService.bucket,
 			Key: storagePath,
 		});
-		return getSignedUrl(this.s3 as never, command, { expiresIn });
+		return getSignedUrl(this.presignerClient as never, command, { expiresIn });
 	}
 
 	private contextToStorageContext(context: MediaContext): StorageContext {
@@ -597,16 +644,42 @@ export class MediaService {
 		return new Date(Date.now() + ttlDays * 24 * 60 * 60 * 1000);
 	}
 
-	private buildUploadResponse(media: Media, _context: MediaContext): UploadMediaResponseDto {
-		const url = media.storagePath ? this.storageService.getPublicUrl(media.storagePath) : null;
-		const thumbnailUrl = media.thumbnailPath
-			? this.storageService.getPublicUrl(media.thumbnailPath)
+	/**
+	 * Construit la réponse de `POST /media/v1/upload` (WHISPR-917).
+	 *
+	 * - Contextes publics (avatars, group_icons) : URL publique statique.
+	 * - Contextes privés (messages) : URL présignée de courte durée, signée
+	 *   sur `S3_PUBLIC_ENDPOINT` si configuré, de sorte que le navigateur peut
+	 *   utiliser `url` directement dans `<img src>` sans header Authorization.
+	 * - Les clés suivent le nommage snake_case pour s'aligner sur les autres
+	 *   services REST (auth, user, messaging).
+	 */
+	private async buildUploadResponse(media: Media, _context: MediaContext): Promise<UploadMediaResponseDto> {
+		const presignExpiry = this.signedUrlExpirySeconds;
+		const isPublic = PUBLIC_CONTEXTS.has(media.context);
+
+		const url = media.storagePath
+			? isPublic
+				? this.storageService.getPublicUrl(media.storagePath)
+				: await this.generatePresignedUrl(media.storagePath, presignExpiry)
 			: null;
+
+		const thumbnail_url = media.thumbnailPath
+			? isPublic
+				? this.storageService.getPublicUrl(media.thumbnailPath)
+				: await this.generatePresignedUrl(media.thumbnailPath, presignExpiry)
+			: null;
+
+		// Pour les contenus privés, expires_at reflète la durée de vie de la
+		// signature et non le TTL logique du média. Pour les contenus publics,
+		// on conserve le TTL logique (media.expiresAt).
+		const expires_at = isPublic ? media.expiresAt : new Date(Date.now() + presignExpiry * 1000);
+
 		return {
-			mediaId: media.id,
+			media_id: media.id,
 			url,
-			thumbnailUrl,
-			expiresAt: media.expiresAt,
+			thumbnail_url,
+			expires_at,
 			context: media.context as MediaContext,
 			size: media.blobSize,
 		};

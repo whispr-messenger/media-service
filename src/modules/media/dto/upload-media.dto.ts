@@ -21,16 +21,18 @@ export class UploadMediaDto {
 
 export class UploadMediaResponseDto {
 	@ApiProperty({ description: 'Unique identifier of the uploaded media' })
-	mediaId: string;
+	media_id: string;
 
-	@ApiPropertyOptional({ description: 'Presigned URL or public URL for the blob' })
+	@ApiPropertyOptional({ description: 'Presigned GET URL for the blob (short-lived)' })
 	url: string | null;
 
-	@ApiPropertyOptional({ description: 'Presigned URL for the thumbnail' })
-	thumbnailUrl: string | null;
+	@ApiPropertyOptional({ description: 'Presigned GET URL for the thumbnail (short-lived)' })
+	thumbnail_url: string | null;
 
-	@ApiPropertyOptional({ description: 'Expiry timestamp for message blobs' })
-	expiresAt: Date | null;
+	@ApiPropertyOptional({
+		description: 'Expiration timestamp of the presigned URLs (ISO-8601)',
+	})
+	expires_at: Date | null;
 
 	@ApiProperty({ description: 'Upload context', enum: MediaContext })
 	context: MediaContext;
