@@ -36,6 +36,7 @@ const makeMedia = (overrides: Partial<Media> = {}): Media =>
 		thumbnailPath: null,
 		expiresAt: null,
 		signedUrlExpiresAt: null,
+		sharedWith: null,
 		isActive: true,
 		createdAt: new Date(),
 		updatedAt: new Date(),
@@ -47,6 +48,7 @@ const mockMediaRepository = {
 	findById: jest.fn(),
 	updateSignedUrlExpiry: jest.fn(),
 	softDelete: jest.fn(),
+	updateSharedWith: jest.fn(),
 };
 
 const mockStorageService = {
@@ -172,8 +174,8 @@ describe('MediaService', () => {
 
 		await service.upload('user-uuid-1', file, MediaContext.MESSAGE);
 		await service.getMetadata('media-uuid-1', 'user-uuid-1');
-		await service.getBlobUrl('media-uuid-1', 'user-uuid-1');
-		await service.getThumbnailUrl('media-uuid-1', 'user-uuid-1');
+		await service.getBlob('media-uuid-1', 'user-uuid-1');
+		await service.getThumbnail('media-uuid-1', 'user-uuid-1');
 		await service.delete('media-uuid-1', 'user-uuid-1');
 
 		expect(mockDataSource.transaction).toHaveBeenCalledTimes(5);
@@ -391,33 +393,46 @@ describe('MediaService', () => {
 		});
 	});
 
-	describe('getBlobUrl()', () => {
+	describe('getBlob()', () => {
 		it('returns signed URL for message media owner', async () => {
 			const media = makeMedia();
 			mockMediaRepository.findById.mockResolvedValue(media);
 			mockMediaRepository.updateSignedUrlExpiry.mockResolvedValue(undefined);
 
-			const url = await service.getBlobUrl('media-uuid-1', 'user-uuid-1');
+			const result = await service.getBlob('media-uuid-1', 'user-uuid-1');
 
-			expect(url).toBe('https://presigned.url/file');
+			expect(result.url).toBe('https://presigned.url/file');
 		});
 
 		it('throws ForbiddenException for non-owner on message media', async () => {
 			const media = makeMedia({ ownerId: 'owner-1' });
 			mockMediaRepository.findById.mockResolvedValue(media);
 
-			await expect(service.getBlobUrl('media-uuid-1', 'other-user')).rejects.toThrow(
-				ForbiddenException
-			);
+			await expect(service.getBlob('media-uuid-1', 'other-user')).rejects.toThrow(ForbiddenException);
+		});
+
+		it('allows a user listed in sharedWith to download message media', async () => {
+			const media = makeMedia({ ownerId: 'owner-1', sharedWith: ['friend-1', 'friend-2'] });
+			mockMediaRepository.findById.mockResolvedValue(media);
+
+			const result = await service.getBlob('media-uuid-1', 'friend-1');
+
+			expect(result.url).toBe('https://presigned.url/file');
+		});
+
+		it('denies a user not in sharedWith', async () => {
+			const media = makeMedia({ ownerId: 'owner-1', sharedWith: ['friend-1'] });
+			mockMediaRepository.findById.mockResolvedValue(media);
+
+			await expect(service.getBlob('media-uuid-1', 'stranger')).rejects.toThrow(ForbiddenException);
 		});
 
 		it('allows any user to download avatar blob (public context)', async () => {
 			const media = makeMedia({ ownerId: 'owner-1', context: MediaContext.AVATAR });
 			mockMediaRepository.findById.mockResolvedValue(media);
 
-			await expect(service.getBlobUrl('media-uuid-1', 'different-user')).resolves.toBe(
-				`http://minio:9000/test-bucket/${media.storagePath}`
-			);
+			const result = await service.getBlob('media-uuid-1', 'different-user');
+			expect(result.url).toBe(`http://minio:9000/test-bucket/${media.storagePath}`);
 			expect(mockStorageService.getPublicUrl).toHaveBeenCalledWith(media.storagePath);
 		});
 
@@ -425,30 +440,29 @@ describe('MediaService', () => {
 			const media = makeMedia({ ownerId: 'owner-1', context: MediaContext.GROUP_ICON });
 			mockMediaRepository.findById.mockResolvedValue(media);
 
-			await expect(service.getBlobUrl('media-uuid-1', 'different-user')).resolves.toBe(
-				`http://minio:9000/test-bucket/${media.storagePath}`
-			);
+			const result = await service.getBlob('media-uuid-1', 'different-user');
+			expect(result.url).toBe(`http://minio:9000/test-bucket/${media.storagePath}`);
 			expect(mockStorageService.getPublicUrl).toHaveBeenCalledWith(media.storagePath);
 		});
 	});
 
-	describe('getThumbnailUrl()', () => {
-		it('throws NotFoundException when no thumbnail exists', async () => {
+	describe('getThumbnail()', () => {
+		it('returns {url: null} when no thumbnail exists (instead of 404)', async () => {
 			const media = makeMedia({ thumbnailPath: null });
 			mockMediaRepository.findById.mockResolvedValue(media);
 
-			await expect(service.getThumbnailUrl('media-uuid-1', 'user-uuid-1')).rejects.toThrow(
-				NotFoundException
-			);
+			const result = await service.getThumbnail('media-uuid-1', 'user-uuid-1');
+
+			expect(result).toEqual({ url: null, expiresAt: null });
 		});
 
 		it('returns signed URL when thumbnail exists', async () => {
 			const media = makeMedia({ thumbnailPath: 'thumbnails/user-uuid-1/media-uuid-1.bin' });
 			mockMediaRepository.findById.mockResolvedValue(media);
 
-			const url = await service.getThumbnailUrl('media-uuid-1', 'user-uuid-1');
+			const result = await service.getThumbnail('media-uuid-1', 'user-uuid-1');
 
-			expect(url).toBe('https://presigned.url/file');
+			expect(result.url).toBe('https://presigned.url/file');
 		});
 	});
 
