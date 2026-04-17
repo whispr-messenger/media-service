@@ -35,4 +35,8 @@ export class MediaRepository {
 	async softDelete(id: string, manager?: EntityManager): Promise<void> {
 		await this.getRepository(manager).update(id, { isActive: false });
 	}
+
+	async updateSharedWith(id: string, sharedWith: string[] | null, manager?: EntityManager): Promise<void> {
+		await this.getRepository(manager).update(id, { sharedWith });
+	}
 }
