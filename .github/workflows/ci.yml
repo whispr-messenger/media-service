@@ -85,7 +85,7 @@ jobs:
     uses: ./.github/workflows/cd.yml
     with:
       commit_sha: ${{ github.sha }}
-      ref: main
+      ref: ${{ github.ref_name }}
     secrets:
       ACTIONS_CD: ${{ secrets.ACTIONS_CD }}
       ACTIONS_CD_PRIVATE_KEY: ${{ secrets.ACTIONS_CD_PRIVATE_KEY }}
