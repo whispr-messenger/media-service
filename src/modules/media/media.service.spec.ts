@@ -268,7 +268,9 @@ describe('MediaService', () => {
 
 		it('throws PayloadTooLargeException when quota is exceeded', async () => {
 			// semaphore is fine (INCR returns 1), but quota check fails
-			mockQuotaService.enforceQuota.mockRejectedValue(new PayloadTooLargeException('quota exceeded'));
+			mockQuotaService.enforceQuota.mockRejectedValueOnce(
+				new PayloadTooLargeException('quota exceeded')
+			);
 
 			await expect(service.upload('user-uuid-1', file, MediaContext.MESSAGE)).rejects.toThrow(
 				PayloadTooLargeException
@@ -463,6 +465,150 @@ describe('MediaService', () => {
 			const result = await service.getThumbnail('media-uuid-1', 'user-uuid-1');
 
 			expect(result.url).toBe('https://presigned.url/file');
+		});
+
+		it('throws ForbiddenException for non-owner on message media', async () => {
+			const media = makeMedia({ ownerId: 'owner-1', context: MediaContext.MESSAGE });
+			mockMediaRepository.findById.mockResolvedValue(media);
+
+			await expect(service.getThumbnail('media-uuid-1', 'other-user')).rejects.toThrow(
+				ForbiddenException
+			);
+		});
+
+		it('returns public URL for avatar thumbnail (no expiry)', async () => {
+			const media = makeMedia({
+				ownerId: 'owner-1',
+				context: MediaContext.AVATAR,
+				thumbnailPath: 'avatars/owner-1/media-uuid-1_thumb.bin',
+			});
+			mockMediaRepository.findById.mockResolvedValue(media);
+
+			const result = await service.getThumbnail('media-uuid-1', 'any-user');
+
+			expect(result.url).toBe(`http://minio:9000/test-bucket/${media.thumbnailPath}`);
+			expect(result.expiresAt).toBeNull();
+			expect(mockStorageService.getPublicUrl).toHaveBeenCalledWith(media.thumbnailPath);
+		});
+
+		it('throws NotFoundException when media does not exist', async () => {
+			mockMediaRepository.findById.mockResolvedValue(null);
+
+			await expect(service.getThumbnail('missing', 'user-uuid-1')).rejects.toThrow(NotFoundException);
+		});
+	});
+
+	describe('share()', () => {
+		it('adds userIds to sharedWith and returns the merged list', async () => {
+			const media = makeMedia({ ownerId: 'user-uuid-1', sharedWith: ['existing-uid'] });
+			mockMediaRepository.findById.mockResolvedValue(media);
+			mockMediaRepository.updateSharedWith.mockResolvedValue(undefined);
+
+			const result = await service.share('media-uuid-1', 'user-uuid-1', ['new-uid']);
+
+			expect(mockMediaRepository.updateSharedWith).toHaveBeenCalledWith(
+				'media-uuid-1',
+				expect.arrayContaining(['existing-uid', 'new-uid']),
+				mockEntityManager
+			);
+			expect(result).toEqual(expect.arrayContaining(['existing-uid', 'new-uid']));
+		});
+
+		it('deduplicates userIds in sharedWith', async () => {
+			const media = makeMedia({ ownerId: 'user-uuid-1', sharedWith: ['uid-1'] });
+			mockMediaRepository.findById.mockResolvedValue(media);
+			mockMediaRepository.updateSharedWith.mockResolvedValue(undefined);
+
+			const result = await service.share('media-uuid-1', 'user-uuid-1', ['uid-1', 'uid-2']);
+
+			expect(result).toEqual(expect.arrayContaining(['uid-1', 'uid-2']));
+			expect(result).toHaveLength(2);
+		});
+
+		it('does not add the owner to sharedWith', async () => {
+			const media = makeMedia({ ownerId: 'user-uuid-1', sharedWith: null });
+			mockMediaRepository.findById.mockResolvedValue(media);
+			mockMediaRepository.updateSharedWith.mockResolvedValue(undefined);
+
+			const result = await service.share('media-uuid-1', 'user-uuid-1', ['user-uuid-1', 'uid-2']);
+
+			expect(result).not.toContain('user-uuid-1');
+			expect(result).toContain('uid-2');
+		});
+
+		it('throws NotFoundException when media does not exist', async () => {
+			mockMediaRepository.findById.mockResolvedValue(null);
+
+			await expect(service.share('missing', 'user-uuid-1', ['uid-1'])).rejects.toThrow(
+				NotFoundException
+			);
+		});
+
+		it('throws ForbiddenException when non-owner tries to share', async () => {
+			const media = makeMedia({ ownerId: 'owner-1' });
+			mockMediaRepository.findById.mockResolvedValue(media);
+
+			await expect(service.share('media-uuid-1', 'other-user', ['uid-1'])).rejects.toThrow(
+				ForbiddenException
+			);
+		});
+
+		it('invalidates the metadata cache after updating ACL', async () => {
+			const media = makeMedia({ ownerId: 'user-uuid-1', sharedWith: null });
+			mockMediaRepository.findById.mockResolvedValue(media);
+			mockMediaRepository.updateSharedWith.mockResolvedValue(undefined);
+
+			await service.share('media-uuid-1', 'user-uuid-1', ['uid-1']);
+
+			expect(mockCache.del).toHaveBeenCalledWith('media:meta:media-uuid-1');
+		});
+	});
+
+	describe('upload() with sharedWith', () => {
+		const file: Express.Multer.File = {
+			originalname: 'photo.jpg',
+			mimetype: 'image/jpeg',
+			size: 1024,
+			buffer: jpegBuffer,
+		} as unknown as Express.Multer.File;
+
+		it('sets sharedWith on new upload, excluding the uploader', async () => {
+			mockMediaRepository.save.mockResolvedValue(undefined);
+
+			await service.upload('user-uuid-1', file, MediaContext.MESSAGE, undefined, [
+				'user-uuid-1',
+				'friend-1',
+				'friend-2',
+			]);
+
+			const savedMedia: Media = mockMediaRepository.save.mock.calls[0][0];
+			expect(savedMedia.sharedWith).not.toContain('user-uuid-1');
+			expect(savedMedia.sharedWith).toEqual(expect.arrayContaining(['friend-1', 'friend-2']));
+		});
+
+		it('merges sharedWith ACL on dedup hit', async () => {
+			mockCache.get.mockResolvedValueOnce('existing-media-id');
+			const existingMedia = makeMedia({ id: 'existing-media-id', sharedWith: ['uid-a'] });
+			mockMediaRepository.findById.mockResolvedValue(existingMedia);
+			mockMediaRepository.updateSharedWith.mockResolvedValue(undefined);
+
+			await service.upload('user-uuid-1', file, MediaContext.MESSAGE, undefined, ['uid-b']);
+
+			expect(mockMediaRepository.updateSharedWith).toHaveBeenCalledWith(
+				'existing-media-id',
+				expect.arrayContaining(['uid-a', 'uid-b']),
+				mockEntityManager
+			);
+		});
+
+		it('skips ACL update on dedup hit when sharedWith is empty', async () => {
+			mockCache.get.mockResolvedValueOnce('existing-media-id');
+			const existingMedia = makeMedia({ id: 'existing-media-id', sharedWith: ['uid-a'] });
+			mockMediaRepository.findById.mockResolvedValue(existingMedia);
+
+			await service.upload('user-uuid-1', file, MediaContext.MESSAGE);
+
+			expect(mockMediaRepository.updateSharedWith).not.toHaveBeenCalled();
 		});
 	});
 

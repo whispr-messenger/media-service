@@ -99,4 +99,32 @@ describe('MediaRepository', () => {
 			expect(mockRepo.update).toHaveBeenCalledWith('abc', { isActive: false });
 		});
 	});
+
+	describe('updateSharedWith()', () => {
+		it('calls repo.update with the provided sharedWith array', async () => {
+			mockRepo.update.mockResolvedValue(undefined);
+			const sharedWith = ['uid-1', 'uid-2'];
+
+			await mediaRepository.updateSharedWith('abc', sharedWith);
+
+			expect(mockRepo.update).toHaveBeenCalledWith('abc', { sharedWith });
+		});
+
+		it('calls repo.update with null to clear the ACL', async () => {
+			mockRepo.update.mockResolvedValue(undefined);
+
+			await mediaRepository.updateSharedWith('abc', null);
+
+			expect(mockRepo.update).toHaveBeenCalledWith('abc', { sharedWith: null });
+		});
+
+		it('uses the transactional manager when provided', async () => {
+			mockRepo.update.mockResolvedValue(undefined);
+
+			await mediaRepository.updateSharedWith('abc', ['uid-1'], mockManager as never);
+
+			expect(mockManager.getRepository).toHaveBeenCalledWith(Media);
+			expect(mockRepo.update).toHaveBeenCalledWith('abc', { sharedWith: ['uid-1'] });
+		});
+	});
 });
