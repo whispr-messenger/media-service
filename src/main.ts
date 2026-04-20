@@ -1,7 +1,8 @@
 import { NestFactory } from '@nestjs/core';
-import { Logger, VersioningType } from '@nestjs/common';
+import { Logger, ValidationPipe, VersioningType } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { ConfigService } from '@nestjs/config';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { createSwaggerDocumentation } from './swagger';
 import { LoggingInterceptor } from './interceptors';
@@ -13,7 +14,13 @@ async function bootstrap() {
 	const port = configService.get<number>('HTTP_PORT', 3002);
 	const globalPrefix = 'media';
 
-	app.setGlobalPrefix(globalPrefix);
+	app.use(helmet());
+
+	app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+
+	app.setGlobalPrefix(globalPrefix, {
+		exclude: ['metrics'],
+	});
 
 	app.enableVersioning({
 		type: VersioningType.URI,
@@ -23,7 +30,14 @@ async function bootstrap() {
 
 	createSwaggerDocumentation(app, port, configService, globalPrefix);
 
+	app.enableCors({
+		origin: true,
+		credentials: true,
+	});
+
 	app.useGlobalInterceptors(new LoggingInterceptor());
+
+	app.enableShutdownHooks();
 
 	await app.listen(port);
 
