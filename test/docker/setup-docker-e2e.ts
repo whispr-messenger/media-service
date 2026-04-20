@@ -17,5 +17,16 @@ process.env.DB_LOGGING = 'false';
 process.env.REDIS_HOST = 'localhost';
 process.env.REDIS_PORT = '6379';
 
+// S3/MinIO configuration - connects to Docker MinIO service
+process.env.S3_ENDPOINT = 'http://localhost:9000';
+process.env.S3_REGION = 'us-east-1';
+process.env.S3_ACCESS_KEY_ID = 'minioadmin';
+process.env.S3_SECRET_ACCESS_KEY = 'minioadmin';
+process.env.S3_BUCKET = 'whispr-media';
+process.env.S3_FORCE_PATH_STYLE = 'true';
+
+// Auth configuration - JWKS URL is not needed for integration tests (mocked at guard level)
+process.env.JWT_JWKS_URL = 'http://localhost:3001/auth/.well-known/jwks.json';
+
 // Other configuration
 process.env.HTTP_PORT = '3002';

@@ -9,6 +9,7 @@ function s3ModuleOptionsFactory(configService: ConfigService): S3ModuleOptions {
 				secretAccessKey: configService.get('S3_SECRET_ACCESS_KEY'),
 			},
 			endpoint: configService.get('S3_ENDPOINT'),
+			region: configService.get('S3_REGION'),
 			forcePathStyle: configService.get('S3_FORCE_PATH_STYLE', false),
 		},
 	};

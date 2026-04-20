@@ -12,6 +12,8 @@ module.exports = {
     '!**/node_modules/**',
   ],
   coverageDirectory: '../coverage',
+  coverageReporters: ['lcov', 'text', 'clover'],
+  coverageProvider: 'v8',
   testEnvironment: 'node',
   setupFilesAfterEnv: ['<rootDir>/test/setup.ts'],
   moduleNameMapper: {

@@ -1,5 +1,6 @@
 #!/bin/bash
 
-npm install
+set -e
 
-npm run start:dev -- -b swc
+npm run build
+npm run start:prod
