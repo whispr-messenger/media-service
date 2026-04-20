@@ -3,15 +3,16 @@ import { BadRequestException } from '@nestjs/common';
 import { MediaController } from './media.controller';
 import { MediaService } from './media.service';
 import { MediaContext, UploadMediaDto } from './dto/upload-media.dto';
-import type { Request, Response } from 'express';
+import type { Request } from 'express';
 
 const makeReq = (userId: string): Request => ({ user: { userId } }) as unknown as Request;
 
 const mockMediaService = {
 	upload: jest.fn(),
 	getMetadata: jest.fn(),
-	getBlobUrl: jest.fn(),
-	getThumbnailUrl: jest.fn(),
+	getBlob: jest.fn(),
+	getThumbnail: jest.fn(),
+	share: jest.fn(),
 	delete: jest.fn(),
 	getStream: jest.fn(),
 	getUserQuota: jest.fn(),
@@ -44,10 +45,10 @@ describe('MediaController', () => {
 
 		it('should return UploadMediaResponseDto on success', async () => {
 			const expected = {
-				mediaId: 'media-uuid-1',
+				media_id: 'media-uuid-1',
 				url: 'http://minio/messages/photo.jpg',
-				thumbnailUrl: null,
-				expiresAt: null,
+				thumbnail_url: null,
+				expires_at: null,
 				context: MediaContext.MESSAGE,
 				size: 2048,
 			};
@@ -100,35 +101,68 @@ describe('MediaController', () => {
 	});
 
 	describe('getBlobUrl()', () => {
-		it('redirects to blob URL', async () => {
-			mockMediaService.getBlobUrl.mockResolvedValue('https://blob.url');
-			const redirect = jest.fn();
-			const res = { redirect } as unknown as Response;
+		it('returns {url, expiresAt} JSON', async () => {
+			const expiresAt = new Date('2030-01-01T00:00:00Z');
+			mockMediaService.getBlob.mockResolvedValue({ url: 'https://blob.url', expiresAt });
 			const req = { user: { userId: 'user-uuid-1' }, headers: {}, socket: {} } as unknown as Request;
 
-			await controller.getBlobUrl('media-id', req, res);
+			const result = await controller.getBlobUrl('media-id', req);
 
-			expect(redirect).toHaveBeenCalledWith(302, 'https://blob.url');
+			expect(result).toEqual({ url: 'https://blob.url', expiresAt });
+			expect(mockMediaService.getBlob).toHaveBeenCalledWith(
+				'media-id',
+				'user-uuid-1',
+				undefined,
+				undefined
+			);
 		});
 
 		it('throws BadRequestException when authenticated user is missing', async () => {
-			const res = { redirect: jest.fn() } as unknown as Response;
 			const req = { user: {}, headers: {}, socket: {} } as unknown as Request;
 
-			await expect(controller.getBlobUrl('media-id', req, res)).rejects.toThrow(BadRequestException);
+			await expect(controller.getBlobUrl('media-id', req)).rejects.toThrow(BadRequestException);
 		});
 	});
 
 	describe('getThumbnailUrl()', () => {
-		it('redirects to thumbnail URL', async () => {
-			mockMediaService.getThumbnailUrl.mockResolvedValue('https://thumb.url');
-			const redirect = jest.fn();
-			const res = { redirect } as unknown as Response;
+		it('returns {url, expiresAt} JSON', async () => {
+			const expiresAt = new Date('2030-01-01T00:00:00Z');
+			mockMediaService.getThumbnail.mockResolvedValue({ url: 'https://thumb.url', expiresAt });
 			const req = { user: { userId: 'user-uuid-1' }, headers: {}, socket: {} } as unknown as Request;
 
-			await controller.getThumbnailUrl('media-id', req, res);
+			const result = await controller.getThumbnailUrl('media-id', req);
 
-			expect(redirect).toHaveBeenCalledWith(302, 'https://thumb.url');
+			expect(result).toEqual({ url: 'https://thumb.url', expiresAt });
+		});
+
+		it('returns {url: null} when no thumbnail exists', async () => {
+			mockMediaService.getThumbnail.mockResolvedValue({ url: null, expiresAt: null });
+			const req = { user: { userId: 'user-uuid-1' }, headers: {}, socket: {} } as unknown as Request;
+
+			const result = await controller.getThumbnailUrl('media-id', req);
+
+			expect(result).toEqual({ url: null, expiresAt: null });
+		});
+	});
+
+	describe('share()', () => {
+		it('delegates to service and returns updated sharedWith', async () => {
+			mockMediaService.share.mockResolvedValue(['uuid-a', 'uuid-b']);
+			const result = await controller.share('media-id', makeReq('owner-uuid'), {
+				userIds: ['uuid-a', 'uuid-b'],
+			});
+			expect(mockMediaService.share).toHaveBeenCalledWith('media-id', 'owner-uuid', [
+				'uuid-a',
+				'uuid-b',
+			]);
+			expect(result).toEqual({ sharedWith: ['uuid-a', 'uuid-b'] });
+		});
+
+		it('throws BadRequestException when user missing', async () => {
+			const req = { user: {} } as unknown as Request;
+			await expect(controller.share('media-id', req, { userIds: [] })).rejects.toThrow(
+				BadRequestException
+			);
 		});
 	});
 

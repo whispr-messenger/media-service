@@ -16,7 +16,7 @@ import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Cache } from 'cache-manager';
 import { randomUUID } from 'crypto';
 import { createHash } from 'node:crypto';
-import { GetObjectCommand } from '@aws-sdk/client-s3';
+import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { Readable } from 'stream';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -104,6 +104,14 @@ const MAX_CONCURRENT_UPLOADS = 3;
 export class MediaService {
 	private readonly logger = new Logger(MediaService.name);
 	private readonly signedUrlExpirySeconds: number;
+	/**
+	 * Second S3 client dédié à la génération d'URLs présignées publiques.
+	 * Lorsque `S3_PUBLIC_ENDPOINT` est défini et diffère de `S3_ENDPOINT`,
+	 * on signe avec cet endpoint pour que le navigateur puisse joindre MinIO
+	 * sans passer par le DNS interne du cluster. Si `S3_PUBLIC_ENDPOINT`
+	 * n'est pas défini, on retombe sur le client S3 standard.
+	 */
+	private readonly presigner: S3Client | null;
 
 	constructor(
 		private readonly mediaRepository: MediaRepository,
@@ -124,6 +132,45 @@ export class MediaService {
 			'SIGNED_URL_EXPIRY_SECONDS',
 			7 * 24 * 60 * 60
 		);
+		this.presigner = this.buildPresignerClient();
+	}
+
+	private buildPresignerClient(): S3Client | null {
+		const publicEndpoint = this.configService.get<string>('S3_PUBLIC_ENDPOINT');
+		const internalEndpoint = this.configService.get<string>('S3_ENDPOINT');
+		if (!publicEndpoint || publicEndpoint === internalEndpoint) {
+			// Rien à faire : les URLs présignées signées par `this.s3` seront déjà
+			// sur le bon hostname (cas prod sans isolation cluster).
+			return null;
+		}
+
+		const accessKeyId = this.configService.get<string>('S3_ACCESS_KEY_ID');
+		const secretAccessKey = this.configService.get<string>('S3_SECRET_ACCESS_KEY');
+		if (!accessKeyId || !secretAccessKey) {
+			this.logger.warn(
+				'S3_PUBLIC_ENDPOINT set but credentials missing — falling back to internal S3 client for presigning'
+			);
+			return null;
+		}
+
+		const region = this.configService.get<string>('S3_REGION', 'us-east-1');
+		const forcePathStyleRaw = this.configService.get<string | boolean>('S3_FORCE_PATH_STYLE', 'false');
+		const forcePathStyle = forcePathStyleRaw === true || forcePathStyleRaw === 'true';
+
+		this.logger.log(
+			`Presigning client configured: endpoint=${publicEndpoint} pathStyle=${forcePathStyle}`
+		);
+
+		return new S3Client({
+			endpoint: publicEndpoint,
+			region,
+			forcePathStyle,
+			credentials: { accessKeyId, secretAccessKey },
+		});
+	}
+
+	private get presignerClient(): S3 | S3Client {
+		return this.presigner ?? (this.s3 as unknown as S3Client);
 	}
 
 	// =========================================================================
@@ -134,7 +181,8 @@ export class MediaService {
 		ownerId: string,
 		file: Express.Multer.File,
 		context: MediaContext,
-		thumbnailFile?: Express.Multer.File
+		thumbnailFile?: Express.Multer.File,
+		sharedWith?: string[]
 	): Promise<UploadMediaResponseDto> {
 		// WHISPR-363: Concurrent upload semaphore (max 3 per user)
 		await this.acquireSemaphore(ownerId);
@@ -166,7 +214,23 @@ export class MediaService {
 					);
 					if (existing) {
 						this.logger.debug(`Dedup hit for sha256=${sha256} → reusing media ${existingId}`);
-						return this.buildUploadResponse(existing, context);
+						// Dedup hit : union des ACLs (ex. même image envoyée à deux
+						// conversations → les deux jeux de destinataires restent autorisés).
+						if (sharedWith && sharedWith.length > 0) {
+							const merged = new Set(existing.sharedWith ?? []);
+							for (const uid of sharedWith) {
+								if (uid && uid !== existing.ownerId) merged.add(uid);
+							}
+							const next = Array.from(merged);
+							if (next.length !== (existing.sharedWith?.length ?? 0)) {
+								await this.dataSource.transaction((manager) =>
+									this.mediaRepository.updateSharedWith(existing.id, next, manager)
+								);
+								existing.sharedWith = next;
+								await this.cache.del(`media:meta:${existing.id}`);
+							}
+						}
+						return await this.buildUploadResponse(existing, context);
 					}
 				}
 
@@ -224,6 +288,13 @@ export class MediaService {
 				media.blobSize = file.size;
 				media.expiresAt = context === MediaContext.MESSAGE ? this.computeExpiresAt() : null;
 				media.isActive = true;
+				// Déduplique et retire l'uploadeur (il est déjà autorisé via owner_id)
+				if (sharedWith && sharedWith.length > 0) {
+					const dedup = Array.from(new Set(sharedWith.filter((u) => u && u !== ownerId)));
+					media.sharedWith = dedup.length > 0 ? dedup : null;
+				} else {
+					media.sharedWith = null;
+				}
 
 				await this.dataSource.transaction((manager) => this.mediaRepository.save(media, manager));
 
@@ -235,7 +306,7 @@ export class MediaService {
 
 				this.metricsService.uploadsTotal.inc();
 
-				return this.buildUploadResponse(media, context);
+				return await this.buildUploadResponse(media, context);
 			});
 		} finally {
 			await this.releaseSemaphore(ownerId);
@@ -248,10 +319,14 @@ export class MediaService {
 
 	async getMetadata(id: string, requesterId: string): Promise<MediaMetadataDto> {
 		const cacheKey = `media:meta:${id}`;
-		const cached = await this.cache.get<MediaMetadataDto>(cacheKey);
+		// Le cache garde la `sharedWith` de façon interne pour pouvoir évaluer
+		// l'ACL sans refaire un round-trip DB. Elle est retirée avant de rendre.
+		type CachedMeta = MediaMetadataDto & { sharedWith?: string[] | null };
+		const cached = await this.cache.get<CachedMeta>(cacheKey);
 		if (cached) {
-			this.enforceReadAccess(cached.context, cached.ownerId, requesterId);
-			return cached;
+			this.enforceReadAccess(cached.context, cached.ownerId, cached.sharedWith, requesterId);
+			const { sharedWith: _omit, ...dto } = cached;
+			return dto;
 		}
 
 		const media = await this.dataSource.transaction((manager) =>
@@ -261,7 +336,7 @@ export class MediaService {
 			throw new NotFoundException(`Media ${id} not found`);
 		}
 
-		this.enforceReadAccess(media.context as MediaContext, media.ownerId, requesterId);
+		this.enforceReadAccess(media.context as MediaContext, media.ownerId, media.sharedWith, requesterId);
 
 		const dto: MediaMetadataDto = {
 			id: media.id,
@@ -275,7 +350,8 @@ export class MediaService {
 			hasThumbnail: media.thumbnailPath !== null,
 		};
 
-		await this.cache.set(cacheKey, dto, META_CACHE_TTL_MS);
+		const cacheEntry: CachedMeta = { ...dto, sharedWith: media.sharedWith };
+		await this.cache.set(cacheKey, cacheEntry, META_CACHE_TTL_MS);
 		return dto;
 	}
 
@@ -283,70 +359,114 @@ export class MediaService {
 	// GET /media/v1/:id/blob — WHISPR-365
 	// =========================================================================
 
-	async getBlobUrl(
+	async getBlob(
 		id: string,
 		requesterId: string,
 		ipAddress?: string,
 		userAgent?: string
-	): Promise<string> {
-		const { media, url } = await this.dataSource.transaction(async (manager) => {
+	): Promise<{ url: string; expiresAt: Date | null }> {
+		const { media, url, expiresAt } = await this.dataSource.transaction(async (manager) => {
 			const media = await this.mediaRepository.findById(id, manager);
 			if (!media) {
 				throw new NotFoundException(`Media ${id} not found`);
 			}
 
-			this.enforceReadAccess(media.context as MediaContext, media.ownerId, requesterId);
+			this.enforceReadAccess(
+				media.context as MediaContext,
+				media.ownerId,
+				media.sharedWith,
+				requesterId
+			);
 
-			return {
-				media,
-				url: await this.getOrGenerateSignedUrl(media, manager),
-			};
+			const url = await this.getOrGenerateSignedUrl(media, manager);
+			const isPublic = PUBLIC_CONTEXTS.has(media.context);
+			// Pour les contenus publics l'URL ne signe pas → pas d'expiration de signature.
+			const expiresAt = isPublic ? null : media.signedUrlExpiresAt;
+			return { media, url, expiresAt };
 		});
 
 		// Async access log (non-blocking)
 		this.writeAccessLog(media.id, requesterId, 'blob', ipAddress, userAgent).catch(() => {});
 
-		return url;
+		return { url, expiresAt };
 	}
 
 	// =========================================================================
 	// GET /media/v1/:id/thumbnail — WHISPR-366
 	// =========================================================================
 
-	async getThumbnailUrl(
+	async getThumbnail(
 		id: string,
 		requesterId: string,
 		ipAddress?: string,
 		userAgent?: string
-	): Promise<string> {
+	): Promise<{ url: string | null; expiresAt: Date | null }> {
 		const media = await this.dataSource.transaction((manager) =>
 			this.mediaRepository.findById(id, manager)
 		);
 		if (!media) {
 			throw new NotFoundException(`Media ${id} not found`);
 		}
+
+		// Authz : on vérifie même quand il n'y a pas de thumbnail, pour éviter
+		// de divulguer l'existence d'un média privé via un 404 vs 403.
+		this.enforceReadAccess(media.context as MediaContext, media.ownerId, media.sharedWith, requesterId);
+
+		// Pas de thumbnail stockée → on renvoie url=null (au lieu de 404), ce qui
+		// permet au client de retomber proprement sur /blob sans parser d'erreur.
 		if (!media.thumbnailPath) {
-			throw new NotFoundException(`Media ${id} has no thumbnail`);
+			return { url: null, expiresAt: null };
 		}
 
-		this.enforceReadAccess(media.context as MediaContext, media.ownerId, requesterId);
-
+		const isPublic = PUBLIC_CONTEXTS.has(media.context);
 		let url: string;
-		if (PUBLIC_CONTEXTS.has(media.context)) {
+		let expiresAt: Date | null;
+		if (isPublic) {
 			url = this.storageService.getPublicUrl(media.thumbnailPath);
+			expiresAt = null;
 		} else {
-			const command = new GetObjectCommand({
-				Bucket: this.storageService.bucket,
-				Key: media.thumbnailPath,
-			});
-			url = await getSignedUrl(this.s3 as never, command, {
-				expiresIn: this.signedUrlExpirySeconds,
-			});
+			url = await this.generatePresignedUrl(media.thumbnailPath, this.signedUrlExpirySeconds);
+			expiresAt = new Date(Date.now() + this.signedUrlExpirySeconds * 1000);
 		}
 
 		this.writeAccessLog(media.id, requesterId, 'thumbnail', ipAddress, userAgent).catch(() => {});
 
-		return url;
+		return { url, expiresAt };
+	}
+
+	// =========================================================================
+	// PATCH /media/v1/:id/share — ACL shared_with
+	// =========================================================================
+
+	/**
+	 * Étend la liste `shared_with` d'un média en y ajoutant des UUIDs (union,
+	 * pas de doublons). Seul le propriétaire peut modifier l'ACL. Utilisé
+	 * principalement par le front quand une image envoyée doit être rendue
+	 * accessible aux autres participants d'une conversation.
+	 */
+	async share(id: string, requesterId: string, userIdsToAdd: string[]): Promise<string[]> {
+		const sharedWith = await this.dataSource.transaction(async (manager) => {
+			const media = await this.mediaRepository.findById(id, manager);
+			if (!media) {
+				throw new NotFoundException(`Media ${id} not found`);
+			}
+			if (media.ownerId !== requesterId) {
+				throw new ForbiddenException(`You do not own media ${id}`);
+			}
+
+			const existing = new Set(media.sharedWith ?? []);
+			for (const uid of userIdsToAdd) {
+				if (uid && uid !== media.ownerId) existing.add(uid);
+			}
+			const next = Array.from(existing);
+			await this.mediaRepository.updateSharedWith(id, next.length > 0 ? next : null, manager);
+			return next;
+		});
+
+		// Invalide le cache méta (la version cachée contient encore l'ancienne ACL)
+		await this.cache.del(`media:meta:${id}`);
+
+		return sharedWith;
 	}
 
 	// =========================================================================
@@ -499,10 +619,24 @@ export class MediaService {
 		}
 	}
 
-	private enforceReadAccess(context: MediaContext, ownerId: string, requesterId: string): void {
-		if (!PUBLIC_CONTEXTS.has(context) && ownerId !== requesterId) {
-			throw new ForbiddenException('Access denied');
-		}
+	/**
+	 * Règle d'autorisation en lecture pour un média.
+	 * Ordre :
+	 *   1) contextes publics (avatar, group_icon) : toujours autorisé
+	 *   2) propriétaire du média
+	 *   3) utilisateur explicitement listé dans `shared_with`
+	 *      (typiquement, membre de la conversation où le média a été posté)
+	 */
+	private enforceReadAccess(
+		context: MediaContext | string,
+		ownerId: string,
+		sharedWith: string[] | null | undefined,
+		requesterId: string
+	): void {
+		if (PUBLIC_CONTEXTS.has(context)) return;
+		if (ownerId === requesterId) return;
+		if (sharedWith && sharedWith.includes(requesterId)) return;
+		throw new ForbiddenException('Access denied');
 	}
 
 	private async acquireSemaphore(userId: string): Promise<void> {
@@ -577,7 +711,7 @@ export class MediaService {
 			Bucket: this.storageService.bucket,
 			Key: storagePath,
 		});
-		return getSignedUrl(this.s3 as never, command, { expiresIn });
+		return getSignedUrl(this.presignerClient as never, command, { expiresIn });
 	}
 
 	private contextToStorageContext(context: MediaContext): StorageContext {
@@ -597,16 +731,42 @@ export class MediaService {
 		return new Date(Date.now() + ttlDays * 24 * 60 * 60 * 1000);
 	}
 
-	private buildUploadResponse(media: Media, _context: MediaContext): UploadMediaResponseDto {
-		const url = media.storagePath ? this.storageService.getPublicUrl(media.storagePath) : null;
-		const thumbnailUrl = media.thumbnailPath
-			? this.storageService.getPublicUrl(media.thumbnailPath)
+	/**
+	 * Construit la réponse de `POST /media/v1/upload` (WHISPR-917).
+	 *
+	 * - Contextes publics (avatars, group_icons) : URL publique statique.
+	 * - Contextes privés (messages) : URL présignée de courte durée, signée
+	 *   sur `S3_PUBLIC_ENDPOINT` si configuré, de sorte que le navigateur peut
+	 *   utiliser `url` directement dans `<img src>` sans header Authorization.
+	 * - Les clés suivent le nommage snake_case pour s'aligner sur les autres
+	 *   services REST (auth, user, messaging).
+	 */
+	private async buildUploadResponse(media: Media, _context: MediaContext): Promise<UploadMediaResponseDto> {
+		const presignExpiry = this.signedUrlExpirySeconds;
+		const isPublic = PUBLIC_CONTEXTS.has(media.context);
+
+		const url = media.storagePath
+			? isPublic
+				? this.storageService.getPublicUrl(media.storagePath)
+				: await this.generatePresignedUrl(media.storagePath, presignExpiry)
 			: null;
+
+		const thumbnail_url = media.thumbnailPath
+			? isPublic
+				? this.storageService.getPublicUrl(media.thumbnailPath)
+				: await this.generatePresignedUrl(media.thumbnailPath, presignExpiry)
+			: null;
+
+		// Pour les contenus privés, expires_at reflète la durée de vie de la
+		// signature et non le TTL logique du média. Pour les contenus publics,
+		// on conserve le TTL logique (media.expiresAt).
+		const expires_at = isPublic ? media.expiresAt : new Date(Date.now() + presignExpiry * 1000);
+
 		return {
-			mediaId: media.id,
+			media_id: media.id,
 			url,
-			thumbnailUrl,
-			expiresAt: media.expiresAt,
+			thumbnail_url,
+			expires_at,
 			context: media.context as MediaContext,
 			size: media.blobSize,
 		};

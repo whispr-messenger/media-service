@@ -2,12 +2,12 @@ import {
 	Controller,
 	Post,
 	Get,
+	Patch,
 	Delete,
 	Param,
 	Query,
 	UploadedFiles,
 	UseInterceptors,
-	Res,
 	Req,
 	HttpCode,
 	HttpStatus,
@@ -17,13 +17,14 @@ import {
 } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiResponse, ApiConsumes, ApiBody, ApiQuery } from '@nestjs/swagger';
-import { Response, Request } from 'express';
+import { Request } from 'express';
 import { MediaService } from './media.service';
 import {
 	MediaContext,
 	UploadMediaDto,
 	UploadMediaResponseDto,
 	MediaMetadataDto,
+	ShareMediaDto,
 } from './dto/upload-media.dto';
 import { UserQuotaResponseDto } from './dto/user-quota-response.dto';
 import { PaginatedMediaResponseDto } from './dto/paginated-media-response.dto';
@@ -51,6 +52,10 @@ export class MediaController {
 				thumbnail: { type: 'string', format: 'binary' },
 				context: { type: 'string', enum: Object.values(MediaContext) },
 				ownerId: { type: 'string', format: 'uuid' },
+				sharedWith: {
+					type: 'string',
+					description: 'JSON array or CSV of user UUIDs to share with',
+				},
 			},
 		},
 	})
@@ -90,7 +95,7 @@ export class MediaController {
 		const context = dto.context ?? MediaContext.MESSAGE;
 
 		this.logger.debug(`Upload request from user ${ownerId} context=${context}`);
-		return this.mediaService.upload(ownerId, file, context, thumbnail);
+		return this.mediaService.upload(ownerId, file, context, thumbnail, dto.sharedWith);
 	}
 
 	// =========================================================================
@@ -151,38 +156,74 @@ export class MediaController {
 	// GET /media/v1/:id/blob — WHISPR-365
 	// =========================================================================
 
+	// Retourne 200 JSON `{ url, expiresAt }` plutôt qu'un 302 : le redirect
+	// vers MinIO (même origine que l'API) propage l'en-tête `Authorization:
+	// Bearer …` qui, combiné à `X-Amz-Signature` dans l'URL présignée,
+	// déclenche une erreur S3 « multiple authentication types ». Le client
+	// fetch l'URL et la pose ensuite dans `<img src>` sans Authorization.
 	@Get(':id/blob')
-	@ApiOperation({ summary: 'Redirect to presigned blob URL' })
-	@ApiResponse({ status: 302, description: 'Redirect to signed URL' })
+	@ApiOperation({ summary: 'Get a presigned GET URL for the blob' })
+	@ApiResponse({ status: 200, description: 'Presigned blob URL' })
+	@ApiResponse({ status: 403, description: 'Access denied' })
 	@ApiResponse({ status: 404, description: 'Not found' })
-	async getBlobUrl(@Param('id') id: string, @Req() req: Request, @Res() res: Response): Promise<void> {
+	async getBlobUrl(
+		@Param('id') id: string,
+		@Req() req: Request
+	): Promise<{ url: string; expiresAt: Date | null }> {
 		const requesterId = (req as any).user?.userId as string;
 		if (!requesterId) {
 			throw new BadRequestException('Missing authenticated user');
 		}
 		const ip = (req.headers['x-forwarded-for'] as string) ?? req.socket?.remoteAddress;
 		const ua = req.headers['user-agent'];
-		const url = await this.mediaService.getBlobUrl(id, requesterId, ip, ua);
-		res.redirect(302, url);
+		return this.mediaService.getBlob(id, requesterId, ip, ua);
 	}
 
 	// =========================================================================
 	// GET /media/v1/:id/thumbnail — WHISPR-366
 	// =========================================================================
 
+	// Même logique que /blob (200 JSON). Quand aucune thumbnail n'est stockée,
+	// on renvoie `{ url: null, expiresAt: null }` plutôt qu'un 404, ce qui
+	// permet au client de fallback silencieusement sur /blob.
 	@Get(':id/thumbnail')
-	@ApiOperation({ summary: 'Redirect to presigned thumbnail URL' })
-	@ApiResponse({ status: 302, description: 'Redirect to thumbnail URL' })
-	@ApiResponse({ status: 404, description: 'Not found or no thumbnail' })
-	async getThumbnailUrl(@Param('id') id: string, @Req() req: Request, @Res() res: Response): Promise<void> {
+	@ApiOperation({ summary: 'Get a presigned GET URL for the thumbnail (url=null if none)' })
+	@ApiResponse({ status: 200, description: 'Presigned thumbnail URL or null' })
+	@ApiResponse({ status: 403, description: 'Access denied' })
+	@ApiResponse({ status: 404, description: 'Media not found' })
+	async getThumbnailUrl(
+		@Param('id') id: string,
+		@Req() req: Request
+	): Promise<{ url: string | null; expiresAt: Date | null }> {
 		const requesterId = (req as any).user?.userId as string;
 		if (!requesterId) {
 			throw new BadRequestException('Missing authenticated user');
 		}
 		const ip = (req.headers['x-forwarded-for'] as string) ?? req.socket?.remoteAddress;
 		const ua = req.headers['user-agent'];
-		const url = await this.mediaService.getThumbnailUrl(id, requesterId, ip, ua);
-		res.redirect(302, url);
+		return this.mediaService.getThumbnail(id, requesterId, ip, ua);
+	}
+
+	// =========================================================================
+	// PATCH /media/v1/:id/share — ACL shared_with
+	// =========================================================================
+
+	@Patch(':id/share')
+	@ApiOperation({ summary: 'Add users to the media shared_with ACL (owner only)' })
+	@ApiResponse({ status: 200, description: 'Updated shared_with list' })
+	@ApiResponse({ status: 403, description: 'Not owner' })
+	@ApiResponse({ status: 404, description: 'Not found' })
+	async share(
+		@Param('id') id: string,
+		@Req() req: Request,
+		@Body() dto: ShareMediaDto
+	): Promise<{ sharedWith: string[] }> {
+		const requesterId = (req as any).user?.userId as string;
+		if (!requesterId) {
+			throw new BadRequestException('Missing authenticated user');
+		}
+		const sharedWith = await this.mediaService.share(id, requesterId, dto.userIds);
+		return { sharedWith };
 	}
 
 	// =========================================================================
