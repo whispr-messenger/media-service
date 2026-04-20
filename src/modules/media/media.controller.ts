@@ -52,6 +52,10 @@ export class MediaController {
 				thumbnail: { type: 'string', format: 'binary' },
 				context: { type: 'string', enum: Object.values(MediaContext) },
 				ownerId: { type: 'string', format: 'uuid' },
+				sharedWith: {
+					type: 'string',
+					description: 'JSON array or CSV of user UUIDs to share with',
+				},
 			},
 		},
 	})

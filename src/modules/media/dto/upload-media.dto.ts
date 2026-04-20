@@ -18,9 +18,10 @@ function parseStringArray(value: unknown): string[] | undefined {
 		if (trimmed.startsWith('[')) {
 			try {
 				const parsed = JSON.parse(trimmed);
-				return Array.isArray(parsed) ? parsed.map(String) : undefined;
+				if (!Array.isArray(parsed)) return trimmed as unknown as string[];
+				return parsed.map(String);
 			} catch {
-				return undefined;
+				return trimmed as unknown as string[];
 			}
 		}
 		return trimmed
@@ -28,7 +29,7 @@ function parseStringArray(value: unknown): string[] | undefined {
 			.map((s) => s.trim())
 			.filter((s) => s.length > 0);
 	}
-	return undefined;
+	return value as unknown as string[];
 }
 
 export class UploadMediaDto {
