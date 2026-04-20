@@ -39,6 +39,12 @@ export class Media {
 	@Column({ name: 'is_active', type: 'boolean', default: true })
 	isActive: boolean;
 
+	// Liste d'utilisateurs explicitement autorisés à lire ce média en plus
+	// du propriétaire (ex. membres d'une conversation pour un média MESSAGE).
+	// NULL = pas d'ACL partagée (fallback sur owner + contextes publics).
+	@Column({ name: 'shared_with', type: 'uuid', array: true, nullable: true })
+	sharedWith: string[] | null;
+
 	@CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
 	createdAt: Date;
 
