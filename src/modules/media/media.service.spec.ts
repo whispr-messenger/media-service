@@ -474,6 +474,64 @@ describe('MediaService', () => {
 			expect(mockStorageService.getPublicUrl).toHaveBeenCalledWith(media.storagePath);
 		});
 
+		// WHISPR-985: expiresAt must reflect regeneration, not the stale DB value
+		describe('expiresAt on signed URL regeneration (WHISPR-985)', () => {
+			const SIGNED_URL_EXPIRY_SECONDS = 604800; // matches mockConfigService default
+
+			it('returns a freshly computed expiresAt when no cached expiry exists', async () => {
+				const media = makeMedia({ signedUrlExpiresAt: null });
+				mockMediaRepository.findById.mockResolvedValue(media);
+				mockMediaRepository.updateSignedUrlExpiry.mockResolvedValue(undefined);
+
+				const before = Date.now();
+				const result = await service.getBlob('media-uuid-1', 'user-uuid-1');
+				const after = Date.now();
+
+				expect(result.expiresAt).toBeInstanceOf(Date);
+				const expiryMs = (result.expiresAt as Date).getTime();
+				expect(expiryMs).toBeGreaterThanOrEqual(before + SIGNED_URL_EXPIRY_SECONDS * 1000);
+				expect(expiryMs).toBeLessThanOrEqual(after + SIGNED_URL_EXPIRY_SECONDS * 1000);
+				expect(mockMediaRepository.updateSignedUrlExpiry).toHaveBeenCalledWith(
+					'media-uuid-1',
+					expect.any(Date),
+					mockEntityManager
+				);
+			});
+
+			it('returns a freshly computed expiresAt when the cached expiry is in the past', async () => {
+				const stale = new Date(Date.now() - 60_000);
+				const media = makeMedia({ signedUrlExpiresAt: stale });
+				mockMediaRepository.findById.mockResolvedValue(media);
+				mockMediaRepository.updateSignedUrlExpiry.mockResolvedValue(undefined);
+
+				const result = await service.getBlob('media-uuid-1', 'user-uuid-1');
+
+				expect(result.expiresAt).not.toBeNull();
+				expect((result.expiresAt as Date).getTime()).toBeGreaterThan(stale.getTime());
+				expect(mockMediaRepository.updateSignedUrlExpiry).toHaveBeenCalled();
+			});
+
+			it('keeps the cached expiresAt when the signed URL is still valid', async () => {
+				const future = new Date(Date.now() + 60 * 60 * 1000); // +1h
+				const media = makeMedia({ signedUrlExpiresAt: future });
+				mockMediaRepository.findById.mockResolvedValue(media);
+
+				const result = await service.getBlob('media-uuid-1', 'user-uuid-1');
+
+				expect(result.expiresAt).toEqual(future);
+				expect(mockMediaRepository.updateSignedUrlExpiry).not.toHaveBeenCalled();
+			});
+
+			it('returns expiresAt=null for a public-context blob', async () => {
+				const media = makeMedia({ ownerId: 'owner-1', context: MediaContext.AVATAR });
+				mockMediaRepository.findById.mockResolvedValue(media);
+
+				const result = await service.getBlob('media-uuid-1', 'any-user');
+
+				expect(result.expiresAt).toBeNull();
+			});
+		});
+
 		// WHISPR-933: media_downloads_total counter
 		it('increments downloadsTotal on successful blob URL issuance', async () => {
 			const media = makeMedia();
