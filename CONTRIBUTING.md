@@ -13,3 +13,9 @@
 npm install
 npm run start:dev
 ```
+
+## Conventions
+
+- Conventional commits (`feat`, `fix`, `docs`, `test`)
+- Branches : `WHISPR-XXX-description`
+- Tests avant chaque PR
