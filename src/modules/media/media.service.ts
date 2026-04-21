@@ -388,6 +388,8 @@ export class MediaService {
 		// Async access log (non-blocking)
 		this.writeAccessLog(media.id, requesterId, 'blob', ipAddress, userAgent).catch(() => {});
 
+		this.metricsService.downloadsTotal.inc();
+
 		return { url, expiresAt };
 	}
 
@@ -430,6 +432,8 @@ export class MediaService {
 		}
 
 		this.writeAccessLog(media.id, requesterId, 'thumbnail', ipAddress, userAgent).catch(() => {});
+
+		this.metricsService.downloadsTotal.inc();
 
 		return { url, expiresAt };
 	}
@@ -516,6 +520,8 @@ export class MediaService {
 				`Failed to publish media.deleted for media ${id}: ${err instanceof Error ? err.message : String(err)}`
 			);
 		});
+
+		this.metricsService.deletesTotal.inc();
 
 		this.logger.debug(`Soft-deleted media ${id} and removed S3 objects`);
 	}
