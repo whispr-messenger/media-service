@@ -16,6 +16,7 @@ import {
 	Body,
 } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
+import { Throttle } from '@nestjs/throttler';
 import { ApiTags, ApiOperation, ApiResponse, ApiConsumes, ApiBody, ApiQuery } from '@nestjs/swagger';
 import { Request } from 'express';
 import { MediaService } from './media.service';
@@ -49,6 +50,11 @@ export class MediaController {
 	// =========================================================================
 
 	@Post('upload')
+	// WHISPR-1012: bornes plus strictes que les tiers globaux
+	// (SHORT 3/1s, MEDIUM 20/10s, LONG 100/60s). Un upload consomme S3 +
+	// quota DB + semaphore, donc on cap 20 envois/minute/IP pour limiter
+	// l'abus sans gêner un usage normal.
+	@Throttle({ default: { ttl: 60_000, limit: 20 } })
 	@ApiOperation({ summary: 'Upload a media file (blob + optional thumbnail)' })
 	@ApiConsumes('multipart/form-data')
 	@ApiBody({

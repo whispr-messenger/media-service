@@ -1,10 +1,14 @@
 import { Controller, Get, Res, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { SkipThrottle } from '@nestjs/throttler';
 import { Response } from 'express';
 import { Public } from '../auth/public.decorator';
 import { MetricsService } from './metrics.service';
 import { MetricsGuard } from './metrics.guard';
 
+// Prometheus scrape endpoint — already protected by MetricsGuard,
+// not subject to user-facing rate limiting (WHISPR-1012).
+@SkipThrottle()
 @Public()
 @UseGuards(MetricsGuard)
 @ApiTags('Metrics')
