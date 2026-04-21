@@ -137,7 +137,7 @@ Commit message format (Conventional Commits):
 
 ### Impact on automated releases
 
-When `deploy/preprod` is merged into `main`, the `release.yml` workflow
+When a PR is merged into `main`, the `release.yml` workflow
 auto-creates a GitHub Release with a semver tag. **The commit prefixes
 directly control the version bump:**
 
