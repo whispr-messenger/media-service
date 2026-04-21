@@ -446,7 +446,7 @@ export class MediaService {
 	 * accessible aux autres participants d'une conversation.
 	 */
 	async share(id: string, requesterId: string, userIdsToAdd: string[]): Promise<string[]> {
-		const sharedWith = await this.dataSource.transaction(async (manager) => {
+		const { sharedWith, changed } = await this.dataSource.transaction(async (manager) => {
 			const media = await this.mediaRepository.findById(id, manager);
 			if (!media) {
 				throw new NotFoundException(`Media ${id} not found`);
@@ -455,17 +455,28 @@ export class MediaService {
 				throw new ForbiddenException(`You do not own media ${id}`);
 			}
 
-			const existing = new Set(media.sharedWith ?? []);
+			const existingSet = new Set(media.sharedWith ?? []);
+			const beforeSize = existingSet.size;
 			for (const uid of userIdsToAdd) {
-				if (uid && uid !== media.ownerId) existing.add(uid);
+				if (uid && uid !== media.ownerId) existingSet.add(uid);
 			}
-			const next = Array.from(existing);
+			const next = Array.from(existingSet);
+
+			// WHISPR-986: the ACL is identical iff no new UUID made it into the
+			// set. Skip the DB write and cache invalidation on a no-op, which
+			// is the common case when the client re-submits the same list.
+			if (existingSet.size === beforeSize) {
+				return { sharedWith: next, changed: false };
+			}
+
 			await this.mediaRepository.updateSharedWith(id, next.length > 0 ? next : null, manager);
-			return next;
+			return { sharedWith: next, changed: true };
 		});
 
-		// Invalide le cache méta (la version cachée contient encore l'ancienne ACL)
-		await this.cache.del(`media:meta:${id}`);
+		if (changed) {
+			// Invalide le cache méta (la version cachée contient encore l'ancienne ACL)
+			await this.cache.del(`media:meta:${id}`);
+		}
 
 		return sharedWith;
 	}
