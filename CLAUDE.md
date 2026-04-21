@@ -129,10 +129,30 @@ Commit message format (Conventional Commits):
 <optional body — explain the why, not the what>
 ```
 
-- **type**: `fix`, `feat`, `refactor`, `test`, `docs`, `chore`
-- **scope**: module name, e.g. `quota`, `media`, `storage`
+- **type**: `fix`, `feat`, `refactor`, `test`, `docs`, `chore`, `ci`, `perf`
+- **scope**: module name, e.g. `quota`, `media`, `storage`, `ci`, `release`
 - Do **not** mention Claude, AI, or any tooling in the commit message.
+- Do **not** use emojis in commit messages.
 - Do **not** use `--no-verify` to skip hooks.
+
+### Impact on automated releases
+
+When a PR is merged into `main`, the `release.yml` workflow
+auto-creates a GitHub Release with a semver tag. **The commit prefixes
+directly control the version bump:**
+
+| Prefix | Version bump | Example |
+|--------|-------------|---------|
+| `fix:`, `chore:`, `refactor:`, `test:`, `docs:`, `ci:` | **patch** (0.1.0 → 0.1.1) | `fix(media): handle null thumbnail` |
+| `feat:` | **minor** (0.1.0 → 0.2.0) | `feat(quota): add storage alerts` |
+| `<type>!:` or body contains `BREAKING CHANGE` | **major** (0.1.0 → 1.0.0) | `feat(media)!: remove v1 prefix` |
+
+The highest bump wins: if a release contains both `fix:` and `feat:` commits,
+the version gets a **minor** bump. If any commit has `!` or `BREAKING CHANGE`,
+it gets a **major** bump.
+
+Choose your prefix carefully — it is not just a label, it determines the
+next release version.
 
 Example:
 ```
@@ -363,7 +383,7 @@ Then pass it as a number in `createJiraIssue`:
 
 | Sprint | ID | Board ID |
 |--------|----|----------|
-| Sprint 6 | `200` | `34` |
+| Sprint 8 | `299` | `34` |
 
 ### Tools that do NOT work
 
