@@ -710,6 +710,54 @@ describe('MediaService', () => {
 
 			expect(mockCache.del).toHaveBeenCalledWith('media:meta:media-uuid-1');
 		});
+
+		// WHISPR-986: no-op when the ACL is identical to what's already stored
+		describe('ACL no-op optimisation', () => {
+			it('skips updateSharedWith when all requested UUIDs are already in the ACL', async () => {
+				const media = makeMedia({
+					ownerId: 'user-uuid-1',
+					sharedWith: ['uid-1', 'uid-2'],
+				});
+				mockMediaRepository.findById.mockResolvedValue(media);
+
+				const result = await service.share('media-uuid-1', 'user-uuid-1', ['uid-1', 'uid-2']);
+
+				expect(result).toEqual(expect.arrayContaining(['uid-1', 'uid-2']));
+				expect(mockMediaRepository.updateSharedWith).not.toHaveBeenCalled();
+				expect(mockCache.del).not.toHaveBeenCalled();
+			});
+
+			it('skips updateSharedWith when userIdsToAdd is empty', async () => {
+				const media = makeMedia({ ownerId: 'user-uuid-1', sharedWith: ['uid-1'] });
+				mockMediaRepository.findById.mockResolvedValue(media);
+
+				await service.share('media-uuid-1', 'user-uuid-1', []);
+
+				expect(mockMediaRepository.updateSharedWith).not.toHaveBeenCalled();
+				expect(mockCache.del).not.toHaveBeenCalled();
+			});
+
+			it('skips updateSharedWith when the only requested UUID is the owner', async () => {
+				const media = makeMedia({ ownerId: 'user-uuid-1', sharedWith: null });
+				mockMediaRepository.findById.mockResolvedValue(media);
+
+				await service.share('media-uuid-1', 'user-uuid-1', ['user-uuid-1']);
+
+				expect(mockMediaRepository.updateSharedWith).not.toHaveBeenCalled();
+				expect(mockCache.del).not.toHaveBeenCalled();
+			});
+
+			it('still writes when at least one new UUID joins the ACL', async () => {
+				const media = makeMedia({ ownerId: 'user-uuid-1', sharedWith: ['uid-1'] });
+				mockMediaRepository.findById.mockResolvedValue(media);
+				mockMediaRepository.updateSharedWith.mockResolvedValue(undefined);
+
+				await service.share('media-uuid-1', 'user-uuid-1', ['uid-1', 'uid-2']);
+
+				expect(mockMediaRepository.updateSharedWith).toHaveBeenCalled();
+				expect(mockCache.del).toHaveBeenCalledWith('media:meta:media-uuid-1');
+			});
+		});
 	});
 
 	describe('upload() with sharedWith', () => {
