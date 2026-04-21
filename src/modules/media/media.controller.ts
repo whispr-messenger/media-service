@@ -29,6 +29,14 @@ import {
 import { UserQuotaResponseDto } from './dto/user-quota-response.dto';
 import { PaginatedMediaResponseDto } from './dto/paginated-media-response.dto';
 
+/**
+ * Hard upper bound applied by multer / FileFieldsInterceptor so a malicious
+ * client can't DoS the pod by streaming an unbounded body into memory
+ * (WHISPR-1013). Per-context limits (MESSAGE=100MB, AVATAR/GROUP_ICON=5MB)
+ * are still enforced at the service layer — this is the outer guard.
+ */
+export const UPLOAD_MAX_BYTES = 100 * 1024 * 1024;
+
 @ApiTags('Media')
 @Controller()
 export class MediaController {
@@ -65,10 +73,13 @@ export class MediaController {
 	@ApiResponse({ status: 415, description: 'Content-Type mismatch (magic bytes)' })
 	@ApiResponse({ status: 429, description: 'Too many concurrent uploads' })
 	@UseInterceptors(
-		FileFieldsInterceptor([
-			{ name: 'file', maxCount: 1 },
-			{ name: 'thumbnail', maxCount: 1 },
-		])
+		FileFieldsInterceptor(
+			[
+				{ name: 'file', maxCount: 1 },
+				{ name: 'thumbnail', maxCount: 1 },
+			],
+			{ limits: { fileSize: UPLOAD_MAX_BYTES } }
+		)
 	)
 	async upload(
 		@Req() req: Request,
