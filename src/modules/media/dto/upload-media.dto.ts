@@ -43,7 +43,7 @@ export class UploadMediaDto {
 	@IsUUID()
 	ownerId?: string;
 
-	// WHISPR-XXX : liste d'UUIDs supplémentaires autorisés à lire ce média
+	// WHISPR-941 : liste d'UUIDs supplémentaires autorisés à lire ce média
 	// (typiquement, les membres de la conversation à laquelle il sera attaché).
 	// Peut être envoyé en multipart sous forme de CSV ("uuid1,uuid2") ou de
 	// JSON ("[\"uuid1\",\"uuid2\"]").
@@ -59,7 +59,7 @@ export class UploadMediaDto {
 }
 
 export class ShareMediaDto {
-	// WHISPR-XXX : PATCH /:id/share — liste d'UUIDs à ajouter à l'ACL.
+	// WHISPR-941 : PATCH /:id/share — liste d'UUIDs à ajouter à l'ACL.
 	@ApiProperty({
 		description: 'UUIDs to add to the shared_with ACL (union with existing)',
 		type: [String],
