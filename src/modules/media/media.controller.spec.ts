@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException } from '@nestjs/common';
-import { MediaController } from './media.controller';
+import { MediaController, UPLOAD_MAX_BYTES } from './media.controller';
 import { MediaService } from './media.service';
 import { MediaContext, UploadMediaDto } from './dto/upload-media.dto';
 import type { Request } from 'express';
@@ -81,6 +81,11 @@ describe('MediaController', () => {
 			await expect(
 				controller.upload(makeReq('user-uuid-1'), { file: [file] }, mismatchDto)
 			).rejects.toThrow(BadRequestException);
+		});
+
+		// WHISPR-1013: guard against unbounded uploads at the multer layer
+		it('exposes a 100 MB upload ceiling via UPLOAD_MAX_BYTES', () => {
+			expect(UPLOAD_MAX_BYTES).toBe(100 * 1024 * 1024);
 		});
 	});
 
