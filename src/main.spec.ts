@@ -29,6 +29,8 @@ describe('Bootstrap setup (main.ts)', () => {
 	let mockSetGlobalPrefix: jest.Mock;
 	let mockEnableVersioning: jest.Mock;
 	let mockUseGlobalInterceptors: jest.Mock;
+	let mockEnableCors: jest.Mock;
+	let mockConfigService: { get: jest.Mock };
 
 	beforeEach(async () => {
 		jest.resetModules();
@@ -40,13 +42,20 @@ describe('Bootstrap setup (main.ts)', () => {
 		mockSetGlobalPrefix = jest.fn();
 		mockEnableVersioning = jest.fn();
 		mockUseGlobalInterceptors = jest.fn();
+		mockEnableCors = jest.fn();
 
-		const mockConfigService = { get: jest.fn().mockReturnValue(3002) };
+		mockConfigService = {
+			get: jest.fn((key: string, def?: unknown) => {
+				if (key === 'HTTP_PORT') return 3002;
+				return def;
+			}),
+		};
+
 		const mockApp = {
 			use: mockUse,
 			useGlobalPipes: mockUseGlobalPipes,
 			enableShutdownHooks: mockEnableShutdownHooks,
-			enableCors: jest.fn(),
+			enableCors: mockEnableCors,
 			listen: mockListen,
 			setGlobalPrefix: mockSetGlobalPrefix,
 			enableVersioning: mockEnableVersioning,
@@ -94,5 +103,50 @@ describe('Bootstrap setup (main.ts)', () => {
 		await import('./main');
 
 		expect(mockEnableShutdownHooks).toHaveBeenCalledTimes(1);
+	});
+
+	describe('CORS (WHISPR-945)', () => {
+		it('does NOT enable CORS when CORS_ALLOWED_ORIGINS is unset', async () => {
+			await import('./main');
+
+			expect(mockEnableCors).not.toHaveBeenCalled();
+		});
+
+		it('registers the env allowlist when CORS_ALLOWED_ORIGINS is provided', async () => {
+			mockConfigService.get.mockImplementation((key: string, def?: unknown) => {
+				if (key === 'HTTP_PORT') return 3002;
+				if (key === 'CORS_ALLOWED_ORIGINS')
+					return ' https://whispr.devzeyu.com , http://localhost:19006 ';
+				return def;
+			});
+
+			await import('./main');
+
+			expect(mockEnableCors).toHaveBeenCalledWith({
+				origin: ['https://whispr.devzeyu.com', 'http://localhost:19006'],
+				methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+				allowedHeaders: [
+					'Authorization',
+					'Content-Type',
+					'Accept',
+					'Origin',
+					'X-Requested-With',
+					'X-Device-Type',
+				],
+				credentials: true,
+			});
+		});
+
+		it('does not enable CORS when the env var contains only whitespace/commas', async () => {
+			mockConfigService.get.mockImplementation((key: string, def?: unknown) => {
+				if (key === 'HTTP_PORT') return 3002;
+				if (key === 'CORS_ALLOWED_ORIGINS') return ' , , ';
+				return def;
+			});
+
+			await import('./main');
+
+			expect(mockEnableCors).not.toHaveBeenCalled();
+		});
 	});
 });
