@@ -393,6 +393,33 @@ describe('MediaService', () => {
 
 			await expect(service.delete('missing', 'user-uuid-1')).rejects.toThrow(NotFoundException);
 		});
+
+		// WHISPR-934: media_deletes_total counter
+		it('increments deletesTotal on successful delete', async () => {
+			const media = makeMedia();
+			mockMediaRepository.findById.mockResolvedValue(media);
+
+			await service.delete('media-uuid-1', 'user-uuid-1');
+
+			expect(mockMetricsService.deletesTotal.inc).toHaveBeenCalledTimes(1);
+		});
+
+		it('does not increment deletesTotal when media is not found', async () => {
+			mockMediaRepository.findById.mockResolvedValue(null);
+
+			await expect(service.delete('missing', 'user-uuid-1')).rejects.toThrow(NotFoundException);
+
+			expect(mockMetricsService.deletesTotal.inc).not.toHaveBeenCalled();
+		});
+
+		it('does not increment deletesTotal when requester is not the owner', async () => {
+			const media = makeMedia({ ownerId: 'owner-1' });
+			mockMediaRepository.findById.mockResolvedValue(media);
+
+			await expect(service.delete('media-uuid-1', 'other-user')).rejects.toThrow(ForbiddenException);
+
+			expect(mockMetricsService.deletesTotal.inc).not.toHaveBeenCalled();
+		});
 	});
 
 	describe('getBlob()', () => {
@@ -446,6 +473,34 @@ describe('MediaService', () => {
 			expect(result.url).toBe(`http://minio:9000/test-bucket/${media.storagePath}`);
 			expect(mockStorageService.getPublicUrl).toHaveBeenCalledWith(media.storagePath);
 		});
+
+		// WHISPR-933: media_downloads_total counter
+		it('increments downloadsTotal on successful blob URL issuance', async () => {
+			const media = makeMedia();
+			mockMediaRepository.findById.mockResolvedValue(media);
+			mockMediaRepository.updateSignedUrlExpiry.mockResolvedValue(undefined);
+
+			await service.getBlob('media-uuid-1', 'user-uuid-1');
+
+			expect(mockMetricsService.downloadsTotal.inc).toHaveBeenCalledTimes(1);
+		});
+
+		it('does not increment downloadsTotal when access is denied', async () => {
+			const media = makeMedia({ ownerId: 'owner-1' });
+			mockMediaRepository.findById.mockResolvedValue(media);
+
+			await expect(service.getBlob('media-uuid-1', 'other-user')).rejects.toThrow(ForbiddenException);
+
+			expect(mockMetricsService.downloadsTotal.inc).not.toHaveBeenCalled();
+		});
+
+		it('does not increment downloadsTotal when media is not found', async () => {
+			mockMediaRepository.findById.mockResolvedValue(null);
+
+			await expect(service.getBlob('missing', 'user-uuid-1')).rejects.toThrow(NotFoundException);
+
+			expect(mockMetricsService.downloadsTotal.inc).not.toHaveBeenCalled();
+		});
 	});
 
 	describe('getThumbnail()', () => {
@@ -495,6 +550,41 @@ describe('MediaService', () => {
 			mockMediaRepository.findById.mockResolvedValue(null);
 
 			await expect(service.getThumbnail('missing', 'user-uuid-1')).rejects.toThrow(NotFoundException);
+		});
+
+		// WHISPR-933: media_downloads_total counter
+		it('increments downloadsTotal when a thumbnail URL is issued', async () => {
+			const media = makeMedia({ thumbnailPath: 'thumbnails/user-uuid-1/media-uuid-1.bin' });
+			mockMediaRepository.findById.mockResolvedValue(media);
+
+			await service.getThumbnail('media-uuid-1', 'user-uuid-1');
+
+			expect(mockMetricsService.downloadsTotal.inc).toHaveBeenCalledTimes(1);
+		});
+
+		// An empty response (no thumbnail stored) is not a download — don't inflate the counter.
+		it('does not increment downloadsTotal when no thumbnail exists', async () => {
+			const media = makeMedia({ thumbnailPath: null });
+			mockMediaRepository.findById.mockResolvedValue(media);
+
+			await service.getThumbnail('media-uuid-1', 'user-uuid-1');
+
+			expect(mockMetricsService.downloadsTotal.inc).not.toHaveBeenCalled();
+		});
+
+		it('does not increment downloadsTotal when access is denied', async () => {
+			const media = makeMedia({
+				ownerId: 'owner-1',
+				context: MediaContext.MESSAGE,
+				thumbnailPath: 'thumbnails/owner-1/media-uuid-1.bin',
+			});
+			mockMediaRepository.findById.mockResolvedValue(media);
+
+			await expect(service.getThumbnail('media-uuid-1', 'other-user')).rejects.toThrow(
+				ForbiddenException
+			);
+
+			expect(mockMetricsService.downloadsTotal.inc).not.toHaveBeenCalled();
 		});
 	});
 
