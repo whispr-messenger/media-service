@@ -378,10 +378,7 @@ export class MediaService {
 				requesterId
 			);
 
-			const url = await this.getOrGenerateSignedUrl(media, manager);
-			const isPublic = PUBLIC_CONTEXTS.has(media.context);
-			// Pour les contenus publics l'URL ne signe pas → pas d'expiration de signature.
-			const expiresAt = isPublic ? null : media.signedUrlExpiresAt;
+			const { url, expiresAt } = await this.getOrGenerateSignedUrl(media, manager);
 			return { media, url, expiresAt };
 		});
 
@@ -692,9 +689,13 @@ export class MediaService {
 		}
 	}
 
-	private async getOrGenerateSignedUrl(media: Media, manager: EntityManager): Promise<string> {
+	private async getOrGenerateSignedUrl(
+		media: Media,
+		manager: EntityManager
+	): Promise<{ url: string; expiresAt: Date | null }> {
+		// Public contexts serve the blob via a non-signed URL — no expiry applies.
 		if (PUBLIC_CONTEXTS.has(media.context)) {
-			return this.storageService.getPublicUrl(media.storagePath);
+			return { url: this.storageService.getPublicUrl(media.storagePath), expiresAt: null };
 		}
 
 		const now = new Date();
@@ -703,13 +704,18 @@ export class MediaService {
 				1,
 				Math.floor((media.signedUrlExpiresAt.getTime() - now.getTime()) / 1000)
 			);
-			return this.generatePresignedUrl(media.storagePath, remaining);
+			const url = await this.generatePresignedUrl(media.storagePath, remaining);
+			return { url, expiresAt: media.signedUrlExpiresAt };
 		}
 
+		// WHISPR-985: regenerated URL → return the freshly computed expiry
+		// (and keep the in-memory entity in sync) so callers don't observe
+		// the stale value that the DB just overwrote.
 		const expiresAt = new Date(now.getTime() + this.signedUrlExpirySeconds * 1000);
 		const url = await this.generatePresignedUrl(media.storagePath, this.signedUrlExpirySeconds);
 		await this.mediaRepository.updateSignedUrlExpiry(media.id, expiresAt, manager);
-		return url;
+		media.signedUrlExpiresAt = expiresAt;
+		return { url, expiresAt };
 	}
 
 	private generatePresignedUrl(storagePath: string, expiresIn: number): Promise<string> {
