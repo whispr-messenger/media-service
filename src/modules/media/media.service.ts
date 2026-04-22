@@ -8,6 +8,7 @@ import {
 	NotFoundException,
 	NotImplementedException,
 	PayloadTooLargeException,
+	StreamableFile,
 	UnsupportedMediaTypeException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -460,6 +461,64 @@ export class MediaService {
 		this.metricsService.downloadsTotal.inc();
 
 		return { url, expiresAt };
+	}
+
+	// =========================================================================
+	// GET /media/v1/:id/blob?stream=1 — fallback bytes proxy
+	// =========================================================================
+
+	// Stream raw blob bytes back to the client. Used by clients that cannot
+	// reach the presigned URL hostname directly (typically mobile/web apps
+	// behind k8s when `S3_PUBLIC_ENDPOINT` is not configured and the signed
+	// URL points at a cluster-internal MinIO endpoint).
+	async streamBlob(
+		id: string,
+		requesterId: string,
+		ipAddress?: string,
+		userAgent?: string
+	): Promise<StreamableFile> {
+		const media = await this.dataSource.transaction((manager) =>
+			this.mediaRepository.findById(id, manager)
+		);
+		if (!media) {
+			throw new NotFoundException(`Media ${id} not found`);
+		}
+		this.enforceReadAccess(media.context as MediaContext, media.ownerId, media.sharedWith, requesterId);
+
+		const bodyStream = await this.storageService.download(media.storagePath);
+		this.writeAccessLog(media.id, requesterId, 'blob', ipAddress, userAgent).catch(() => {});
+
+		return new StreamableFile(bodyStream, {
+			type: media.contentType,
+			length: media.blobSize,
+		});
+	}
+
+	// Stream raw thumbnail bytes back to the client, or `null` when no
+	// thumbnail is stored (the controller converts that into a 404).
+	async streamThumbnail(
+		id: string,
+		requesterId: string,
+		ipAddress?: string,
+		userAgent?: string
+	): Promise<StreamableFile | null> {
+		const media = await this.dataSource.transaction((manager) =>
+			this.mediaRepository.findById(id, manager)
+		);
+		if (!media) {
+			throw new NotFoundException(`Media ${id} not found`);
+		}
+		this.enforceReadAccess(media.context as MediaContext, media.ownerId, media.sharedWith, requesterId);
+
+		if (!media.thumbnailPath) return null;
+
+		const bodyStream = await this.storageService.download(media.thumbnailPath);
+		this.writeAccessLog(media.id, requesterId, 'thumbnail', ipAddress, userAgent).catch(() => {});
+
+		// Le contentType de la thumbnail n'est pas persisté (seul celui du blob
+		// l'est). Les thumbnails sont toujours image/jpeg|png|gif|webp|heic|heif
+		// — on renvoie `image/*` laisser le client décoder par magic bytes.
+		return new StreamableFile(bodyStream, { type: 'image/*' });
 	}
 
 	// =========================================================================

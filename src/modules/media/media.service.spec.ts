@@ -20,6 +20,7 @@ import { MediaContext } from './dto/upload-media.dto';
 import { REDIS_CLIENT } from './media.tokens';
 import { UserQuota } from './entities/user-quota.entity';
 import { MetricsService } from '../metrics/metrics.service';
+import { Readable } from 'stream';
 
 jest.mock('@aws-sdk/s3-request-presigner', () => ({
 	getSignedUrl: jest.fn().mockResolvedValue('https://presigned.url/file'),
@@ -643,6 +644,77 @@ describe('MediaService', () => {
 			);
 
 			expect(mockMetricsService.downloadsTotal.inc).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('streamBlob()', () => {
+		it('streams blob bytes back to the owner with the stored content type', async () => {
+			const media = makeMedia({ contentType: 'image/png', blobSize: 42 });
+			mockMediaRepository.findById.mockResolvedValue(media);
+			const body = Readable.from(Buffer.from('pngbytes'));
+			mockStorageService.download.mockResolvedValueOnce(body);
+
+			const streamable = await service.streamBlob('media-uuid-1', 'user-uuid-1');
+
+			expect(mockStorageService.download).toHaveBeenCalledWith(media.storagePath);
+			expect(streamable.getStream()).toBe(body);
+			expect((streamable as any).options).toMatchObject({
+				type: 'image/png',
+				length: 42,
+			});
+		});
+
+		it('denies access for a user not listed in sharedWith', async () => {
+			const media = makeMedia({ ownerId: 'owner-1', sharedWith: ['friend-1'] });
+			mockMediaRepository.findById.mockResolvedValue(media);
+
+			await expect(service.streamBlob('media-uuid-1', 'stranger')).rejects.toThrow(ForbiddenException);
+			expect(mockStorageService.download).not.toHaveBeenCalled();
+		});
+
+		it('throws NotFoundException when media is missing', async () => {
+			mockMediaRepository.findById.mockResolvedValue(null);
+			await expect(service.streamBlob('missing', 'user-uuid-1')).rejects.toThrow(NotFoundException);
+		});
+	});
+
+	describe('streamThumbnail()', () => {
+		it('returns null when no thumbnail is stored (controller converts to 404)', async () => {
+			const media = makeMedia({ thumbnailPath: null });
+			mockMediaRepository.findById.mockResolvedValue(media);
+
+			const result = await service.streamThumbnail('media-uuid-1', 'user-uuid-1');
+
+			expect(result).toBeNull();
+			expect(mockStorageService.download).not.toHaveBeenCalled();
+		});
+
+		it('streams thumbnail bytes back when the thumbnail exists', async () => {
+			const media = makeMedia({
+				thumbnailPath: 'thumbnails/user-uuid-1/media-uuid-1.bin',
+			});
+			mockMediaRepository.findById.mockResolvedValue(media);
+			const body = Readable.from(Buffer.from('jpegbytes'));
+			mockStorageService.download.mockResolvedValueOnce(body);
+
+			const streamable = await service.streamThumbnail('media-uuid-1', 'user-uuid-1');
+
+			expect(streamable).not.toBeNull();
+			expect(mockStorageService.download).toHaveBeenCalledWith(media.thumbnailPath);
+			expect((streamable as any).getStream()).toBe(body);
+			expect((streamable as any).options).toMatchObject({ type: 'image/*' });
+		});
+
+		it('denies access when the requester is neither owner nor in sharedWith', async () => {
+			const media = makeMedia({
+				ownerId: 'owner-1',
+				thumbnailPath: 'thumbnails/owner-1/media-uuid-1.bin',
+			});
+			mockMediaRepository.findById.mockResolvedValue(media);
+
+			await expect(service.streamThumbnail('media-uuid-1', 'stranger')).rejects.toThrow(
+				ForbiddenException
+			);
 		});
 	});
 
