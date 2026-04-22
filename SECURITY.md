@@ -2,7 +2,7 @@
 
 ## Chiffrement
 
-Tous les fichiers sont chiffrés en AES-256-GCM avant stockage dans GCS.
+Tous les fichiers sont chiffrés en AES-256-GCM avant stockage dans S3 (MinIO).
 
 ## Authentification
 
