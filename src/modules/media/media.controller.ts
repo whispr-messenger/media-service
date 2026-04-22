@@ -191,7 +191,7 @@ export class MediaController {
 		if (!requesterId) {
 			throw new BadRequestException('Missing authenticated user');
 		}
-		const ip = (req.headers['x-forwarded-for'] as string) ?? req.socket?.remoteAddress;
+		const ip = this.extractClientIp(req);
 		const ua = req.headers['user-agent'];
 		return this.mediaService.getBlob(id, requesterId, ip, ua);
 	}
@@ -216,7 +216,7 @@ export class MediaController {
 		if (!requesterId) {
 			throw new BadRequestException('Missing authenticated user');
 		}
-		const ip = (req.headers['x-forwarded-for'] as string) ?? req.socket?.remoteAddress;
+		const ip = this.extractClientIp(req);
 		const ua = req.headers['user-agent'];
 		return this.mediaService.getThumbnail(id, requesterId, ip, ua);
 	}
@@ -258,8 +258,28 @@ export class MediaController {
 		if (!requesterId) {
 			throw new BadRequestException('Missing authenticated user');
 		}
-		const ip = (req.headers['x-forwarded-for'] as string) ?? req.socket?.remoteAddress;
+		const ip = this.extractClientIp(req);
 		const ua = req.headers['user-agent'];
 		await this.mediaService.delete(id, requesterId, ip, ua);
+	}
+
+	/**
+	 * Extrait la première IP client exploitable depuis la requête.
+	 *
+	 * `x-forwarded-for` peut contenir une liste CSV "client, proxy1, proxy2"
+	 * et la valeur peut aussi arriver en array quand le header est dupliqué.
+	 * On ne garde que le premier token, on le tronque à 45 caractères (IPv6)
+	 * pour rester sous la contrainte de la colonne `ip_address`, et on
+	 * retombe sur l'adresse TCP si le header est absent. Sans ça, un client
+	 * malveillant peut insérer un header géant qui fait échouer l'insert DB.
+	 */
+	private extractClientIp(req: Request): string | undefined {
+		const forwarded = req.headers['x-forwarded-for'];
+		const forwardedStr = Array.isArray(forwarded) ? forwarded[0] : forwarded;
+		if (typeof forwardedStr === 'string' && forwardedStr.length > 0) {
+			const first = forwardedStr.split(',')[0].trim();
+			if (first) return first.slice(0, 45);
+		}
+		return req.socket?.remoteAddress?.slice(0, 45);
 	}
 }
