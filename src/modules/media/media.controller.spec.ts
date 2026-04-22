@@ -12,6 +12,8 @@ const mockMediaService = {
 	getMetadata: jest.fn(),
 	getBlob: jest.fn(),
 	getThumbnail: jest.fn(),
+	streamBlob: jest.fn(),
+	streamThumbnail: jest.fn(),
 	share: jest.fn(),
 	delete: jest.fn(),
 	getUserQuota: jest.fn(),
@@ -105,12 +107,12 @@ describe('MediaController', () => {
 	});
 
 	describe('getBlobUrl()', () => {
-		it('returns {url, expiresAt} JSON', async () => {
+		it('returns {url, expiresAt} JSON by default', async () => {
 			const expiresAt = new Date('2030-01-01T00:00:00Z');
 			mockMediaService.getBlob.mockResolvedValue({ url: 'https://blob.url', expiresAt });
 			const req = { user: { userId: 'user-uuid-1' }, headers: {}, socket: {} } as unknown as Request;
 
-			const result = await controller.getBlobUrl('media-id', req);
+			const result = await controller.getBlobUrl('media-id', undefined, req);
 
 			expect(result).toEqual({ url: 'https://blob.url', expiresAt });
 			expect(mockMediaService.getBlob).toHaveBeenCalledWith(
@@ -119,22 +121,51 @@ describe('MediaController', () => {
 				undefined,
 				undefined
 			);
+			expect(mockMediaService.streamBlob).not.toHaveBeenCalled();
+		});
+
+		it('delegates to streamBlob when stream=1', async () => {
+			const streamable = Symbol('streamable');
+			mockMediaService.streamBlob.mockResolvedValue(streamable);
+			const req = { user: { userId: 'user-uuid-1' }, headers: {}, socket: {} } as unknown as Request;
+
+			const result = await controller.getBlobUrl('media-id', '1', req);
+
+			expect(result).toBe(streamable);
+			expect(mockMediaService.streamBlob).toHaveBeenCalledWith(
+				'media-id',
+				'user-uuid-1',
+				undefined,
+				undefined
+			);
+			expect(mockMediaService.getBlob).not.toHaveBeenCalled();
+		});
+
+		it('treats stream=true the same as stream=1', async () => {
+			mockMediaService.streamBlob.mockResolvedValue('stream');
+			const req = { user: { userId: 'user-uuid-1' }, headers: {}, socket: {} } as unknown as Request;
+
+			await controller.getBlobUrl('media-id', 'true', req);
+
+			expect(mockMediaService.streamBlob).toHaveBeenCalled();
 		});
 
 		it('throws BadRequestException when authenticated user is missing', async () => {
 			const req = { user: {}, headers: {}, socket: {} } as unknown as Request;
 
-			await expect(controller.getBlobUrl('media-id', req)).rejects.toThrow(BadRequestException);
+			await expect(controller.getBlobUrl('media-id', undefined, req)).rejects.toThrow(
+				BadRequestException
+			);
 		});
 	});
 
 	describe('getThumbnailUrl()', () => {
-		it('returns {url, expiresAt} JSON', async () => {
+		it('returns {url, expiresAt} JSON by default', async () => {
 			const expiresAt = new Date('2030-01-01T00:00:00Z');
 			mockMediaService.getThumbnail.mockResolvedValue({ url: 'https://thumb.url', expiresAt });
 			const req = { user: { userId: 'user-uuid-1' }, headers: {}, socket: {} } as unknown as Request;
 
-			const result = await controller.getThumbnailUrl('media-id', req);
+			const result = await controller.getThumbnailUrl('media-id', undefined, req);
 
 			expect(result).toEqual({ url: 'https://thumb.url', expiresAt });
 		});
@@ -143,9 +174,34 @@ describe('MediaController', () => {
 			mockMediaService.getThumbnail.mockResolvedValue({ url: null, expiresAt: null });
 			const req = { user: { userId: 'user-uuid-1' }, headers: {}, socket: {} } as unknown as Request;
 
-			const result = await controller.getThumbnailUrl('media-id', req);
+			const result = await controller.getThumbnailUrl('media-id', undefined, req);
 
 			expect(result).toEqual({ url: null, expiresAt: null });
+		});
+
+		it('returns streamed bytes when stream=1', async () => {
+			const streamable = Symbol('streamable');
+			mockMediaService.streamThumbnail.mockResolvedValue(streamable);
+			const req = { user: { userId: 'user-uuid-1' }, headers: {}, socket: {} } as unknown as Request;
+
+			const result = await controller.getThumbnailUrl('media-id', '1', req);
+
+			expect(result).toBe(streamable);
+			expect(mockMediaService.streamThumbnail).toHaveBeenCalledWith(
+				'media-id',
+				'user-uuid-1',
+				undefined,
+				undefined
+			);
+			expect(mockMediaService.getThumbnail).not.toHaveBeenCalled();
+		});
+
+		it('throws NotFoundException when stream=1 and no thumbnail is stored', async () => {
+			mockMediaService.streamThumbnail.mockResolvedValue(null);
+			const req = { user: { userId: 'user-uuid-1' }, headers: {}, socket: {} } as unknown as Request;
+
+			const { NotFoundException } = await import('@nestjs/common');
+			await expect(controller.getThumbnailUrl('media-id', '1', req)).rejects.toThrow(NotFoundException);
 		});
 	});
 

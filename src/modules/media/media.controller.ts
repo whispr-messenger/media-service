@@ -14,6 +14,8 @@ import {
 	BadRequestException,
 	Logger,
 	Body,
+	NotFoundException,
+	StreamableFile,
 } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { Throttle } from '@nestjs/throttler';
@@ -178,21 +180,32 @@ export class MediaController {
 	// Bearer …` qui, combiné à `X-Amz-Signature` dans l'URL présignée,
 	// déclenche une erreur S3 « multiple authentication types ». Le client
 	// fetch l'URL et la pose ensuite dans `<img src>` sans Authorization.
+	//
+	// Avec `?stream=1` on renvoie les octets directement via `StreamableFile`,
+	// ce qui permet au client de charger l'image quand l'URL présignée n'est
+	// pas joignable (par ex. preprod où `S3_PUBLIC_ENDPOINT` n'est pas
+	// configuré et où l'URL signée pointe sur un hostname cluster-interne).
 	@Get(':id/blob')
-	@ApiOperation({ summary: 'Get a presigned GET URL for the blob' })
-	@ApiResponse({ status: 200, description: 'Presigned blob URL' })
+	@ApiOperation({
+		summary: 'Get a presigned GET URL for the blob (or the bytes if stream=1)',
+	})
+	@ApiResponse({ status: 200, description: 'Presigned blob URL or blob bytes' })
 	@ApiResponse({ status: 403, description: 'Access denied' })
 	@ApiResponse({ status: 404, description: 'Not found' })
 	async getBlobUrl(
 		@Param('id') id: string,
+		@Query('stream') stream: string | undefined,
 		@Req() req: Request
-	): Promise<{ url: string; expiresAt: Date | null }> {
+	): Promise<{ url: string; expiresAt: Date | null } | StreamableFile> {
 		const requesterId = (req as any).user?.userId as string;
 		if (!requesterId) {
 			throw new BadRequestException('Missing authenticated user');
 		}
 		const ip = this.extractClientIp(req);
 		const ua = req.headers['user-agent'];
+		if (stream === '1' || stream === 'true') {
+			return this.mediaService.streamBlob(id, requesterId, ip, ua);
+		}
 		return this.mediaService.getBlob(id, requesterId, ip, ua);
 	}
 
@@ -202,22 +215,34 @@ export class MediaController {
 
 	// Même logique que /blob (200 JSON). Quand aucune thumbnail n'est stockée,
 	// on renvoie `{ url: null, expiresAt: null }` plutôt qu'un 404, ce qui
-	// permet au client de fallback silencieusement sur /blob.
+	// permet au client de fallback silencieusement sur /blob. Avec `?stream=1`
+	// on sert les octets de la thumbnail via `StreamableFile` (404 si aucune
+	// thumbnail n'est stockée).
 	@Get(':id/thumbnail')
-	@ApiOperation({ summary: 'Get a presigned GET URL for the thumbnail (url=null if none)' })
-	@ApiResponse({ status: 200, description: 'Presigned thumbnail URL or null' })
+	@ApiOperation({
+		summary: 'Get a presigned GET URL for the thumbnail (url=null if none) or the bytes if stream=1',
+	})
+	@ApiResponse({ status: 200, description: 'Presigned thumbnail URL, null or thumbnail bytes' })
 	@ApiResponse({ status: 403, description: 'Access denied' })
-	@ApiResponse({ status: 404, description: 'Media not found' })
+	@ApiResponse({ status: 404, description: 'Media (or thumbnail in stream mode) not found' })
 	async getThumbnailUrl(
 		@Param('id') id: string,
+		@Query('stream') stream: string | undefined,
 		@Req() req: Request
-	): Promise<{ url: string | null; expiresAt: Date | null }> {
+	): Promise<{ url: string | null; expiresAt: Date | null } | StreamableFile> {
 		const requesterId = (req as any).user?.userId as string;
 		if (!requesterId) {
 			throw new BadRequestException('Missing authenticated user');
 		}
 		const ip = this.extractClientIp(req);
 		const ua = req.headers['user-agent'];
+		if (stream === '1' || stream === 'true') {
+			const streamed = await this.mediaService.streamThumbnail(id, requesterId, ip, ua);
+			if (!streamed) {
+				throw new NotFoundException('No thumbnail stored for this media');
+			}
+			return streamed;
+		}
 		return this.mediaService.getThumbnail(id, requesterId, ip, ua);
 	}
 
