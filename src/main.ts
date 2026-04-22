@@ -6,9 +6,15 @@ import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { createSwaggerDocumentation } from './swagger';
 import { LoggingInterceptor } from './interceptors';
+import { JsonLogger } from './utils/json-logger';
 
 async function bootstrap() {
-	const app = await NestFactory.create<NestExpressApplication>(AppModule);
+	// WHISPR-1068 : LOG_FORMAT=json active la sortie JSON structurée pour
+	// Loki/ELK ; on conserve le logger natif coloré pour le dev local.
+	const useJsonLogger = (process.env.LOG_FORMAT ?? '').toLowerCase() === 'json';
+	const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+		logger: useJsonLogger ? new JsonLogger({ service: 'media-service' }) : undefined,
+	});
 	const configService = app.get(ConfigService);
 	const logger = new Logger('Bootstrap');
 	const port = configService.get<number>('HTTP_PORT', 3002);
