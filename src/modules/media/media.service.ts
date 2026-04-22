@@ -49,6 +49,17 @@ const CONTEXT_SIZE_LIMITS: Record<MediaContext, number> = {
 
 const PUBLIC_CONTEXTS = new Set<string>([MediaContext.AVATAR, MediaContext.GROUP_ICON]);
 
+// Thumbnails must always be a safe image type regardless of the blob context.
+const THUMBNAIL_ALLOWED_MIME = new Set<string>([
+	'image/jpeg',
+	'image/png',
+	'image/gif',
+	'image/webp',
+	'image/heic',
+	'image/heif',
+]);
+const THUMBNAIL_MAX_BYTES = 5 * 1024 * 1024;
+
 // Strict MIME allowlists per context — unknown types are rejected for uploads
 const CONTEXT_MIME_ALLOWLIST: Record<MediaContext, Set<string>> = {
 	[MediaContext.MESSAGE]: new Set([
@@ -245,15 +256,6 @@ export class MediaService {
 				let thumbnailPath: string | null = null;
 				if (thumbnailFile) {
 					// Validate thumbnail: only safe image MIME types, max 5 MB, magic-bytes check
-					const THUMBNAIL_MAX_BYTES = 5 * 1024 * 1024;
-					const THUMBNAIL_ALLOWED_MIME = new Set([
-						'image/jpeg',
-						'image/png',
-						'image/gif',
-						'image/webp',
-						'image/heic',
-						'image/heif',
-					]);
 					if (!THUMBNAIL_ALLOWED_MIME.has(thumbnailFile.mimetype)) {
 						throw new UnsupportedMediaTypeException(
 							`Thumbnail MIME type '${thumbnailFile.mimetype}' is not allowed`
@@ -305,6 +307,23 @@ export class MediaService {
 				await this.quotaService.recordUpload(ownerId, file.size);
 
 				this.metricsService.uploadsTotal.inc();
+
+				// Notifie les services downstream (messaging, notifications, export
+				// GDPR). Fire-and-forget : une panne Redis ne doit pas faire échouer
+				// la réponse d'upload. Aligné avec la pub `media.deleted`.
+				const uploadedPayload = JSON.stringify({
+					mediaId: media.id,
+					ownerId: media.ownerId,
+					context: media.context,
+					contentType: media.contentType,
+					size: media.blobSize,
+					hasThumbnail: media.thumbnailPath !== null,
+				});
+				this.redisClient.publish('media.uploaded', uploadedPayload).catch((err: unknown) => {
+					this.logger.error(
+						`Failed to publish media.uploaded for media ${media.id}: ${err instanceof Error ? err.message : String(err)}`
+					);
+				});
 
 				return await this.buildUploadResponse(media, context);
 			});
@@ -383,7 +402,11 @@ export class MediaService {
 		});
 
 		// Async access log (non-blocking)
-		this.writeAccessLog(media.id, requesterId, 'blob', ipAddress, userAgent).catch(() => {});
+		this.writeAccessLog(media.id, requesterId, 'blob', ipAddress, userAgent).catch((err) => {
+			this.logger.error(
+				`Failed to write access log for media ${media.id}: ${err instanceof Error ? err.message : String(err)}`
+			);
+		});
 
 		this.metricsService.downloadsTotal.inc();
 
@@ -428,7 +451,11 @@ export class MediaService {
 			expiresAt = new Date(Date.now() + this.signedUrlExpirySeconds * 1000);
 		}
 
-		this.writeAccessLog(media.id, requesterId, 'thumbnail', ipAddress, userAgent).catch(() => {});
+		this.writeAccessLog(media.id, requesterId, 'thumbnail', ipAddress, userAgent).catch((err) => {
+			this.logger.error(
+				`Failed to write access log for media ${media.id}: ${err instanceof Error ? err.message : String(err)}`
+			);
+		});
 
 		this.metricsService.downloadsTotal.inc();
 
@@ -515,7 +542,11 @@ export class MediaService {
 		await this.quotaService.recordDelete(requesterId, media.blobSize);
 
 		// Access log
-		this.writeAccessLog(media.id, requesterId, 'delete', ipAddress, userAgent).catch(() => {});
+		this.writeAccessLog(media.id, requesterId, 'delete', ipAddress, userAgent).catch((err) => {
+			this.logger.error(
+				`Failed to write access log for media ${media.id}: ${err instanceof Error ? err.message : String(err)}`
+			);
+		});
 
 		// WHISPR-372: Publish media.deleted event (fire-and-forget — failure does not affect the delete response)
 		const deletedPayload = JSON.stringify({
@@ -532,19 +563,6 @@ export class MediaService {
 		this.metricsService.deletesTotal.inc();
 
 		this.logger.debug(`Soft-deleted media ${id} and removed S3 objects`);
-	}
-
-	// =========================================================================
-	// Legacy stream helper (kept for backward compatibility)
-	// =========================================================================
-
-	async getStream(id: string): Promise<{ stream: Readable; contentType: string }> {
-		const media = await this.mediaRepository.findById(id);
-		if (!media) {
-			throw new NotFoundException(`Media ${id} not found`);
-		}
-		const stream = await this.storageService.download(media.storagePath);
-		return { stream, contentType: media.contentType };
 	}
 
 	// =========================================================================
