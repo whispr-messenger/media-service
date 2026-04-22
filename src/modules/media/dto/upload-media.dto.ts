@@ -91,6 +91,35 @@ export class UploadMediaResponseDto {
 	size: number;
 }
 
+export class BlobUrlResponseDto {
+	@ApiProperty({ description: 'Presigned GET URL for the blob' })
+	url: string;
+
+	@ApiProperty({
+		description: 'Expiration timestamp of the presigned URL (ISO-8601)',
+		nullable: true,
+		type: Date,
+	})
+	expiresAt: Date | null;
+}
+
+export class ThumbnailUrlResponseDto {
+	@ApiProperty({ description: 'Presigned GET URL for the thumbnail, or null if none', nullable: true })
+	url: string | null;
+
+	@ApiProperty({
+		description: 'Expiration timestamp of the presigned URL (ISO-8601)',
+		nullable: true,
+		type: Date,
+	})
+	expiresAt: Date | null;
+}
+
+export class ShareMediaResponseDto {
+	@ApiProperty({ description: 'Updated list of user UUIDs in the shared_with ACL', type: [String] })
+	sharedWith: string[];
+}
+
 export class MediaMetadataDto {
 	@ApiProperty()
 	id: string;
