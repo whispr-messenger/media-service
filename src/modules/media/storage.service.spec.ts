@@ -67,15 +67,11 @@ describe('StorageService', () => {
 		});
 
 		it('rejects path traversal in ownerId', () => {
-			expect(() => service.buildPath('messages', '../etc/passwd', OBJECT)).toThrow(
-				/Invalid ownerId/
-			);
+			expect(() => service.buildPath('messages', '../etc/passwd', OBJECT)).toThrow(/Invalid ownerId/);
 		});
 
 		it('rejects path traversal in objectId', () => {
-			expect(() => service.buildPath('messages', USER, '../etc/passwd')).toThrow(
-				/Invalid objectId/
-			);
+			expect(() => service.buildPath('messages', USER, '../etc/passwd')).toThrow(/Invalid objectId/);
 		});
 	});
 
