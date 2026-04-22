@@ -4,6 +4,7 @@ import {
 	HttpException,
 	NotFoundException,
 	PayloadTooLargeException,
+	ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DataSource } from 'typeorm';
@@ -14,6 +15,7 @@ import { MediaService } from './media.service';
 import { MediaRepository } from './repositories/media.repository';
 import { StorageService } from './storage.service';
 import { QuotaService } from './quota.service';
+import { GroupService } from './group.service';
 import { MediaAccessLog } from './entities/media-access-log.entity';
 import { Media } from './entities/media.entity';
 import { MediaContext } from './dto/upload-media.dto';
@@ -64,6 +66,10 @@ const mockQuotaService = {
 	enforceQuota: jest.fn().mockResolvedValue(undefined),
 	recordUpload: jest.fn().mockResolvedValue(undefined),
 	recordDelete: jest.fn().mockResolvedValue(undefined),
+};
+
+const mockGroupService = {
+	isAdmin: jest.fn().mockResolvedValue(true),
 };
 
 const mockCache = {
@@ -142,6 +148,7 @@ describe('MediaService', () => {
 				{ provide: MediaRepository, useValue: mockMediaRepository },
 				{ provide: StorageService, useValue: mockStorageService },
 				{ provide: QuotaService, useValue: mockQuotaService },
+				{ provide: GroupService, useValue: mockGroupService },
 				{ provide: getS3ConnectionToken('default'), useValue: mockS3 },
 				{ provide: ConfigService, useValue: mockConfigService },
 				{ provide: getDataSourceToken(), useValue: mockDataSource },
@@ -609,6 +616,57 @@ describe('MediaService', () => {
 			await service.upload('user-uuid-1', file, MediaContext.MESSAGE);
 
 			expect(mockMediaRepository.updateSharedWith).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('upload() — GROUP_ICON authorization (WHISPR-932)', () => {
+		const file: Express.Multer.File = {
+			originalname: 'icon.jpg',
+			mimetype: 'image/jpeg',
+			size: 1024,
+			buffer: jpegBuffer,
+		} as unknown as Express.Multer.File;
+
+		it('lets the upload through when isAdmin returns true', async () => {
+			mockGroupService.isAdmin.mockResolvedValueOnce(true);
+			mockMediaRepository.save.mockResolvedValue(undefined);
+
+			const result = await service.upload('owner-1', file, MediaContext.GROUP_ICON);
+
+			expect(mockGroupService.isAdmin).toHaveBeenCalledWith('owner-1');
+			expect(mockStorageService.upload).toHaveBeenCalled();
+			expect(mockMediaRepository.save).toHaveBeenCalled();
+			expect(result.context).toBe(MediaContext.GROUP_ICON);
+		});
+
+		it('returns 403 when isAdmin returns false (non-admin or non-member)', async () => {
+			mockGroupService.isAdmin.mockResolvedValueOnce(false);
+
+			await expect(service.upload('owner-1', file, MediaContext.GROUP_ICON)).rejects.toThrow(
+				ForbiddenException
+			);
+
+			expect(mockStorageService.upload).not.toHaveBeenCalled();
+			expect(mockMediaRepository.save).not.toHaveBeenCalled();
+		});
+
+		it('returns 503 when group-service is unavailable (isAdmin throws)', async () => {
+			mockGroupService.isAdmin.mockRejectedValueOnce(new Error('ECONNREFUSED'));
+
+			await expect(service.upload('owner-1', file, MediaContext.GROUP_ICON)).rejects.toThrow(
+				ServiceUnavailableException
+			);
+
+			expect(mockStorageService.upload).not.toHaveBeenCalled();
+		});
+
+		it('does not call group-service for non-GROUP_ICON uploads (no regression)', async () => {
+			mockMediaRepository.save.mockResolvedValue(undefined);
+
+			await service.upload('user-uuid-1', file, MediaContext.MESSAGE);
+			await service.upload('user-uuid-1', file, MediaContext.AVATAR);
+
+			expect(mockGroupService.isAdmin).not.toHaveBeenCalled();
 		});
 	});
 
