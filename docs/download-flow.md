@@ -3,7 +3,7 @@
 ## Schéma
 
 ```
-Client ──▶ GET /api/v1/media/:id/download
+Client ──▶ GET /media/v1/:id/blob
                 │
           ┌─────▼─────┐
           │ Vérif JWT  │
@@ -11,7 +11,8 @@ Client ──▶ GET /api/v1/media/:id/download
           └─────┬─────┘
                 │
           ┌─────▼─────┐
-          │ Fetch GCS  │
+          │ Fetch S3   │
+          │ (MinIO)    │
           └─────┬─────┘
                 │
           ┌─────▼──────────┐
@@ -21,3 +22,11 @@ Client ──▶ GET /api/v1/media/:id/download
                 │
           Réponse client
 ```
+
+## Thumbnail
+
+```
+GET /media/v1/:id/thumbnail
+```
+
+Retourne l'aperçu de l'image (200x200).
