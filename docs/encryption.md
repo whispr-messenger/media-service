@@ -21,10 +21,10 @@ Fichier original
        │
        ▼
 ┌──────────────┐
-│ Stockage GCS │
+│ Stockage S3  │
 │ (fichier     │
 │  chiffré)    │
 └──────────────┘
 ```
 
-La clé de chiffrement est stockée dans Vault via la variable `ENCRYPTION_KEY`.
+La clé de chiffrement est fournie via la variable d'environnement `ENCRYPTION_KEY`.
