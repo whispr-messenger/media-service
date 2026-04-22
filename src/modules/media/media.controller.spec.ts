@@ -14,7 +14,6 @@ const mockMediaService = {
 	getThumbnail: jest.fn(),
 	share: jest.fn(),
 	delete: jest.fn(),
-	getStream: jest.fn(),
 	getUserQuota: jest.fn(),
 	getUserMedia: jest.fn(),
 	logAccess: jest.fn(),
