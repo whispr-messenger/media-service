@@ -6,8 +6,8 @@ import {
 	Injectable,
 	Logger,
 	NotFoundException,
-	NotImplementedException,
 	PayloadTooLargeException,
+	ServiceUnavailableException,
 	StreamableFile,
 	UnsupportedMediaTypeException,
 } from '@nestjs/common';
@@ -28,6 +28,7 @@ import { MediaAccessLog } from './entities/media-access-log.entity';
 import { MediaRepository } from './repositories/media.repository';
 import { StorageService, StorageContext } from './storage.service';
 import { QuotaService } from './quota.service';
+import { GroupService } from './group.service';
 import { validateMagicBytes } from './magic-bytes.validator';
 import { createClient } from '@redis/client';
 import { MediaContext, UploadMediaResponseDto, MediaMetadataDto } from './dto/upload-media.dto';
@@ -138,7 +139,8 @@ export class MediaService {
 		@InjectRepository(MediaAccessLog)
 		private readonly accessLogRepo: Repository<MediaAccessLog>,
 		@Inject(REDIS_CLIENT) private readonly redisClient: ReturnType<typeof createClient>,
-		private readonly metricsService: MetricsService
+		private readonly metricsService: MetricsService,
+		private readonly groupService: GroupService
 	) {
 		this.signedUrlExpirySeconds = this.configService.get<number>(
 			'SIGNED_URL_EXPIRY_SECONDS',
@@ -201,6 +203,9 @@ export class MediaService {
 
 		try {
 			return await this.runWithSemaphoreTtlRefresh(ownerId, async () => {
+				// WHISPR-932: authorize GROUP_ICON uploads via group-service
+				await this.authorizeGroupIconUpload(context, ownerId);
+
 				// WHISPR-356: Pre-upload quota check
 				await this.quotaService.enforceQuota(ownerId, file.size);
 
@@ -697,16 +702,34 @@ export class MediaService {
 	// =========================================================================
 
 	private enforceContextSizeLimit(size: number, context: MediaContext): void {
-		if (context === MediaContext.GROUP_ICON) {
-			throw new NotImplementedException(
-				'Group icon upload requires group admin authorization (not yet implemented)'
-			);
-		}
 		const limit = CONTEXT_SIZE_LIMITS[context];
 		if (size > limit) {
 			throw new PayloadTooLargeException(
 				`File size ${size} exceeds the ${limit} byte limit for context '${context}'`
 			);
+		}
+	}
+
+	/**
+	 * WHISPR-932: GROUP_ICON uploads must come from a group admin. Non-admin
+	 * members and non-members both receive 403 so group existence cannot be
+	 * probed via the error code. group-service outages map to 503.
+	 */
+	private async authorizeGroupIconUpload(context: MediaContext, ownerId: string): Promise<void> {
+		if (context !== MediaContext.GROUP_ICON) return;
+		let isAdmin: boolean;
+		try {
+			isAdmin = await this.groupService.isAdmin(ownerId);
+		} catch (err) {
+			this.logger.warn(
+				`group-service isAdmin check failed ownerId=${ownerId}: ${
+					err instanceof Error ? err.message : String(err)
+				}`
+			);
+			throw new ServiceUnavailableException('Group authorization service unavailable');
+		}
+		if (!isAdmin) {
+			throw new ForbiddenException('You are not allowed to upload an icon for this group');
 		}
 	}
 
