@@ -26,15 +26,31 @@ export class AddResetDailyUploadsFunction1742800000000 implements MigrationInter
 		`);
 
 		// Restrict execution: SECURITY DEFINER functions are callable by PUBLIC
-		// by default. Revoke that, then grant only to the application DB role.
+		// by default. Revoke that, then grant to whichever role(s) need it.
 		await queryRunner.query(`
 			REVOKE EXECUTE ON FUNCTION media.reset_daily_uploads() FROM PUBLIC;
 		`);
 
-		// Grant EXECUTE to the application DB role (media_user) so the cron job
-		// can invoke the function without needing superuser privileges.
+		// Grant EXECUTE to the current (migration) role so the Vault-provisioned
+		// user that runs this migration can also invoke the function from its
+		// scheduled jobs. Works equally for a static `media_user` in local dev
+		// or a dynamic `v-kubernet-role_med-...` name in staging/prod.
 		await queryRunner.query(`
-			GRANT EXECUTE ON FUNCTION media.reset_daily_uploads() TO media_user;
+			GRANT EXECUTE ON FUNCTION media.reset_daily_uploads() TO CURRENT_USER;
+		`);
+
+		// WHISPR-1004: keep the legacy `media_user` grant when (and only when)
+		// that role still exists — the local Docker init script provisions it,
+		// but Vault-backed envs don't. Without the existence check the whole
+		// migration crashes with `role "media_user" does not exist`.
+		await queryRunner.query(`
+			DO $$
+			BEGIN
+				IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'media_user') THEN
+					EXECUTE 'GRANT EXECUTE ON FUNCTION media.reset_daily_uploads() TO media_user';
+				END IF;
+			END
+			$$;
 		`);
 	}
 
