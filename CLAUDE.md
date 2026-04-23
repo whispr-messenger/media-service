@@ -9,7 +9,7 @@ when picking up and completing a Jira ticket for this repository.
 
 - Jira cloud ID: `82ae2da5-7ee5-48f7-8877-a644651cd84b`
 - GitHub org/repo: `whispr-messenger/media-service`
-- Default base branch: `main`
+- Default base branch: `deploy/preprod`
 - Node package manager: `npm` (husky hooks run on commit and push)
 
 ---
@@ -24,11 +24,26 @@ when picking up and completing a Jira ticket for this repository.
 
 ---
 
+## 1b. Plan before implementing
+
+Before writing any code, **enter Plan mode** to design the implementation
+strategy. Present the plan to the user for approval before proceeding.
+
+The plan should cover:
+- Which files need to change and why
+- The approach / architecture decisions
+- Potential risks or trade-offs
+- Testing strategy
+
+Only move to step 2 once the user has approved the plan.
+
+---
+
 ## 2. Prepare the branch
 
 ```bash
-git checkout main
-git pull origin main
+git checkout deploy/preprod
+git pull origin deploy/preprod
 git checkout -b <TICKET-KEY>-<short-kebab-description>
 ```
 
@@ -220,7 +235,7 @@ Use `mcp__github__create_pull_request`:
   "repo": "media-service",
   "title": "<same as commit title>",
   "head": "<branch-name>",
-  "base": "main",
+  "base": "deploy/preprod",
   "body": "## Summary\n- bullet 1\n- bullet 2\n\n## Test plan\n- [ ] Unit tests green\n- [ ] E2E tests green\n- [ ] Lint clean\n\nCloses <TICKET-KEY>"
 }
 ```
@@ -310,7 +325,7 @@ Once all CI checks are green, use `mcp__github__merge_pull_request`:
 }
 ```
 
-Always use **squash** merge to keep `main` history linear.
+Always use **squash** merge to keep `deploy/preprod` history linear.
 
 ---
 
@@ -321,11 +336,11 @@ Use `mcp__atlassian__transitionJiraIssue` with the transition whose `name` is
 
 ---
 
-## 11. Return to main and refresh the index
+## 11. Return to deploy/preprod and refresh the index
 
 ```bash
-git checkout main
-git pull origin main
+git checkout deploy/preprod
+git pull origin deploy/preprod
 npx gitnexus analyze --embeddings --force
 ```
 

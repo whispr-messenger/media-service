@@ -19,7 +19,16 @@ import {
 } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { Throttle } from '@nestjs/throttler';
-import { ApiTags, ApiOperation, ApiResponse, ApiConsumes, ApiBody, ApiQuery } from '@nestjs/swagger';
+import {
+	ApiTags,
+	ApiOperation,
+	ApiResponse,
+	ApiConsumes,
+	ApiBody,
+	ApiQuery,
+	ApiBearerAuth,
+	ApiParam,
+} from '@nestjs/swagger';
 import { Request } from 'express';
 import { MediaService } from './media.service';
 import {
@@ -28,6 +37,9 @@ import {
 	UploadMediaResponseDto,
 	MediaMetadataDto,
 	ShareMediaDto,
+	BlobUrlResponseDto,
+	ThumbnailUrlResponseDto,
+	ShareMediaResponseDto,
 } from './dto/upload-media.dto';
 import { UserQuotaResponseDto } from './dto/user-quota-response.dto';
 import { PaginatedMediaResponseDto } from './dto/paginated-media-response.dto';
@@ -41,6 +53,8 @@ import { PaginatedMediaResponseDto } from './dto/paginated-media-response.dto';
 export const UPLOAD_MAX_BYTES = 100 * 1024 * 1024;
 
 @ApiTags('Media')
+@ApiBearerAuth('bearer')
+@ApiResponse({ status: 401, description: 'Unauthorized — missing or invalid JWT token' })
 @Controller()
 export class MediaController {
 	private readonly logger = new Logger(MediaController.name);
@@ -161,7 +175,9 @@ export class MediaController {
 
 	@Get(':id')
 	@ApiOperation({ summary: 'Get media metadata' })
+	@ApiParam({ name: 'id', description: 'Media UUID', type: String })
 	@ApiResponse({ status: 200, type: MediaMetadataDto })
+	@ApiResponse({ status: 403, description: 'Access denied' })
 	@ApiResponse({ status: 404, description: 'Not found' })
 	async getMetadata(@Param('id') id: string, @Req() req: Request): Promise<MediaMetadataDto> {
 		const requesterId = (req as any).user?.userId as string;
@@ -189,14 +205,15 @@ export class MediaController {
 	@ApiOperation({
 		summary: 'Get a presigned GET URL for the blob (or the bytes if stream=1)',
 	})
-	@ApiResponse({ status: 200, description: 'Presigned blob URL or blob bytes' })
+	@ApiParam({ name: 'id', description: 'Media UUID', type: String })
+	@ApiResponse({ status: 200, description: 'Presigned blob URL or blob bytes', type: BlobUrlResponseDto })
 	@ApiResponse({ status: 403, description: 'Access denied' })
 	@ApiResponse({ status: 404, description: 'Not found' })
 	async getBlobUrl(
 		@Param('id') id: string,
 		@Query('stream') stream: string | undefined,
 		@Req() req: Request
-	): Promise<{ url: string; expiresAt: Date | null } | StreamableFile> {
+	): Promise<BlobUrlResponseDto | StreamableFile> {
 		const requesterId = (req as any).user?.userId as string;
 		if (!requesterId) {
 			throw new BadRequestException('Missing authenticated user');
@@ -222,14 +239,19 @@ export class MediaController {
 	@ApiOperation({
 		summary: 'Get a presigned GET URL for the thumbnail (url=null if none) or the bytes if stream=1',
 	})
-	@ApiResponse({ status: 200, description: 'Presigned thumbnail URL, null or thumbnail bytes' })
+	@ApiParam({ name: 'id', description: 'Media UUID', type: String })
+	@ApiResponse({
+		status: 200,
+		description: 'Presigned thumbnail URL, null or thumbnail bytes',
+		type: ThumbnailUrlResponseDto,
+	})
 	@ApiResponse({ status: 403, description: 'Access denied' })
 	@ApiResponse({ status: 404, description: 'Media (or thumbnail in stream mode) not found' })
 	async getThumbnailUrl(
 		@Param('id') id: string,
 		@Query('stream') stream: string | undefined,
 		@Req() req: Request
-	): Promise<{ url: string | null; expiresAt: Date | null } | StreamableFile> {
+	): Promise<ThumbnailUrlResponseDto | StreamableFile> {
 		const requesterId = (req as any).user?.userId as string;
 		if (!requesterId) {
 			throw new BadRequestException('Missing authenticated user');
@@ -252,14 +274,15 @@ export class MediaController {
 
 	@Patch(':id/share')
 	@ApiOperation({ summary: 'Add users to the media shared_with ACL (owner only)' })
-	@ApiResponse({ status: 200, description: 'Updated shared_with list' })
+	@ApiParam({ name: 'id', description: 'Media UUID', type: String })
+	@ApiResponse({ status: 200, description: 'Updated shared_with list', type: ShareMediaResponseDto })
 	@ApiResponse({ status: 403, description: 'Not owner' })
 	@ApiResponse({ status: 404, description: 'Not found' })
 	async share(
 		@Param('id') id: string,
 		@Req() req: Request,
 		@Body() dto: ShareMediaDto
-	): Promise<{ sharedWith: string[] }> {
+	): Promise<ShareMediaResponseDto> {
 		const requesterId = (req as any).user?.userId as string;
 		if (!requesterId) {
 			throw new BadRequestException('Missing authenticated user');
@@ -275,6 +298,7 @@ export class MediaController {
 	@Delete(':id')
 	@HttpCode(HttpStatus.NO_CONTENT)
 	@ApiOperation({ summary: 'Soft delete media — releases quota' })
+	@ApiParam({ name: 'id', description: 'Media UUID', type: String })
 	@ApiResponse({ status: 204, description: 'Deleted' })
 	@ApiResponse({ status: 403, description: 'Not owner' })
 	@ApiResponse({ status: 404, description: 'Not found' })
