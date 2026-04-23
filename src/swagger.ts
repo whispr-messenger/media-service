@@ -9,6 +9,8 @@ function buildSwaggerDocument(_port: number) {
 		.setDescription('API documentation for the Media Service')
 		.setVersion('1.0')
 		.addServer('/', 'Current host')
+		.addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'JWT' }, 'bearer')
+		.addApiKey({ type: 'apiKey', name: 'x-metrics-key', in: 'header' }, 'metrics-key')
 		.build();
 }
 

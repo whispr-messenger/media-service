@@ -14,9 +14,21 @@ import {
 	BadRequestException,
 	Logger,
 	Body,
+	NotFoundException,
+	StreamableFile,
 } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
-import { ApiTags, ApiOperation, ApiResponse, ApiConsumes, ApiBody, ApiQuery } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
+import {
+	ApiTags,
+	ApiOperation,
+	ApiResponse,
+	ApiConsumes,
+	ApiBody,
+	ApiQuery,
+	ApiBearerAuth,
+	ApiParam,
+} from '@nestjs/swagger';
 import { Request } from 'express';
 import { MediaService } from './media.service';
 import {
@@ -25,11 +37,24 @@ import {
 	UploadMediaResponseDto,
 	MediaMetadataDto,
 	ShareMediaDto,
+	BlobUrlResponseDto,
+	ThumbnailUrlResponseDto,
+	ShareMediaResponseDto,
 } from './dto/upload-media.dto';
 import { UserQuotaResponseDto } from './dto/user-quota-response.dto';
 import { PaginatedMediaResponseDto } from './dto/paginated-media-response.dto';
 
+/**
+ * Hard upper bound applied by multer / FileFieldsInterceptor so a malicious
+ * client can't DoS the pod by streaming an unbounded body into memory
+ * (WHISPR-1013). Per-context limits (MESSAGE=100MB, AVATAR/GROUP_ICON=5MB)
+ * are still enforced at the service layer — this is the outer guard.
+ */
+export const UPLOAD_MAX_BYTES = 100 * 1024 * 1024;
+
 @ApiTags('Media')
+@ApiBearerAuth('bearer')
+@ApiResponse({ status: 401, description: 'Unauthorized — missing or invalid JWT token' })
 @Controller()
 export class MediaController {
 	private readonly logger = new Logger(MediaController.name);
@@ -41,6 +66,11 @@ export class MediaController {
 	// =========================================================================
 
 	@Post('upload')
+	// WHISPR-1012: bornes plus strictes que les tiers globaux
+	// (SHORT 3/1s, MEDIUM 20/10s, LONG 100/60s). Un upload consomme S3 +
+	// quota DB + semaphore, donc on cap 20 envois/minute/IP pour limiter
+	// l'abus sans gêner un usage normal.
+	@Throttle({ default: { ttl: 60_000, limit: 20 } })
 	@ApiOperation({ summary: 'Upload a media file (blob + optional thumbnail)' })
 	@ApiConsumes('multipart/form-data')
 	@ApiBody({
@@ -65,10 +95,13 @@ export class MediaController {
 	@ApiResponse({ status: 415, description: 'Content-Type mismatch (magic bytes)' })
 	@ApiResponse({ status: 429, description: 'Too many concurrent uploads' })
 	@UseInterceptors(
-		FileFieldsInterceptor([
-			{ name: 'file', maxCount: 1 },
-			{ name: 'thumbnail', maxCount: 1 },
-		])
+		FileFieldsInterceptor(
+			[
+				{ name: 'file', maxCount: 1 },
+				{ name: 'thumbnail', maxCount: 1 },
+			],
+			{ limits: { fileSize: UPLOAD_MAX_BYTES } }
+		)
 	)
 	async upload(
 		@Req() req: Request,
@@ -142,7 +175,9 @@ export class MediaController {
 
 	@Get(':id')
 	@ApiOperation({ summary: 'Get media metadata' })
+	@ApiParam({ name: 'id', description: 'Media UUID', type: String })
 	@ApiResponse({ status: 200, type: MediaMetadataDto })
+	@ApiResponse({ status: 403, description: 'Access denied' })
 	@ApiResponse({ status: 404, description: 'Not found' })
 	async getMetadata(@Param('id') id: string, @Req() req: Request): Promise<MediaMetadataDto> {
 		const requesterId = (req as any).user?.userId as string;
@@ -161,21 +196,33 @@ export class MediaController {
 	// Bearer …` qui, combiné à `X-Amz-Signature` dans l'URL présignée,
 	// déclenche une erreur S3 « multiple authentication types ». Le client
 	// fetch l'URL et la pose ensuite dans `<img src>` sans Authorization.
+	//
+	// Avec `?stream=1` on renvoie les octets directement via `StreamableFile`,
+	// ce qui permet au client de charger l'image quand l'URL présignée n'est
+	// pas joignable (par ex. preprod où `S3_PUBLIC_ENDPOINT` n'est pas
+	// configuré et où l'URL signée pointe sur un hostname cluster-interne).
 	@Get(':id/blob')
-	@ApiOperation({ summary: 'Get a presigned GET URL for the blob' })
-	@ApiResponse({ status: 200, description: 'Presigned blob URL' })
+	@ApiOperation({
+		summary: 'Get a presigned GET URL for the blob (or the bytes if stream=1)',
+	})
+	@ApiParam({ name: 'id', description: 'Media UUID', type: String })
+	@ApiResponse({ status: 200, description: 'Presigned blob URL or blob bytes', type: BlobUrlResponseDto })
 	@ApiResponse({ status: 403, description: 'Access denied' })
 	@ApiResponse({ status: 404, description: 'Not found' })
 	async getBlobUrl(
 		@Param('id') id: string,
+		@Query('stream') stream: string | undefined,
 		@Req() req: Request
-	): Promise<{ url: string; expiresAt: Date | null }> {
+	): Promise<BlobUrlResponseDto | StreamableFile> {
 		const requesterId = (req as any).user?.userId as string;
 		if (!requesterId) {
 			throw new BadRequestException('Missing authenticated user');
 		}
-		const ip = (req.headers['x-forwarded-for'] as string) ?? req.socket?.remoteAddress;
+		const ip = this.extractClientIp(req);
 		const ua = req.headers['user-agent'];
+		if (stream === '1' || stream === 'true') {
+			return this.mediaService.streamBlob(id, requesterId, ip, ua);
+		}
 		return this.mediaService.getBlob(id, requesterId, ip, ua);
 	}
 
@@ -185,22 +232,39 @@ export class MediaController {
 
 	// Même logique que /blob (200 JSON). Quand aucune thumbnail n'est stockée,
 	// on renvoie `{ url: null, expiresAt: null }` plutôt qu'un 404, ce qui
-	// permet au client de fallback silencieusement sur /blob.
+	// permet au client de fallback silencieusement sur /blob. Avec `?stream=1`
+	// on sert les octets de la thumbnail via `StreamableFile` (404 si aucune
+	// thumbnail n'est stockée).
 	@Get(':id/thumbnail')
-	@ApiOperation({ summary: 'Get a presigned GET URL for the thumbnail (url=null if none)' })
-	@ApiResponse({ status: 200, description: 'Presigned thumbnail URL or null' })
+	@ApiOperation({
+		summary: 'Get a presigned GET URL for the thumbnail (url=null if none) or the bytes if stream=1',
+	})
+	@ApiParam({ name: 'id', description: 'Media UUID', type: String })
+	@ApiResponse({
+		status: 200,
+		description: 'Presigned thumbnail URL, null or thumbnail bytes',
+		type: ThumbnailUrlResponseDto,
+	})
 	@ApiResponse({ status: 403, description: 'Access denied' })
-	@ApiResponse({ status: 404, description: 'Media not found' })
+	@ApiResponse({ status: 404, description: 'Media (or thumbnail in stream mode) not found' })
 	async getThumbnailUrl(
 		@Param('id') id: string,
+		@Query('stream') stream: string | undefined,
 		@Req() req: Request
-	): Promise<{ url: string | null; expiresAt: Date | null }> {
+	): Promise<ThumbnailUrlResponseDto | StreamableFile> {
 		const requesterId = (req as any).user?.userId as string;
 		if (!requesterId) {
 			throw new BadRequestException('Missing authenticated user');
 		}
-		const ip = (req.headers['x-forwarded-for'] as string) ?? req.socket?.remoteAddress;
+		const ip = this.extractClientIp(req);
 		const ua = req.headers['user-agent'];
+		if (stream === '1' || stream === 'true') {
+			const streamed = await this.mediaService.streamThumbnail(id, requesterId, ip, ua);
+			if (!streamed) {
+				throw new NotFoundException('No thumbnail stored for this media');
+			}
+			return streamed;
+		}
 		return this.mediaService.getThumbnail(id, requesterId, ip, ua);
 	}
 
@@ -210,14 +274,15 @@ export class MediaController {
 
 	@Patch(':id/share')
 	@ApiOperation({ summary: 'Add users to the media shared_with ACL (owner only)' })
-	@ApiResponse({ status: 200, description: 'Updated shared_with list' })
+	@ApiParam({ name: 'id', description: 'Media UUID', type: String })
+	@ApiResponse({ status: 200, description: 'Updated shared_with list', type: ShareMediaResponseDto })
 	@ApiResponse({ status: 403, description: 'Not owner' })
 	@ApiResponse({ status: 404, description: 'Not found' })
 	async share(
 		@Param('id') id: string,
 		@Req() req: Request,
 		@Body() dto: ShareMediaDto
-	): Promise<{ sharedWith: string[] }> {
+	): Promise<ShareMediaResponseDto> {
 		const requesterId = (req as any).user?.userId as string;
 		if (!requesterId) {
 			throw new BadRequestException('Missing authenticated user');
@@ -233,6 +298,7 @@ export class MediaController {
 	@Delete(':id')
 	@HttpCode(HttpStatus.NO_CONTENT)
 	@ApiOperation({ summary: 'Soft delete media — releases quota' })
+	@ApiParam({ name: 'id', description: 'Media UUID', type: String })
 	@ApiResponse({ status: 204, description: 'Deleted' })
 	@ApiResponse({ status: 403, description: 'Not owner' })
 	@ApiResponse({ status: 404, description: 'Not found' })
@@ -241,8 +307,28 @@ export class MediaController {
 		if (!requesterId) {
 			throw new BadRequestException('Missing authenticated user');
 		}
-		const ip = (req.headers['x-forwarded-for'] as string) ?? req.socket?.remoteAddress;
+		const ip = this.extractClientIp(req);
 		const ua = req.headers['user-agent'];
 		await this.mediaService.delete(id, requesterId, ip, ua);
+	}
+
+	/**
+	 * Extrait la première IP client exploitable depuis la requête.
+	 *
+	 * `x-forwarded-for` peut contenir une liste CSV "client, proxy1, proxy2"
+	 * et la valeur peut aussi arriver en array quand le header est dupliqué.
+	 * On ne garde que le premier token, on le tronque à 45 caractères (IPv6)
+	 * pour rester sous la contrainte de la colonne `ip_address`, et on
+	 * retombe sur l'adresse TCP si le header est absent. Sans ça, un client
+	 * malveillant peut insérer un header géant qui fait échouer l'insert DB.
+	 */
+	private extractClientIp(req: Request): string | undefined {
+		const forwarded = req.headers['x-forwarded-for'];
+		const forwardedStr = Array.isArray(forwarded) ? forwarded[0] : forwarded;
+		if (typeof forwardedStr === 'string' && forwardedStr.length > 0) {
+			const first = forwardedStr.split(',')[0].trim();
+			if (first) return first.slice(0, 45);
+		}
+		return req.socket?.remoteAddress?.slice(0, 45);
 	}
 }

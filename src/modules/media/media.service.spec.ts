@@ -22,6 +22,7 @@ import { MediaContext } from './dto/upload-media.dto';
 import { REDIS_CLIENT } from './media.tokens';
 import { UserQuota } from './entities/user-quota.entity';
 import { MetricsService } from '../metrics/metrics.service';
+import { Readable } from 'stream';
 
 jest.mock('@aws-sdk/s3-request-presigner', () => ({
 	getSignedUrl: jest.fn().mockResolvedValue('https://presigned.url/file'),
@@ -400,6 +401,33 @@ describe('MediaService', () => {
 
 			await expect(service.delete('missing', 'user-uuid-1')).rejects.toThrow(NotFoundException);
 		});
+
+		// WHISPR-934: media_deletes_total counter
+		it('increments deletesTotal on successful delete', async () => {
+			const media = makeMedia();
+			mockMediaRepository.findById.mockResolvedValue(media);
+
+			await service.delete('media-uuid-1', 'user-uuid-1');
+
+			expect(mockMetricsService.deletesTotal.inc).toHaveBeenCalledTimes(1);
+		});
+
+		it('does not increment deletesTotal when media is not found', async () => {
+			mockMediaRepository.findById.mockResolvedValue(null);
+
+			await expect(service.delete('missing', 'user-uuid-1')).rejects.toThrow(NotFoundException);
+
+			expect(mockMetricsService.deletesTotal.inc).not.toHaveBeenCalled();
+		});
+
+		it('does not increment deletesTotal when requester is not the owner', async () => {
+			const media = makeMedia({ ownerId: 'owner-1' });
+			mockMediaRepository.findById.mockResolvedValue(media);
+
+			await expect(service.delete('media-uuid-1', 'other-user')).rejects.toThrow(ForbiddenException);
+
+			expect(mockMetricsService.deletesTotal.inc).not.toHaveBeenCalled();
+		});
 	});
 
 	describe('getBlob()', () => {
@@ -453,6 +481,92 @@ describe('MediaService', () => {
 			expect(result.url).toBe(`http://minio:9000/test-bucket/${media.storagePath}`);
 			expect(mockStorageService.getPublicUrl).toHaveBeenCalledWith(media.storagePath);
 		});
+
+		// WHISPR-985: expiresAt must reflect regeneration, not the stale DB value
+		describe('expiresAt on signed URL regeneration (WHISPR-985)', () => {
+			const SIGNED_URL_EXPIRY_SECONDS = 604800; // matches mockConfigService default
+
+			it('returns a freshly computed expiresAt when no cached expiry exists', async () => {
+				const media = makeMedia({ signedUrlExpiresAt: null });
+				mockMediaRepository.findById.mockResolvedValue(media);
+				mockMediaRepository.updateSignedUrlExpiry.mockResolvedValue(undefined);
+
+				const before = Date.now();
+				const result = await service.getBlob('media-uuid-1', 'user-uuid-1');
+				const after = Date.now();
+
+				expect(result.expiresAt).toBeInstanceOf(Date);
+				const expiryMs = (result.expiresAt as Date).getTime();
+				expect(expiryMs).toBeGreaterThanOrEqual(before + SIGNED_URL_EXPIRY_SECONDS * 1000);
+				expect(expiryMs).toBeLessThanOrEqual(after + SIGNED_URL_EXPIRY_SECONDS * 1000);
+				expect(mockMediaRepository.updateSignedUrlExpiry).toHaveBeenCalledWith(
+					'media-uuid-1',
+					expect.any(Date),
+					mockEntityManager
+				);
+			});
+
+			it('returns a freshly computed expiresAt when the cached expiry is in the past', async () => {
+				const stale = new Date(Date.now() - 60_000);
+				const media = makeMedia({ signedUrlExpiresAt: stale });
+				mockMediaRepository.findById.mockResolvedValue(media);
+				mockMediaRepository.updateSignedUrlExpiry.mockResolvedValue(undefined);
+
+				const result = await service.getBlob('media-uuid-1', 'user-uuid-1');
+
+				expect(result.expiresAt).not.toBeNull();
+				expect((result.expiresAt as Date).getTime()).toBeGreaterThan(stale.getTime());
+				expect(mockMediaRepository.updateSignedUrlExpiry).toHaveBeenCalled();
+			});
+
+			it('keeps the cached expiresAt when the signed URL is still valid', async () => {
+				const future = new Date(Date.now() + 60 * 60 * 1000); // +1h
+				const media = makeMedia({ signedUrlExpiresAt: future });
+				mockMediaRepository.findById.mockResolvedValue(media);
+
+				const result = await service.getBlob('media-uuid-1', 'user-uuid-1');
+
+				expect(result.expiresAt).toEqual(future);
+				expect(mockMediaRepository.updateSignedUrlExpiry).not.toHaveBeenCalled();
+			});
+
+			it('returns expiresAt=null for a public-context blob', async () => {
+				const media = makeMedia({ ownerId: 'owner-1', context: MediaContext.AVATAR });
+				mockMediaRepository.findById.mockResolvedValue(media);
+
+				const result = await service.getBlob('media-uuid-1', 'any-user');
+
+				expect(result.expiresAt).toBeNull();
+			});
+		});
+
+		// WHISPR-933: media_downloads_total counter
+		it('increments downloadsTotal on successful blob URL issuance', async () => {
+			const media = makeMedia();
+			mockMediaRepository.findById.mockResolvedValue(media);
+			mockMediaRepository.updateSignedUrlExpiry.mockResolvedValue(undefined);
+
+			await service.getBlob('media-uuid-1', 'user-uuid-1');
+
+			expect(mockMetricsService.downloadsTotal.inc).toHaveBeenCalledTimes(1);
+		});
+
+		it('does not increment downloadsTotal when access is denied', async () => {
+			const media = makeMedia({ ownerId: 'owner-1' });
+			mockMediaRepository.findById.mockResolvedValue(media);
+
+			await expect(service.getBlob('media-uuid-1', 'other-user')).rejects.toThrow(ForbiddenException);
+
+			expect(mockMetricsService.downloadsTotal.inc).not.toHaveBeenCalled();
+		});
+
+		it('does not increment downloadsTotal when media is not found', async () => {
+			mockMediaRepository.findById.mockResolvedValue(null);
+
+			await expect(service.getBlob('missing', 'user-uuid-1')).rejects.toThrow(NotFoundException);
+
+			expect(mockMetricsService.downloadsTotal.inc).not.toHaveBeenCalled();
+		});
 	});
 
 	describe('getThumbnail()', () => {
@@ -502,6 +616,112 @@ describe('MediaService', () => {
 			mockMediaRepository.findById.mockResolvedValue(null);
 
 			await expect(service.getThumbnail('missing', 'user-uuid-1')).rejects.toThrow(NotFoundException);
+		});
+
+		// WHISPR-933: media_downloads_total counter
+		it('increments downloadsTotal when a thumbnail URL is issued', async () => {
+			const media = makeMedia({ thumbnailPath: 'thumbnails/user-uuid-1/media-uuid-1.bin' });
+			mockMediaRepository.findById.mockResolvedValue(media);
+
+			await service.getThumbnail('media-uuid-1', 'user-uuid-1');
+
+			expect(mockMetricsService.downloadsTotal.inc).toHaveBeenCalledTimes(1);
+		});
+
+		// An empty response (no thumbnail stored) is not a download — don't inflate the counter.
+		it('does not increment downloadsTotal when no thumbnail exists', async () => {
+			const media = makeMedia({ thumbnailPath: null });
+			mockMediaRepository.findById.mockResolvedValue(media);
+
+			await service.getThumbnail('media-uuid-1', 'user-uuid-1');
+
+			expect(mockMetricsService.downloadsTotal.inc).not.toHaveBeenCalled();
+		});
+
+		it('does not increment downloadsTotal when access is denied', async () => {
+			const media = makeMedia({
+				ownerId: 'owner-1',
+				context: MediaContext.MESSAGE,
+				thumbnailPath: 'thumbnails/owner-1/media-uuid-1.bin',
+			});
+			mockMediaRepository.findById.mockResolvedValue(media);
+
+			await expect(service.getThumbnail('media-uuid-1', 'other-user')).rejects.toThrow(
+				ForbiddenException
+			);
+
+			expect(mockMetricsService.downloadsTotal.inc).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('streamBlob()', () => {
+		it('streams blob bytes back to the owner with the stored content type', async () => {
+			const media = makeMedia({ contentType: 'image/png', blobSize: 42 });
+			mockMediaRepository.findById.mockResolvedValue(media);
+			const body = Readable.from(Buffer.from('pngbytes'));
+			mockStorageService.download.mockResolvedValueOnce(body);
+
+			const streamable = await service.streamBlob('media-uuid-1', 'user-uuid-1');
+
+			expect(mockStorageService.download).toHaveBeenCalledWith(media.storagePath);
+			expect(streamable.getStream()).toBe(body);
+			expect((streamable as any).options).toMatchObject({
+				type: 'image/png',
+				length: 42,
+			});
+		});
+
+		it('denies access for a user not listed in sharedWith', async () => {
+			const media = makeMedia({ ownerId: 'owner-1', sharedWith: ['friend-1'] });
+			mockMediaRepository.findById.mockResolvedValue(media);
+
+			await expect(service.streamBlob('media-uuid-1', 'stranger')).rejects.toThrow(ForbiddenException);
+			expect(mockStorageService.download).not.toHaveBeenCalled();
+		});
+
+		it('throws NotFoundException when media is missing', async () => {
+			mockMediaRepository.findById.mockResolvedValue(null);
+			await expect(service.streamBlob('missing', 'user-uuid-1')).rejects.toThrow(NotFoundException);
+		});
+	});
+
+	describe('streamThumbnail()', () => {
+		it('returns null when no thumbnail is stored (controller converts to 404)', async () => {
+			const media = makeMedia({ thumbnailPath: null });
+			mockMediaRepository.findById.mockResolvedValue(media);
+
+			const result = await service.streamThumbnail('media-uuid-1', 'user-uuid-1');
+
+			expect(result).toBeNull();
+			expect(mockStorageService.download).not.toHaveBeenCalled();
+		});
+
+		it('streams thumbnail bytes back when the thumbnail exists', async () => {
+			const media = makeMedia({
+				thumbnailPath: 'thumbnails/user-uuid-1/media-uuid-1.bin',
+			});
+			mockMediaRepository.findById.mockResolvedValue(media);
+			const body = Readable.from(Buffer.from('jpegbytes'));
+			mockStorageService.download.mockResolvedValueOnce(body);
+
+			const streamable = await service.streamThumbnail('media-uuid-1', 'user-uuid-1');
+
+			expect(streamable).not.toBeNull();
+			expect(mockStorageService.download).toHaveBeenCalledWith(media.thumbnailPath);
+			expect((streamable as any).getStream()).toBe(body);
+			expect((streamable as any).options).toMatchObject({ type: 'image/*' });
+		});
+
+		it('denies access when the requester is neither owner nor in sharedWith', async () => {
+			const media = makeMedia({
+				ownerId: 'owner-1',
+				thumbnailPath: 'thumbnails/owner-1/media-uuid-1.bin',
+			});
+			mockMediaRepository.findById.mockResolvedValue(media);
+
+			await expect(service.streamThumbnail('media-uuid-1', 'stranger')).rejects.toThrow(
+				ForbiddenException
+			);
 		});
 	});
 
@@ -568,6 +788,54 @@ describe('MediaService', () => {
 			await service.share('media-uuid-1', 'user-uuid-1', ['uid-1']);
 
 			expect(mockCache.del).toHaveBeenCalledWith('media:meta:media-uuid-1');
+		});
+
+		// WHISPR-986: no-op when the ACL is identical to what's already stored
+		describe('ACL no-op optimisation', () => {
+			it('skips updateSharedWith when all requested UUIDs are already in the ACL', async () => {
+				const media = makeMedia({
+					ownerId: 'user-uuid-1',
+					sharedWith: ['uid-1', 'uid-2'],
+				});
+				mockMediaRepository.findById.mockResolvedValue(media);
+
+				const result = await service.share('media-uuid-1', 'user-uuid-1', ['uid-1', 'uid-2']);
+
+				expect(result).toEqual(expect.arrayContaining(['uid-1', 'uid-2']));
+				expect(mockMediaRepository.updateSharedWith).not.toHaveBeenCalled();
+				expect(mockCache.del).not.toHaveBeenCalled();
+			});
+
+			it('skips updateSharedWith when userIdsToAdd is empty', async () => {
+				const media = makeMedia({ ownerId: 'user-uuid-1', sharedWith: ['uid-1'] });
+				mockMediaRepository.findById.mockResolvedValue(media);
+
+				await service.share('media-uuid-1', 'user-uuid-1', []);
+
+				expect(mockMediaRepository.updateSharedWith).not.toHaveBeenCalled();
+				expect(mockCache.del).not.toHaveBeenCalled();
+			});
+
+			it('skips updateSharedWith when the only requested UUID is the owner', async () => {
+				const media = makeMedia({ ownerId: 'user-uuid-1', sharedWith: null });
+				mockMediaRepository.findById.mockResolvedValue(media);
+
+				await service.share('media-uuid-1', 'user-uuid-1', ['user-uuid-1']);
+
+				expect(mockMediaRepository.updateSharedWith).not.toHaveBeenCalled();
+				expect(mockCache.del).not.toHaveBeenCalled();
+			});
+
+			it('still writes when at least one new UUID joins the ACL', async () => {
+				const media = makeMedia({ ownerId: 'user-uuid-1', sharedWith: ['uid-1'] });
+				mockMediaRepository.findById.mockResolvedValue(media);
+				mockMediaRepository.updateSharedWith.mockResolvedValue(undefined);
+
+				await service.share('media-uuid-1', 'user-uuid-1', ['uid-1', 'uid-2']);
+
+				expect(mockMediaRepository.updateSharedWith).toHaveBeenCalled();
+				expect(mockCache.del).toHaveBeenCalledWith('media:meta:media-uuid-1');
+			});
 		});
 	});
 
