@@ -49,7 +49,11 @@ const CONTEXT_SIZE_LIMITS: Record<MediaContext, number> = {
 	[MediaContext.GROUP_ICON]: 5 * 1024 * 1024, // 5 MB
 };
 
-const PUBLIC_CONTEXTS = new Set<string>([MediaContext.AVATAR, MediaContext.GROUP_ICON]);
+// Contexts whose blobs are readable by any authenticated user (ACL only).
+// Delivery still goes through a presigned URL — the bucket is private and
+// `getPublicUrl` is intentionally never used here, so `profilePicturePrivacy`
+// (enforced upstream by user-service) is not bypassed by a guessable URL.
+const PUBLIC_READABLE_CONTEXTS = new Set<string>([MediaContext.AVATAR, MediaContext.GROUP_ICON]);
 
 // Thumbnails must always be a safe image type regardless of the blob context.
 const THUMBNAIL_ALLOWED_MIME = new Set<string>([
@@ -446,16 +450,8 @@ export class MediaService {
 			return { url: null, expiresAt: null };
 		}
 
-		const isPublic = PUBLIC_CONTEXTS.has(media.context);
-		let url: string;
-		let expiresAt: Date | null;
-		if (isPublic) {
-			url = this.storageService.getPublicUrl(media.thumbnailPath);
-			expiresAt = null;
-		} else {
-			url = await this.generatePresignedUrl(media.thumbnailPath, this.signedUrlExpirySeconds);
-			expiresAt = new Date(Date.now() + this.signedUrlExpirySeconds * 1000);
-		}
+		const url = await this.generatePresignedUrl(media.thumbnailPath, this.signedUrlExpirySeconds);
+		const expiresAt = new Date(Date.now() + this.signedUrlExpirySeconds * 1000);
 
 		this.writeAccessLog(media.id, requesterId, 'thumbnail', ipAddress, userAgent).catch((err) => {
 			this.logger.error(
@@ -747,7 +743,7 @@ export class MediaService {
 		sharedWith: string[] | null | undefined,
 		requesterId: string
 	): void {
-		if (PUBLIC_CONTEXTS.has(context)) return;
+		if (PUBLIC_READABLE_CONTEXTS.has(context)) return;
 		if (ownerId === requesterId) return;
 		if (sharedWith && sharedWith.includes(requesterId)) return;
 		throw new ForbiddenException('Access denied');
@@ -804,11 +800,6 @@ export class MediaService {
 		media: Media,
 		manager: EntityManager
 	): Promise<{ url: string; expiresAt: Date | null }> {
-		// Public contexts serve the blob via a non-signed URL — no expiry applies.
-		if (PUBLIC_CONTEXTS.has(media.context)) {
-			return { url: this.storageService.getPublicUrl(media.storagePath), expiresAt: null };
-		}
-
 		const now = new Date();
 		if (media.signedUrlExpiresAt && media.signedUrlExpiresAt > now) {
 			const remaining = Math.max(
@@ -857,33 +848,27 @@ export class MediaService {
 	/**
 	 * Construit la réponse de `POST /media/v1/upload` (WHISPR-917).
 	 *
-	 * - Contextes publics (avatars, group_icons) : URL publique statique.
-	 * - Contextes privés (messages) : URL présignée de courte durée, signée
-	 *   sur `S3_PUBLIC_ENDPOINT` si configuré, de sorte que le navigateur peut
-	 *   utiliser `url` directement dans `<img src>` sans header Authorization.
-	 * - Les clés suivent le nommage snake_case pour s'aligner sur les autres
-	 *   services REST (auth, user, messaging).
+	 * Tous les contextes (messages, avatars, group_icons) sont servis via une
+	 * URL presigned de courte durée signée sur `S3_PUBLIC_ENDPOINT` si
+	 * configuré, de sorte que le navigateur peut utiliser `url` directement
+	 * dans `<img src>` sans header Authorization.
+	 *
+	 * `expires_at` reflète la durée de vie de la signature, pas le TTL logique
+	 * du média. Les clés suivent le nommage snake_case pour s'aligner sur les
+	 * autres services REST (auth, user, messaging).
 	 */
 	private async buildUploadResponse(media: Media, _context: MediaContext): Promise<UploadMediaResponseDto> {
 		const presignExpiry = this.signedUrlExpirySeconds;
-		const isPublic = PUBLIC_CONTEXTS.has(media.context);
 
 		const url = media.storagePath
-			? isPublic
-				? this.storageService.getPublicUrl(media.storagePath)
-				: await this.generatePresignedUrl(media.storagePath, presignExpiry)
+			? await this.generatePresignedUrl(media.storagePath, presignExpiry)
 			: null;
 
 		const thumbnail_url = media.thumbnailPath
-			? isPublic
-				? this.storageService.getPublicUrl(media.thumbnailPath)
-				: await this.generatePresignedUrl(media.thumbnailPath, presignExpiry)
+			? await this.generatePresignedUrl(media.thumbnailPath, presignExpiry)
 			: null;
 
-		// Pour les contenus privés, expires_at reflète la durée de vie de la
-		// signature et non le TTL logique du média. Pour les contenus publics,
-		// on conserve le TTL logique (media.expiresAt).
-		const expires_at = isPublic ? media.expiresAt : new Date(Date.now() + presignExpiry * 1000);
+		const expires_at = new Date(Date.now() + presignExpiry * 1000);
 
 		return {
 			media_id: media.id,
