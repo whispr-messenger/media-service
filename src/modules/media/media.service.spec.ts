@@ -464,22 +464,26 @@ describe('MediaService', () => {
 			await expect(service.getBlob('media-uuid-1', 'stranger')).rejects.toThrow(ForbiddenException);
 		});
 
-		it('allows any user to download avatar blob (public context)', async () => {
+		// WHISPR-1190: avatars/group_icons stay readable by any authenticated user
+		// (ACL), but delivery is now via a presigned URL — the bucket is private.
+		it('allows any user to download avatar blob via a presigned URL', async () => {
 			const media = makeMedia({ ownerId: 'owner-1', context: MediaContext.AVATAR });
 			mockMediaRepository.findById.mockResolvedValue(media);
 
 			const result = await service.getBlob('media-uuid-1', 'different-user');
-			expect(result.url).toBe(`http://minio:9000/test-bucket/${media.storagePath}`);
-			expect(mockStorageService.getPublicUrl).toHaveBeenCalledWith(media.storagePath);
+			expect(result.url).toBe('https://presigned.url/file');
+			expect(result.expiresAt).toBeInstanceOf(Date);
+			expect(mockStorageService.getPublicUrl).not.toHaveBeenCalled();
 		});
 
-		it('allows any user to download group_icon blob (public context)', async () => {
+		it('allows any user to download group_icon blob via a presigned URL', async () => {
 			const media = makeMedia({ ownerId: 'owner-1', context: MediaContext.GROUP_ICON });
 			mockMediaRepository.findById.mockResolvedValue(media);
 
 			const result = await service.getBlob('media-uuid-1', 'different-user');
-			expect(result.url).toBe(`http://minio:9000/test-bucket/${media.storagePath}`);
-			expect(mockStorageService.getPublicUrl).toHaveBeenCalledWith(media.storagePath);
+			expect(result.url).toBe('https://presigned.url/file');
+			expect(result.expiresAt).toBeInstanceOf(Date);
+			expect(mockStorageService.getPublicUrl).not.toHaveBeenCalled();
 		});
 
 		// WHISPR-985: expiresAt must reflect regeneration, not the stale DB value
@@ -530,13 +534,16 @@ describe('MediaService', () => {
 				expect(mockMediaRepository.updateSignedUrlExpiry).not.toHaveBeenCalled();
 			});
 
-			it('returns expiresAt=null for a public-context blob', async () => {
+			// WHISPR-1190: public-readable contexts (AVATAR/GROUP_ICON) now go through
+			// the same presigning path as MESSAGE, so they always carry an expiry.
+			it('returns a non-null expiresAt for a public-readable avatar blob', async () => {
 				const media = makeMedia({ ownerId: 'owner-1', context: MediaContext.AVATAR });
 				mockMediaRepository.findById.mockResolvedValue(media);
+				mockMediaRepository.updateSignedUrlExpiry.mockResolvedValue(undefined);
 
 				const result = await service.getBlob('media-uuid-1', 'any-user');
 
-				expect(result.expiresAt).toBeNull();
+				expect(result.expiresAt).toBeInstanceOf(Date);
 			});
 		});
 
@@ -597,7 +604,8 @@ describe('MediaService', () => {
 			);
 		});
 
-		it('returns public URL for avatar thumbnail (no expiry)', async () => {
+		// WHISPR-1190: avatar thumbnails are now delivered via a presigned URL too.
+		it('returns presigned URL for avatar thumbnail with an expiry', async () => {
 			const media = makeMedia({
 				ownerId: 'owner-1',
 				context: MediaContext.AVATAR,
@@ -607,9 +615,9 @@ describe('MediaService', () => {
 
 			const result = await service.getThumbnail('media-uuid-1', 'any-user');
 
-			expect(result.url).toBe(`http://minio:9000/test-bucket/${media.thumbnailPath}`);
-			expect(result.expiresAt).toBeNull();
-			expect(mockStorageService.getPublicUrl).toHaveBeenCalledWith(media.thumbnailPath);
+			expect(result.url).toBe('https://presigned.url/file');
+			expect(result.expiresAt).toBeInstanceOf(Date);
+			expect(mockStorageService.getPublicUrl).not.toHaveBeenCalled();
 		});
 
 		it('throws NotFoundException when media does not exist', async () => {
