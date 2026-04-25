@@ -10,7 +10,7 @@ function s3ModuleOptionsFactory(configService: ConfigService): S3ModuleOptions {
 			},
 			endpoint: configService.get('S3_ENDPOINT'),
 			region: configService.get('S3_REGION'),
-			forcePathStyle: configService.get('S3_FORCE_PATH_STYLE', false),
+			forcePathStyle: configService.get('S3_FORCE_PATH_STYLE', 'false') === 'true',
 		},
 	};
 }
