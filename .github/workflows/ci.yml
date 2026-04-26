@@ -8,13 +8,6 @@ on:
       - '**.md'
       - 'documentation/**'
       - '.github/workflows/cd.yml'
-  pull_request:
-    branches: [main]
-    paths-ignore:
-      - 'k8s/**'
-      - '**.md'
-      - 'documentation/**'
-      - '.github/workflows/cd.yml'
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
