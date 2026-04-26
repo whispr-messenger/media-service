@@ -201,6 +201,11 @@ export class MediaController {
 	// ce qui permet au client de charger l'image quand l'URL présignée n'est
 	// pas joignable (par ex. preprod où `S3_PUBLIC_ENDPOINT` n'est pas
 	// configuré et où l'URL signée pointe sur un hostname cluster-interne).
+	// WHISPR-1192: relâche le palier `short` (3/1s par défaut) à 30/1s pour
+	// absorber une rafale d'avatars (un écran de chat en affiche ~10 d'un coup).
+	// Les paliers `medium` (20/10s) et `long` (100/60s) hérités du défaut
+	// continuent de protéger contre l'abus longue durée.
+	@Throttle({ short: { ttl: 1000, limit: 30 } })
 	@Get(':id/blob')
 	@ApiOperation({
 		summary: 'Get a presigned GET URL for the blob (or the bytes if stream=1)',
@@ -235,6 +240,10 @@ export class MediaController {
 	// permet au client de fallback silencieusement sur /blob. Avec `?stream=1`
 	// on sert les octets de la thumbnail via `StreamableFile` (404 si aucune
 	// thumbnail n'est stockée).
+	// WHISPR-1192: même override que /blob — les thumbnails sont chargés en
+	// même temps que les blobs (ou à leur place pour les vidéos), donc le
+	// même palier court 30/1s s'applique.
+	@Throttle({ short: { ttl: 1000, limit: 30 } })
 	@Get(':id/thumbnail')
 	@ApiOperation({
 		summary: 'Get a presigned GET URL for the thumbnail (url=null if none) or the bytes if stream=1',
