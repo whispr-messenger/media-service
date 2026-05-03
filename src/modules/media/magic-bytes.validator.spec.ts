@@ -8,6 +8,7 @@ const webm = Buffer.from([0x1a, 0x45, 0xdf, 0xa3, 0x01, 0x00, 0x00, 0x00]);
 
 // MP4: 4 bytes size (any) + "ftyp"
 const mp4 = Buffer.from([0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d]);
+const caf = Buffer.from([0x63, 0x61, 0x66, 0x66, 0x00, 0x01, 0x00, 0x00]);
 
 // WebP: RIFF at 0, 4-byte size, WEBP at 8
 const webp = Buffer.from([
@@ -88,6 +89,15 @@ describe('validateMagicBytes()', () => {
 
 	it('passes MP4 with video/mp4', () => {
 		expect(() => validateMagicBytes(mp4, 'video/mp4')).not.toThrow();
+	});
+
+	it('passes M4A aliases with MP4 bytes', () => {
+		expect(() => validateMagicBytes(mp4, 'audio/x-m4a')).not.toThrow();
+		expect(() => validateMagicBytes(mp4, 'audio/m4a')).not.toThrow();
+	});
+
+	it('passes CAF with audio/x-caf', () => {
+		expect(() => validateMagicBytes(caf, 'audio/x-caf')).not.toThrow();
 	});
 
 	it('throws UnsupportedMediaTypeException when JPEG bytes are declared as image/png', () => {
