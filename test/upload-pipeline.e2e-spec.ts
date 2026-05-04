@@ -78,10 +78,10 @@ describe('Upload Pipeline (e2e, Docker)', () => {
 	}, 30000);
 
 	// =========================================================================
-	// Successful upload — avatar context (public URL returned)
+	// Successful upload — avatar context (presigned URL returned, WHISPR-1190)
 	// =========================================================================
 
-	it('uploads a JPEG avatar and returns a public URL', async () => {
+	it('uploads a JPEG avatar and returns a presigned URL with expiry', async () => {
 		const fileBuffer = Buffer.concat([JPEG_MAGIC, Buffer.alloc(512)]);
 
 		const res = await request(app.getHttpServer())
@@ -93,8 +93,11 @@ describe('Upload Pipeline (e2e, Docker)', () => {
 
 		expect(res.body.mediaId).toBeDefined();
 		expect(res.body.context).toBe('avatar');
-		// avatar is a public context — a URL should be returned
+		// WHISPR-1190: avatars are now delivered via a presigned URL too,
+		// so the bucket can stay private and `profilePicturePrivacy` is
+		// not bypassed by a guessable public URL.
 		expect(res.body.url).toBeTruthy();
+		expect(res.body.expires_at ?? res.body.expiresAt).toBeTruthy();
 	}, 30000);
 
 	// =========================================================================

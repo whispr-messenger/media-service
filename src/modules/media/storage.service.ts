@@ -6,6 +6,9 @@ import { Readable } from 'stream';
 
 export type StorageContext = 'messages' | 'avatars' | 'group_icons' | 'thumbnails';
 
+/** Canonical UUID v1-v5 pattern (case-insensitive). */
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 @Injectable()
 export class StorageService {
 	private readonly logger = new Logger(StorageService.name);
@@ -34,6 +37,16 @@ export class StorageService {
 	}
 
 	buildPath(context: StorageContext, ownerId: string, objectId: string): string {
+		// Defense-in-depth: refuse anything that is not a canonical UUID.
+		// Today both inputs come from JWT claims / crypto.randomUUID(), but
+		// validating here protects against accidental path traversal if an
+		// upstream callsite is ever refactored to pass user-supplied values.
+		if (!UUID_PATTERN.test(ownerId)) {
+			throw new Error(`Invalid ownerId for storage path: ${ownerId}`);
+		}
+		if (!UUID_PATTERN.test(objectId)) {
+			throw new Error(`Invalid objectId for storage path: ${objectId}`);
+		}
 		switch (context) {
 			case 'messages':
 				return `messages/${ownerId}/${objectId}.bin`;
