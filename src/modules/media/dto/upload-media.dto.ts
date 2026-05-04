@@ -43,7 +43,7 @@ export class UploadMediaDto {
 	@IsUUID()
 	ownerId?: string;
 
-	// WHISPR-XXX : liste d'UUIDs supplémentaires autorisés à lire ce média
+	// WHISPR-941 : liste d'UUIDs supplémentaires autorisés à lire ce média
 	// (typiquement, les membres de la conversation à laquelle il sera attaché).
 	// Peut être envoyé en multipart sous forme de CSV ("uuid1,uuid2") ou de
 	// JSON ("[\"uuid1\",\"uuid2\"]").
@@ -59,7 +59,7 @@ export class UploadMediaDto {
 }
 
 export class ShareMediaDto {
-	// WHISPR-XXX : PATCH /:id/share — liste d'UUIDs à ajouter à l'ACL.
+	// WHISPR-941 : PATCH /:id/share — liste d'UUIDs à ajouter à l'ACL.
 	@ApiProperty({
 		description: 'UUIDs to add to the shared_with ACL (union with existing)',
 		type: [String],
@@ -89,6 +89,35 @@ export class UploadMediaResponseDto {
 
 	@ApiProperty({ description: 'Blob size in bytes' })
 	size: number;
+}
+
+export class BlobUrlResponseDto {
+	@ApiProperty({ description: 'Presigned GET URL for the blob' })
+	url: string;
+
+	@ApiProperty({
+		description: 'Expiration timestamp of the presigned URL (ISO-8601)',
+		nullable: true,
+		type: Date,
+	})
+	expiresAt: Date | null;
+}
+
+export class ThumbnailUrlResponseDto {
+	@ApiProperty({ description: 'Presigned GET URL for the thumbnail, or null if none', nullable: true })
+	url: string | null;
+
+	@ApiProperty({
+		description: 'Expiration timestamp of the presigned URL (ISO-8601)',
+		nullable: true,
+		type: Date,
+	})
+	expiresAt: Date | null;
+}
+
+export class ShareMediaResponseDto {
+	@ApiProperty({ description: 'Updated list of user UUIDs in the shared_with ACL', type: [String] })
+	sharedWith: string[];
 }
 
 export class MediaMetadataDto {

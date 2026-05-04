@@ -46,20 +46,32 @@ describe('StorageService', () => {
 	});
 
 	describe('buildPath', () => {
+		const USER = '11111111-1111-4111-8111-111111111111';
+		const OBJECT = '22222222-2222-4222-8222-222222222222';
+		const GROUP = '33333333-3333-4333-8333-333333333333';
+
 		it('should build messages path', () => {
-			expect(service.buildPath('messages', 'user-1', 'uuid-1')).toBe('messages/user-1/uuid-1.bin');
+			expect(service.buildPath('messages', USER, OBJECT)).toBe(`messages/${USER}/${OBJECT}.bin`);
 		});
 
 		it('should build avatars path', () => {
-			expect(service.buildPath('avatars', 'user-1', 'uuid-1')).toBe('avatars/user-1/uuid-1');
+			expect(service.buildPath('avatars', USER, OBJECT)).toBe(`avatars/${USER}/${OBJECT}`);
 		});
 
 		it('should build group_icons path', () => {
-			expect(service.buildPath('group_icons', 'group-1', 'uuid-1')).toBe('group_icons/group-1/uuid-1');
+			expect(service.buildPath('group_icons', GROUP, OBJECT)).toBe(`group_icons/${GROUP}/${OBJECT}`);
 		});
 
 		it('should build thumbnails path', () => {
-			expect(service.buildPath('thumbnails', 'user-1', 'uuid-1')).toBe('thumbnails/uuid-1.bin');
+			expect(service.buildPath('thumbnails', USER, OBJECT)).toBe(`thumbnails/${OBJECT}.bin`);
+		});
+
+		it('rejects path traversal in ownerId', () => {
+			expect(() => service.buildPath('messages', '../etc/passwd', OBJECT)).toThrow(/Invalid ownerId/);
+		});
+
+		it('rejects path traversal in objectId', () => {
+			expect(() => service.buildPath('messages', USER, '../etc/passwd')).toThrow(/Invalid objectId/);
 		});
 	});
 

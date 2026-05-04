@@ -1,5 +1,6 @@
 import { Controller, Get, HttpException, HttpStatus, Inject, Logger } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { SkipThrottle } from '@nestjs/throttler';
 import { DataSource } from 'typeorm';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Cache } from 'cache-manager';
@@ -7,6 +8,9 @@ import { InjectS3, S3 } from 'nestjs-s3';
 import { JwksService } from '../jwks/jwks.service';
 import { Public } from '../auth/public.decorator';
 
+// Health probes must never be rate-limited — kubelet hits them every few
+// seconds and a 429 would cause pod flapping (WHISPR-1012).
+@SkipThrottle()
 @Public()
 @ApiTags('Health')
 @Controller('health')

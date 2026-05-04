@@ -6,8 +6,9 @@ import {
 	Injectable,
 	Logger,
 	NotFoundException,
-	NotImplementedException,
 	PayloadTooLargeException,
+	ServiceUnavailableException,
+	StreamableFile,
 	UnsupportedMediaTypeException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -27,6 +28,7 @@ import { MediaAccessLog } from './entities/media-access-log.entity';
 import { MediaRepository } from './repositories/media.repository';
 import { StorageService, StorageContext } from './storage.service';
 import { QuotaService } from './quota.service';
+import { GroupService } from './group.service';
 import { validateMagicBytes } from './magic-bytes.validator';
 import { createClient } from '@redis/client';
 import { MediaContext, UploadMediaResponseDto, MediaMetadataDto } from './dto/upload-media.dto';
@@ -47,7 +49,22 @@ const CONTEXT_SIZE_LIMITS: Record<MediaContext, number> = {
 	[MediaContext.GROUP_ICON]: 5 * 1024 * 1024, // 5 MB
 };
 
-const PUBLIC_CONTEXTS = new Set<string>([MediaContext.AVATAR, MediaContext.GROUP_ICON]);
+// Contexts whose blobs are readable by any authenticated user (ACL only).
+// Delivery still goes through a presigned URL — the bucket is private and
+// `getPublicUrl` is intentionally never used here, so `profilePicturePrivacy`
+// (enforced upstream by user-service) is not bypassed by a guessable URL.
+const PUBLIC_READABLE_CONTEXTS = new Set<string>([MediaContext.AVATAR, MediaContext.GROUP_ICON]);
+
+// Thumbnails must always be a safe image type regardless of the blob context.
+const THUMBNAIL_ALLOWED_MIME = new Set<string>([
+	'image/jpeg',
+	'image/png',
+	'image/gif',
+	'image/webp',
+	'image/heic',
+	'image/heif',
+]);
+const THUMBNAIL_MAX_BYTES = 5 * 1024 * 1024;
 
 // Strict MIME allowlists per context — unknown types are rejected for uploads
 const CONTEXT_MIME_ALLOWLIST: Record<MediaContext, Set<string>> = {
@@ -129,7 +146,8 @@ export class MediaService {
 		@InjectRepository(MediaAccessLog)
 		private readonly accessLogRepo: Repository<MediaAccessLog>,
 		@Inject(REDIS_CLIENT) private readonly redisClient: ReturnType<typeof createClient>,
-		private readonly metricsService: MetricsService
+		private readonly metricsService: MetricsService,
+		private readonly groupService: GroupService
 	) {
 		this.signedUrlExpirySeconds = this.configService.get<number>(
 			'SIGNED_URL_EXPIRY_SECONDS',
@@ -192,6 +210,9 @@ export class MediaService {
 
 		try {
 			return await this.runWithSemaphoreTtlRefresh(ownerId, async () => {
+				// WHISPR-932: authorize GROUP_ICON uploads via group-service
+				await this.authorizeGroupIconUpload(context, ownerId);
+
 				// WHISPR-356: Pre-upload quota check
 				await this.quotaService.enforceQuota(ownerId, file.size);
 
@@ -248,15 +269,6 @@ export class MediaService {
 				let thumbnailPath: string | null = null;
 				if (thumbnailFile) {
 					// Validate thumbnail: only safe image MIME types, max 5 MB, magic-bytes check
-					const THUMBNAIL_MAX_BYTES = 5 * 1024 * 1024;
-					const THUMBNAIL_ALLOWED_MIME = new Set([
-						'image/jpeg',
-						'image/png',
-						'image/gif',
-						'image/webp',
-						'image/heic',
-						'image/heif',
-					]);
 					if (!THUMBNAIL_ALLOWED_MIME.has(thumbnailFile.mimetype)) {
 						throw new UnsupportedMediaTypeException(
 							`Thumbnail MIME type '${thumbnailFile.mimetype}' is not allowed`
@@ -308,6 +320,23 @@ export class MediaService {
 				await this.quotaService.recordUpload(ownerId, file.size);
 
 				this.metricsService.uploadsTotal.inc();
+
+				// Notifie les services downstream (messaging, notifications, export
+				// GDPR). Fire-and-forget : une panne Redis ne doit pas faire échouer
+				// la réponse d'upload. Aligné avec la pub `media.deleted`.
+				const uploadedPayload = JSON.stringify({
+					mediaId: media.id,
+					ownerId: media.ownerId,
+					context: media.context,
+					contentType: media.contentType,
+					size: media.blobSize,
+					hasThumbnail: media.thumbnailPath !== null,
+				});
+				this.redisClient.publish('media.uploaded', uploadedPayload).catch((err: unknown) => {
+					this.logger.error(
+						`Failed to publish media.uploaded for media ${media.id}: ${err instanceof Error ? err.message : String(err)}`
+					);
+				});
 
 				return await this.buildUploadResponse(media, context);
 			});
@@ -381,15 +410,18 @@ export class MediaService {
 				requesterId
 			);
 
-			const url = await this.getOrGenerateSignedUrl(media, manager);
-			const isPublic = PUBLIC_CONTEXTS.has(media.context);
-			// Pour les contenus publics l'URL ne signe pas → pas d'expiration de signature.
-			const expiresAt = isPublic ? null : media.signedUrlExpiresAt;
+			const { url, expiresAt } = await this.getOrGenerateSignedUrl(media, manager);
 			return { media, url, expiresAt };
 		});
 
 		// Async access log (non-blocking)
-		this.writeAccessLog(media.id, requesterId, 'blob', ipAddress, userAgent).catch(() => {});
+		this.writeAccessLog(media.id, requesterId, 'blob', ipAddress, userAgent).catch((err) => {
+			this.logger.error(
+				`Failed to write access log for media ${media.id}: ${err instanceof Error ? err.message : String(err)}`
+			);
+		});
+
+		this.metricsService.downloadsTotal.inc();
 
 		return { url, expiresAt };
 	}
@@ -421,20 +453,76 @@ export class MediaService {
 			return { url: null, expiresAt: null };
 		}
 
-		const isPublic = PUBLIC_CONTEXTS.has(media.context);
-		let url: string;
-		let expiresAt: Date | null;
-		if (isPublic) {
-			url = this.storageService.getPublicUrl(media.thumbnailPath);
-			expiresAt = null;
-		} else {
-			url = await this.generatePresignedUrl(media.thumbnailPath, this.signedUrlExpirySeconds);
-			expiresAt = new Date(Date.now() + this.signedUrlExpirySeconds * 1000);
-		}
+		const url = await this.generatePresignedUrl(media.thumbnailPath, this.signedUrlExpirySeconds);
+		const expiresAt = new Date(Date.now() + this.signedUrlExpirySeconds * 1000);
 
-		this.writeAccessLog(media.id, requesterId, 'thumbnail', ipAddress, userAgent).catch(() => {});
+		this.writeAccessLog(media.id, requesterId, 'thumbnail', ipAddress, userAgent).catch((err) => {
+			this.logger.error(
+				`Failed to write access log for media ${media.id}: ${err instanceof Error ? err.message : String(err)}`
+			);
+		});
+
+		this.metricsService.downloadsTotal.inc();
 
 		return { url, expiresAt };
+	}
+
+	// =========================================================================
+	// GET /media/v1/:id/blob?stream=1 — fallback bytes proxy
+	// =========================================================================
+
+	// Stream raw blob bytes back to the client. Used by clients that cannot
+	// reach the presigned URL hostname directly (typically mobile/web apps
+	// behind k8s when `S3_PUBLIC_ENDPOINT` is not configured and the signed
+	// URL points at a cluster-internal MinIO endpoint).
+	async streamBlob(
+		id: string,
+		requesterId: string,
+		ipAddress?: string,
+		userAgent?: string
+	): Promise<StreamableFile> {
+		const media = await this.dataSource.transaction((manager) =>
+			this.mediaRepository.findById(id, manager)
+		);
+		if (!media) {
+			throw new NotFoundException(`Media ${id} not found`);
+		}
+		this.enforceReadAccess(media.context as MediaContext, media.ownerId, media.sharedWith, requesterId);
+
+		const bodyStream = await this.storageService.download(media.storagePath);
+		this.writeAccessLog(media.id, requesterId, 'blob', ipAddress, userAgent).catch(() => {});
+
+		return new StreamableFile(bodyStream, {
+			type: media.contentType,
+			length: media.blobSize,
+		});
+	}
+
+	// Stream raw thumbnail bytes back to the client, or `null` when no
+	// thumbnail is stored (the controller converts that into a 404).
+	async streamThumbnail(
+		id: string,
+		requesterId: string,
+		ipAddress?: string,
+		userAgent?: string
+	): Promise<StreamableFile | null> {
+		const media = await this.dataSource.transaction((manager) =>
+			this.mediaRepository.findById(id, manager)
+		);
+		if (!media) {
+			throw new NotFoundException(`Media ${id} not found`);
+		}
+		this.enforceReadAccess(media.context as MediaContext, media.ownerId, media.sharedWith, requesterId);
+
+		if (!media.thumbnailPath) return null;
+
+		const bodyStream = await this.storageService.download(media.thumbnailPath);
+		this.writeAccessLog(media.id, requesterId, 'thumbnail', ipAddress, userAgent).catch(() => {});
+
+		// Le contentType de la thumbnail n'est pas persisté (seul celui du blob
+		// l'est). Les thumbnails sont toujours image/jpeg|png|gif|webp|heic|heif
+		// — on renvoie `image/*` laisser le client décoder par magic bytes.
+		return new StreamableFile(bodyStream, { type: 'image/*' });
 	}
 
 	// =========================================================================
@@ -448,7 +536,7 @@ export class MediaService {
 	 * accessible aux autres participants d'une conversation.
 	 */
 	async share(id: string, requesterId: string, userIdsToAdd: string[]): Promise<string[]> {
-		const sharedWith = await this.dataSource.transaction(async (manager) => {
+		const { sharedWith, changed } = await this.dataSource.transaction(async (manager) => {
 			const media = await this.mediaRepository.findById(id, manager);
 			if (!media) {
 				throw new NotFoundException(`Media ${id} not found`);
@@ -457,17 +545,28 @@ export class MediaService {
 				throw new ForbiddenException(`You do not own media ${id}`);
 			}
 
-			const existing = new Set(media.sharedWith ?? []);
+			const existingSet = new Set(media.sharedWith ?? []);
+			const beforeSize = existingSet.size;
 			for (const uid of userIdsToAdd) {
-				if (uid && uid !== media.ownerId) existing.add(uid);
+				if (uid && uid !== media.ownerId) existingSet.add(uid);
 			}
-			const next = Array.from(existing);
+			const next = Array.from(existingSet);
+
+			// WHISPR-986: the ACL is identical iff no new UUID made it into the
+			// set. Skip the DB write and cache invalidation on a no-op, which
+			// is the common case when the client re-submits the same list.
+			if (existingSet.size === beforeSize) {
+				return { sharedWith: next, changed: false };
+			}
+
 			await this.mediaRepository.updateSharedWith(id, next.length > 0 ? next : null, manager);
-			return next;
+			return { sharedWith: next, changed: true };
 		});
 
-		// Invalide le cache méta (la version cachée contient encore l'ancienne ACL)
-		await this.cache.del(`media:meta:${id}`);
+		if (changed) {
+			// Invalide le cache méta (la version cachée contient encore l'ancienne ACL)
+			await this.cache.del(`media:meta:${id}`);
+		}
 
 		return sharedWith;
 	}
@@ -506,7 +605,11 @@ export class MediaService {
 		await this.quotaService.recordDelete(requesterId, media.blobSize);
 
 		// Access log
-		this.writeAccessLog(media.id, requesterId, 'delete', ipAddress, userAgent).catch(() => {});
+		this.writeAccessLog(media.id, requesterId, 'delete', ipAddress, userAgent).catch((err) => {
+			this.logger.error(
+				`Failed to write access log for media ${media.id}: ${err instanceof Error ? err.message : String(err)}`
+			);
+		});
 
 		// WHISPR-372: Publish media.deleted event (fire-and-forget — failure does not affect the delete response)
 		const deletedPayload = JSON.stringify({
@@ -520,20 +623,9 @@ export class MediaService {
 			);
 		});
 
+		this.metricsService.deletesTotal.inc();
+
 		this.logger.debug(`Soft-deleted media ${id} and removed S3 objects`);
-	}
-
-	// =========================================================================
-	// Legacy stream helper (kept for backward compatibility)
-	// =========================================================================
-
-	async getStream(id: string): Promise<{ stream: Readable; contentType: string }> {
-		const media = await this.mediaRepository.findById(id);
-		if (!media) {
-			throw new NotFoundException(`Media ${id} not found`);
-		}
-		const stream = await this.storageService.download(media.storagePath);
-		return { stream, contentType: media.contentType };
 	}
 
 	// =========================================================================
@@ -609,16 +701,34 @@ export class MediaService {
 	// =========================================================================
 
 	private enforceContextSizeLimit(size: number, context: MediaContext): void {
-		if (context === MediaContext.GROUP_ICON) {
-			throw new NotImplementedException(
-				'Group icon upload requires group admin authorization (not yet implemented)'
-			);
-		}
 		const limit = CONTEXT_SIZE_LIMITS[context];
 		if (size > limit) {
 			throw new PayloadTooLargeException(
 				`File size ${size} exceeds the ${limit} byte limit for context '${context}'`
 			);
+		}
+	}
+
+	/**
+	 * WHISPR-932: GROUP_ICON uploads must come from a group admin. Non-admin
+	 * members and non-members both receive 403 so group existence cannot be
+	 * probed via the error code. group-service outages map to 503.
+	 */
+	private async authorizeGroupIconUpload(context: MediaContext, ownerId: string): Promise<void> {
+		if (context !== MediaContext.GROUP_ICON) return;
+		let isAdmin: boolean;
+		try {
+			isAdmin = await this.groupService.isAdmin(ownerId);
+		} catch (err) {
+			this.logger.warn(
+				`group-service isAdmin check failed ownerId=${ownerId}: ${
+					err instanceof Error ? err.message : String(err)
+				}`
+			);
+			throw new ServiceUnavailableException('Group authorization service unavailable');
+		}
+		if (!isAdmin) {
+			throw new ForbiddenException('You are not allowed to upload an icon for this group');
 		}
 	}
 
@@ -636,7 +746,7 @@ export class MediaService {
 		sharedWith: string[] | null | undefined,
 		requesterId: string
 	): void {
-		if (PUBLIC_CONTEXTS.has(context)) return;
+		if (PUBLIC_READABLE_CONTEXTS.has(context)) return;
 		if (ownerId === requesterId) return;
 		if (sharedWith && sharedWith.includes(requesterId)) return;
 		throw new ForbiddenException('Access denied');
@@ -689,24 +799,28 @@ export class MediaService {
 		}
 	}
 
-	private async getOrGenerateSignedUrl(media: Media, manager: EntityManager): Promise<string> {
-		if (PUBLIC_CONTEXTS.has(media.context)) {
-			return this.storageService.getPublicUrl(media.storagePath);
-		}
-
+	private async getOrGenerateSignedUrl(
+		media: Media,
+		manager: EntityManager
+	): Promise<{ url: string; expiresAt: Date | null }> {
 		const now = new Date();
 		if (media.signedUrlExpiresAt && media.signedUrlExpiresAt > now) {
 			const remaining = Math.max(
 				1,
 				Math.floor((media.signedUrlExpiresAt.getTime() - now.getTime()) / 1000)
 			);
-			return this.generatePresignedUrl(media.storagePath, remaining);
+			const url = await this.generatePresignedUrl(media.storagePath, remaining);
+			return { url, expiresAt: media.signedUrlExpiresAt };
 		}
 
+		// WHISPR-985: regenerated URL → return the freshly computed expiry
+		// (and keep the in-memory entity in sync) so callers don't observe
+		// the stale value that the DB just overwrote.
 		const expiresAt = new Date(now.getTime() + this.signedUrlExpirySeconds * 1000);
 		const url = await this.generatePresignedUrl(media.storagePath, this.signedUrlExpirySeconds);
 		await this.mediaRepository.updateSignedUrlExpiry(media.id, expiresAt, manager);
-		return url;
+		media.signedUrlExpiresAt = expiresAt;
+		return { url, expiresAt };
 	}
 
 	private generatePresignedUrl(storagePath: string, expiresIn: number): Promise<string> {
@@ -737,33 +851,27 @@ export class MediaService {
 	/**
 	 * Construit la réponse de `POST /media/v1/upload` (WHISPR-917).
 	 *
-	 * - Contextes publics (avatars, group_icons) : URL publique statique.
-	 * - Contextes privés (messages) : URL présignée de courte durée, signée
-	 *   sur `S3_PUBLIC_ENDPOINT` si configuré, de sorte que le navigateur peut
-	 *   utiliser `url` directement dans `<img src>` sans header Authorization.
-	 * - Les clés suivent le nommage snake_case pour s'aligner sur les autres
-	 *   services REST (auth, user, messaging).
+	 * Tous les contextes (messages, avatars, group_icons) sont servis via une
+	 * URL presigned de courte durée signée sur `S3_PUBLIC_ENDPOINT` si
+	 * configuré, de sorte que le navigateur peut utiliser `url` directement
+	 * dans `<img src>` sans header Authorization.
+	 *
+	 * `expires_at` reflète la durée de vie de la signature, pas le TTL logique
+	 * du média. Les clés suivent le nommage snake_case pour s'aligner sur les
+	 * autres services REST (auth, user, messaging).
 	 */
 	private async buildUploadResponse(media: Media, _context: MediaContext): Promise<UploadMediaResponseDto> {
 		const presignExpiry = this.signedUrlExpirySeconds;
-		const isPublic = PUBLIC_CONTEXTS.has(media.context);
 
 		const url = media.storagePath
-			? isPublic
-				? this.storageService.getPublicUrl(media.storagePath)
-				: await this.generatePresignedUrl(media.storagePath, presignExpiry)
+			? await this.generatePresignedUrl(media.storagePath, presignExpiry)
 			: null;
 
 		const thumbnail_url = media.thumbnailPath
-			? isPublic
-				? this.storageService.getPublicUrl(media.thumbnailPath)
-				: await this.generatePresignedUrl(media.thumbnailPath, presignExpiry)
+			? await this.generatePresignedUrl(media.thumbnailPath, presignExpiry)
 			: null;
 
-		// Pour les contenus privés, expires_at reflète la durée de vie de la
-		// signature et non le TTL logique du média. Pour les contenus publics,
-		// on conserve le TTL logique (media.expiresAt).
-		const expires_at = isPublic ? media.expiresAt : new Date(Date.now() + presignExpiry * 1000);
+		const expires_at = new Date(Date.now() + presignExpiry * 1000);
 
 		return {
 			media_id: media.id,
