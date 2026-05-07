@@ -82,7 +82,7 @@ describe('health-check', () => {
 
 		expect(mockExit).toHaveBeenCalledWith(0);
 		expect(mockConsoleLog).toHaveBeenCalledWith(expect.stringContaining('Health check starting...'));
-		expect(mockConsoleLog).toHaveBeenCalledWith(expect.stringContaining('✓ Health check PASSED'));
+		expect(mockConsoleLog).toHaveBeenCalledWith(expect.stringContaining('Health check PASSED'));
 		expect(mockRequest.end).toHaveBeenCalled();
 	});
 
@@ -102,7 +102,7 @@ describe('health-check', () => {
 		});
 
 		expect(mockExit).toHaveBeenCalledWith(1);
-		expect(mockConsoleError).toHaveBeenCalledWith(expect.stringContaining('✗ Health check FAILED'));
+		expect(mockConsoleError).toHaveBeenCalledWith(expect.stringContaining('Health check FAILED'));
 		expect(mockConsoleError).toHaveBeenCalledWith(expect.stringContaining('Invalid status code 500'));
 	});
 
@@ -122,7 +122,7 @@ describe('health-check', () => {
 
 		expect(mockExit).toHaveBeenCalledWith(1);
 		expect(mockConsoleError).toHaveBeenCalledWith(
-			expect.stringContaining('✗ Health check FAILED: Request error')
+			expect.stringContaining('Health check FAILED: Request error')
 		);
 		expect(mockConsoleError).toHaveBeenCalledWith(expect.stringContaining('Connection refused'));
 	});
@@ -142,7 +142,7 @@ describe('health-check', () => {
 
 		expect(mockExit).toHaveBeenCalledWith(1);
 		expect(mockConsoleError).toHaveBeenCalledWith(
-			expect.stringContaining('✗ Health check FAILED: Request timeout after 3000ms')
+			expect.stringContaining('Health check FAILED: Request timeout after 3000ms')
 		);
 		expect(mockRequest.destroy).toHaveBeenCalled();
 	});
@@ -175,8 +175,27 @@ describe('health-check', () => {
 		});
 
 		expect(mockExit).toHaveBeenCalledWith(0);
+		expect(mockConsoleLog).toHaveBeenCalledWith(expect.stringContaining('Response body length:'));
+		expect(mockConsoleLog).toHaveBeenCalledWith(expect.stringContaining('bytes'));
+	});
+
+	it('should accumulate buffer chunk lengths correctly', async () => {
+		mockHttpRequest(mockResponse);
+
+		loadHealthCheck();
+
+		await new Promise<void>((resolve) => {
+			process.nextTick(() => {
+				mockResponse.emit('data', Buffer.from('hello '));
+				mockResponse.emit('data', Buffer.from('world'));
+				mockResponse.emit('end');
+				process.nextTick(resolve);
+			});
+		});
+
+		expect(mockExit).toHaveBeenCalledWith(0);
 		expect(mockConsoleLog).toHaveBeenCalledWith(
-			expect.stringContaining('Response body: {"status":"ok"}')
+			expect.stringContaining('Response body length: 11 bytes')
 		);
 	});
 
