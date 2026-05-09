@@ -147,10 +147,8 @@ export class MediaService {
 		private readonly metricsService: MetricsService,
 		private readonly groupService: GroupService
 	) {
-		this.signedUrlExpirySeconds = this.configService.get<number>(
-			'SIGNED_URL_EXPIRY_SECONDS',
-			7 * 24 * 60 * 60
-		);
+		// 1h limite fenetre d'exploitation post-revoke (was 7j)
+		this.signedUrlExpirySeconds = this.configService.get<number>('SIGNED_URL_EXPIRY_SECONDS', 60 * 60);
 		this.presigner = this.buildPresignerClient();
 	}
 
