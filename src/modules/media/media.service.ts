@@ -488,7 +488,11 @@ export class MediaService {
 		this.enforceReadAccess(media.context as MediaContext, media.ownerId, media.sharedWith, requesterId);
 
 		const bodyStream = await this.storageService.download(media.storagePath);
-		this.writeAccessLog(media.id, requesterId, 'blob', ipAddress, userAgent).catch(() => {});
+		this.writeAccessLog(media.id, requesterId, 'blob', ipAddress, userAgent).catch((err) => {
+			this.logger.error(
+				`Failed to write access log for media ${media.id}: ${err instanceof Error ? err.message : String(err)}`
+			);
+		});
 
 		return new StreamableFile(bodyStream, {
 			type: media.contentType,
@@ -515,7 +519,11 @@ export class MediaService {
 		if (!media.thumbnailPath) return null;
 
 		const bodyStream = await this.storageService.download(media.thumbnailPath);
-		this.writeAccessLog(media.id, requesterId, 'thumbnail', ipAddress, userAgent).catch(() => {});
+		this.writeAccessLog(media.id, requesterId, 'thumbnail', ipAddress, userAgent).catch((err) => {
+			this.logger.error(
+				`Failed to write access log for media ${media.id}: ${err instanceof Error ? err.message : String(err)}`
+			);
+		});
 
 		// Le contentType de la thumbnail n'est pas persisté (seul celui du blob
 		// l'est). Les thumbnails sont toujours image/jpeg|png|gif|webp|heic|heif
