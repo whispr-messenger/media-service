@@ -101,7 +101,7 @@ const mockS3 = {
 const mockConfigService = {
 	get: jest.fn((key: string, defaultValue?: unknown) => {
 		const config: Record<string, unknown> = {
-			SIGNED_URL_EXPIRY_SECONDS: 604800,
+			SIGNED_URL_EXPIRY_SECONDS: 3600,
 			MESSAGE_BLOB_TTL_DAYS: 30,
 		};
 		return config[key] ?? defaultValue;
@@ -508,7 +508,7 @@ describe('MediaService', () => {
 
 		// WHISPR-985: expiresAt must reflect regeneration, not the stale DB value
 		describe('expiresAt on signed URL regeneration (WHISPR-985)', () => {
-			const SIGNED_URL_EXPIRY_SECONDS = 604800; // matches mockConfigService default
+			const SIGNED_URL_EXPIRY_SECONDS = 3600; // matches mockConfigService default
 
 			it('returns a freshly computed expiresAt when no cached expiry exists', async () => {
 				const media = makeMedia({ signedUrlExpiresAt: null });
