@@ -269,7 +269,7 @@ export class QuotaService {
 			let row = await repo.findOne({ where: { userId } });
 
 			if (!row) {
-				// Upsert — concurrent inserts are handled by the unique index.
+				// Upsert - concurrent inserts are handled by the unique index.
 				// Use CURRENT_DATE (DB clock) to stay consistent with the cron reset.
 				await manager
 					.createQueryBuilder()
@@ -361,7 +361,7 @@ export class QuotaService {
 			EX: QUOTA_ALERT_COOLDOWN_TTL_SECONDS,
 		});
 		if (!acquired) {
-			// Cooldown active — skip publishing
+			// Cooldown active - skip publishing
 			return;
 		}
 

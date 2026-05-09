@@ -45,16 +45,17 @@ import { UserQuotaResponseDto } from './dto/user-quota-response.dto';
 import { PaginatedMediaResponseDto } from './dto/paginated-media-response.dto';
 
 /**
- * Hard upper bound applied by multer / FileFieldsInterceptor so a malicious
- * client can't DoS the pod by streaming an unbounded body into memory
- * (WHISPR-1013). Per-context limits (MESSAGE=100MB, AVATAR/GROUP_ICON=5MB)
- * are still enforced at the service layer — this is the outer guard.
+ * Limite haute appliquee par multer / FileFieldsInterceptor pour qu'un
+ * client malveillant ne DoS pas le pod en streamant un body sans borne
+ * en memoire (WHISPR-1013). Les limites par contexte
+ * (MESSAGE=100MB, AVATAR/GROUP_ICON=5MB) restent enforce au niveau
+ * service, c'est juste le garde-fou exterieur.
  */
 export const UPLOAD_MAX_BYTES = 100 * 1024 * 1024;
 
 @ApiTags('Media')
 @ApiBearerAuth('bearer')
-@ApiResponse({ status: 401, description: 'Unauthorized — missing or invalid JWT token' })
+@ApiResponse({ status: 401, description: 'Non autorise - JWT manquant ou invalide' })
 @Controller()
 export class MediaController {
 	private readonly logger = new Logger(MediaController.name);
@@ -62,7 +63,7 @@ export class MediaController {
 	constructor(private readonly mediaService: MediaService) {}
 
 	// =========================================================================
-	// POST /media/v1/upload — WHISPR-359
+	// POST /media/v1/upload - WHISPR-359
 	// =========================================================================
 
 	@Post('upload')
@@ -119,7 +120,7 @@ export class MediaController {
 		if (!authenticatedUserId) {
 			throw new BadRequestException('Missing authenticated user');
 		}
-		// The ownerId in the body must match the authenticated user
+		// l'ownerId du body doit correspondre a l'user authentifie
 		const ownerId = dto.ownerId ?? authenticatedUserId;
 		if (ownerId !== authenticatedUserId) {
 			throw new BadRequestException('ownerId must match the authenticated user');
@@ -132,7 +133,7 @@ export class MediaController {
 	}
 
 	// =========================================================================
-	// GET /media/v1/quota — WHISPR-368
+	// GET /media/v1/quota - WHISPR-368
 	// =========================================================================
 
 	@Get('quota')
@@ -144,7 +145,7 @@ export class MediaController {
 	}
 
 	// =========================================================================
-	// GET /media/v1/my-media — WHISPR-375
+	// GET /media/v1/my-media - WHISPR-375
 	// =========================================================================
 
 	@Get('my-media')
@@ -170,7 +171,7 @@ export class MediaController {
 	}
 
 	// =========================================================================
-	// GET /media/v1/:id — WHISPR-364
+	// GET /media/v1/:id - WHISPR-364
 	// =========================================================================
 
 	@Get(':id')
@@ -188,7 +189,7 @@ export class MediaController {
 	}
 
 	// =========================================================================
-	// GET /media/v1/:id/blob — WHISPR-365
+	// GET /media/v1/:id/blob - WHISPR-365
 	// =========================================================================
 
 	// Retourne 200 JSON `{ url, expiresAt }` plutôt qu'un 302 : le redirect
@@ -232,7 +233,7 @@ export class MediaController {
 	}
 
 	// =========================================================================
-	// GET /media/v1/:id/thumbnail — WHISPR-366
+	// GET /media/v1/:id/thumbnail - WHISPR-366
 	// =========================================================================
 
 	// Même logique que /blob (200 JSON). Quand aucune thumbnail n'est stockée,
@@ -240,7 +241,7 @@ export class MediaController {
 	// permet au client de fallback silencieusement sur /blob. Avec `?stream=1`
 	// on sert les octets de la thumbnail via `StreamableFile` (404 si aucune
 	// thumbnail n'est stockée).
-	// WHISPR-1192: même override que /blob — les thumbnails sont chargés en
+	// WHISPR-1192: même override que /blob - les thumbnails sont chargés en
 	// même temps que les blobs (ou à leur place pour les vidéos), donc le
 	// même palier court 30/1s s'applique.
 	@Throttle({ short: { ttl: 1000, limit: 30 } })
@@ -278,7 +279,7 @@ export class MediaController {
 	}
 
 	// =========================================================================
-	// PATCH /media/v1/:id/share — ACL shared_with
+	// PATCH /media/v1/:id/share - ACL shared_with
 	// =========================================================================
 
 	@Patch(':id/share')
@@ -301,12 +302,12 @@ export class MediaController {
 	}
 
 	// =========================================================================
-	// DELETE /media/v1/:id — WHISPR-367
+	// DELETE /media/v1/:id - WHISPR-367
 	// =========================================================================
 
 	@Delete(':id')
 	@HttpCode(HttpStatus.NO_CONTENT)
-	@ApiOperation({ summary: 'Soft delete media — releases quota' })
+	@ApiOperation({ summary: 'Soft delete media - releases quota' })
 	@ApiParam({ name: 'id', description: 'Media UUID', type: String })
 	@ApiResponse({ status: 204, description: 'Deleted' })
 	@ApiResponse({ status: 403, description: 'Not owner' })

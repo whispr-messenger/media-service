@@ -51,7 +51,7 @@ export class JwtAuthGuard implements CanActivate {
 
 		const publicKeyPem = this.jwksService.getPublicKeyPem();
 		if (!publicKeyPem) {
-			this.logger.warn('Public key not loaded — rejecting request');
+			this.logger.warn('Public key not loaded - rejecting request');
 			throw new UnauthorizedException();
 		}
 

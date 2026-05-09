@@ -346,7 +346,7 @@ describe('MediaService', () => {
 
 				await service.delete('media-uuid-1', 'user-uuid-1');
 
-				// publish is fire-and-forget — wait for microtasks to flush
+				// publish is fire-and-forget - wait for microtasks to flush
 				await Promise.resolve();
 
 				expect(mockRedisClient.publish).toHaveBeenCalledWith(
@@ -465,7 +465,7 @@ describe('MediaService', () => {
 		});
 
 		// WHISPR-1190: avatars/group_icons stay readable by any authenticated user
-		// (ACL), but delivery is now via a presigned URL — the bucket is private.
+		// (ACL), but delivery is now via a presigned URL - the bucket is private.
 		it('allows any user to download avatar blob via a presigned URL', async () => {
 			const media = makeMedia({ ownerId: 'owner-1', context: MediaContext.AVATAR });
 			mockMediaRepository.findById.mockResolvedValue(media);
@@ -636,7 +636,7 @@ describe('MediaService', () => {
 			expect(mockMetricsService.downloadsTotal.inc).toHaveBeenCalledTimes(1);
 		});
 
-		// An empty response (no thumbnail stored) is not a download — don't inflate the counter.
+		// An empty response (no thumbnail stored) is not a download - don't inflate the counter.
 		it('does not increment downloadsTotal when no thumbnail exists', async () => {
 			const media = makeMedia({ thumbnailPath: null });
 			mockMediaRepository.findById.mockResolvedValue(media);
@@ -895,7 +895,7 @@ describe('MediaService', () => {
 		});
 	});
 
-	describe('upload() — GROUP_ICON authorization (WHISPR-932)', () => {
+	describe('upload() - GROUP_ICON authorization (WHISPR-932)', () => {
 		const file: Express.Multer.File = {
 			originalname: 'icon.jpg',
 			mimetype: 'image/jpeg',
