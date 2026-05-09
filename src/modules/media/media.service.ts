@@ -217,14 +217,16 @@ export class MediaService {
 				// WHISPR-361: Blob size limits per context
 				this.enforceContextSizeLimit(file.size, context);
 
-				// WHISPR-360: MIME allowlist + magic bytes validation
+				// WHISPR-360 / WHISPR-1371: magic bytes d'abord (defense-in-depth),
+				// puis MIME allowlist. Comme ca un fichier extension-spoofed est rejete
+				// avant qu'un futur audit/log/quota-claim soit declenche par le MIME declare.
+				const blobBuffer = file.buffer ?? Buffer.alloc(0);
+				validateMagicBytes(blobBuffer, file.mimetype);
 				if (!CONTEXT_MIME_ALLOWLIST[context].has(file.mimetype)) {
 					throw new UnsupportedMediaTypeException(
 						`MIME type '${file.mimetype}' is not allowed for context '${context}'`
 					);
 				}
-				const blobBuffer = file.buffer ?? Buffer.alloc(0);
-				validateMagicBytes(blobBuffer, file.mimetype);
 
 				// WHISPR-362: Blob deduplication via SHA-256 (scoped per owner+context)
 				const sha256 = createHash('sha256').update(blobBuffer).digest('hex');
@@ -266,7 +268,10 @@ export class MediaService {
 
 				let thumbnailPath: string | null = null;
 				if (thumbnailFile) {
-					// validation thumbnail : seulement des MIME image safe, max 5 MB, check magic-bytes
+					// validation thumbnail : magic-bytes d'abord (defense-in-depth),
+					// puis MIME allowlist + size cap.
+					const thumbBuffer = thumbnailFile.buffer ?? Buffer.alloc(0);
+					validateMagicBytes(thumbBuffer, thumbnailFile.mimetype);
 					if (!THUMBNAIL_ALLOWED_MIME.has(thumbnailFile.mimetype)) {
 						throw new UnsupportedMediaTypeException(
 							`Thumbnail MIME type '${thumbnailFile.mimetype}' is not allowed`
@@ -277,8 +282,6 @@ export class MediaService {
 							`Thumbnail size ${thumbnailFile.size} exceeds the 5 MB limit`
 						);
 					}
-					const thumbBuffer = thumbnailFile.buffer ?? Buffer.alloc(0);
-					validateMagicBytes(thumbBuffer, thumbnailFile.mimetype);
 
 					const thumbnailStoragePath = this.storageService.buildPath('thumbnails', ownerId, id);
 					const thumbStream = thumbnailFile.stream ?? Readable.from(thumbBuffer);
