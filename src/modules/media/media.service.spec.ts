@@ -284,6 +284,26 @@ describe('MediaService', () => {
 				PayloadTooLargeException
 			);
 		});
+
+		// WHISPR-1371: defense-in-depth, magic-bytes doit etre verifie AVANT le MIME allowlist
+		it('rejects via magic-bytes before MIME allowlist when content is spoofed', async () => {
+			// MIME 'application/pdf' n'est pas dans l'allowlist AVATAR mais EST dans MAGIC_MAP.
+			// Buffer = JPEG. Sous l'ancien ordre on aurait eu un message "MIME not allowed".
+			// Sous le nouvel ordre, magic-bytes throw d'abord avec un message different.
+			const spoofed: Express.Multer.File = {
+				originalname: 'fake.pdf',
+				mimetype: 'application/pdf',
+				size: jpegBuffer.length,
+				buffer: jpegBuffer,
+			} as unknown as Express.Multer.File;
+
+			await expect(service.upload('user-uuid-1', spoofed, MediaContext.AVATAR)).rejects.toThrow(
+				/does not match the actual file content/
+			);
+			// ni l'allowlist ni le storage ne doivent avoir ete atteints
+			expect(mockStorageService.upload).not.toHaveBeenCalled();
+			expect(mockQuotaService.recordUpload).not.toHaveBeenCalled();
+		});
 	});
 
 	describe('getMetadata()', () => {
