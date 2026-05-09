@@ -90,7 +90,7 @@ export function validateMagicBytes(buffer: Buffer, declaredMimeType: string): vo
 
 	const signatures = MAGIC_MAP[mime];
 	if (!signatures) {
-		// Unknown MIME type — not a type we validate
+		// Unknown MIME type - not a type we validate
 		return;
 	}
 

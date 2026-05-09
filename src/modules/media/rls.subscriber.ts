@@ -55,10 +55,10 @@ export class RlsSubscriber implements EntitySubscriberInterface, OnModuleInit {
 		if (result?.[0]?.is_superuser === 'on') {
 			throw new Error(
 				'The database connection is using a superuser role. ' +
-					'Superusers bypass RLS policies — use a dedicated non-superuser role (e.g. media_app).'
+					'Superusers bypass RLS policies - use a dedicated non-superuser role (e.g. media_app).'
 			);
 		}
-		this.logger.log('Database role is non-superuser — RLS policies are active');
+		this.logger.log('Database role is non-superuser - RLS policies are active');
 	}
 
 	async afterTransactionStart(event: TransactionStartEvent): Promise<void> {

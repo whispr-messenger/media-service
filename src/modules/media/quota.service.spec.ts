@@ -254,7 +254,7 @@ describe('QuotaService', () => {
 		it('executes atomic increment and invalidates cache', async () => {
 			const qb = mockUploadTransaction();
 			mockCache.del.mockResolvedValue(undefined);
-			// checkAndPublishQuotaAlert reads quota from cache — below threshold, no alert
+			// checkAndPublishQuotaAlert reads quota from cache - below threshold, no alert
 			mockCache.get.mockResolvedValue(makeCachedQuota({ storageUsed: 100n }));
 
 			await service.recordUpload('user-1', 512);

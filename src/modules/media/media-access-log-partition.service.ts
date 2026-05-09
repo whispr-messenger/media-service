@@ -27,7 +27,7 @@ export class MediaAccessLogPartitionService {
 		);
 
 		if (!acquired) {
-			this.logger.log(`Partition creation skipped — another instance holds the advisory lock`);
+			this.logger.log(`Partition creation skipped - another instance holds the advisory lock`);
 			return;
 		}
 

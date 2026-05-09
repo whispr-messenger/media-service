@@ -8,7 +8,7 @@ import { InjectS3, S3 } from 'nestjs-s3';
 import { JwksService } from '../jwks/jwks.service';
 import { Public } from '../auth/public.decorator';
 
-// Health probes must never be rate-limited — kubelet hits them every few
+// Health probes must never be rate-limited - kubelet hits them every few
 // seconds and a 429 would cause pod flapping (WHISPR-1012).
 @SkipThrottle()
 @Public()

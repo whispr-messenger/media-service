@@ -7,7 +7,7 @@ export class AddResetDailyUploadsFunction1742800000000 implements MigrationInter
 		// SECURITY DEFINER makes this function execute with the privileges of its
 		// owner (the migration role / table owner) rather than the calling role.
 		// This allows the cron job to bypass the user_quotas RLS policy, which
-		// requires app.current_user_id to be set — a GUC that is unavailable in a
+		// requires app.current_user_id to be set - a GUC that is unavailable in a
 		// background cron context.
 		await queryRunner.query(`
 			CREATE OR REPLACE FUNCTION media.reset_daily_uploads()
@@ -40,7 +40,7 @@ export class AddResetDailyUploadsFunction1742800000000 implements MigrationInter
 		`);
 
 		// WHISPR-1004: keep the legacy `media_user` grant when (and only when)
-		// that role still exists — the local Docker init script provisions it,
+		// that role still exists - the local Docker init script provisions it,
 		// but Vault-backed envs don't. Without the existence check the whole
 		// migration crashes with `role "media_user" does not exist`.
 		await queryRunner.query(`
