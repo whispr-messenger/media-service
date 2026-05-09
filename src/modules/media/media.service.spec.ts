@@ -691,6 +691,23 @@ describe('MediaService', () => {
 			mockMediaRepository.findById.mockResolvedValue(null);
 			await expect(service.streamBlob('missing', 'user-uuid-1')).rejects.toThrow(NotFoundException);
 		});
+
+		// WHISPR-1356 - regression: l'audit trail ne doit JAMAIS s'evaporer
+		// silencieusement, sinon impossible de reconstituer un incident.
+		it('logs an error if writeAccessLog fails (audit trail must surface)', async () => {
+			const media = makeMedia();
+			mockMediaRepository.findById.mockResolvedValue(media);
+			mockStorageService.download.mockResolvedValueOnce(Readable.from(Buffer.from('x')));
+			mockAccessLogRepo.save.mockRejectedValueOnce(new Error('redis down'));
+			const errorSpy = jest.spyOn((service as any).logger, 'error').mockImplementation(() => {});
+
+			await service.streamBlob('media-uuid-1', 'user-uuid-1');
+			// laisse la promesse de log s'executer
+			await new Promise((resolve) => process.nextTick(resolve));
+
+			expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('redis down'));
+			errorSpy.mockRestore();
+		});
 	});
 
 	describe('streamThumbnail()', () => {
@@ -730,6 +747,23 @@ describe('MediaService', () => {
 			await expect(service.streamThumbnail('media-uuid-1', 'stranger')).rejects.toThrow(
 				ForbiddenException
 			);
+		});
+
+		// WHISPR-1356 - meme regression que streamBlob, sur le path thumbnail.
+		it('logs an error if writeAccessLog fails (audit trail must surface)', async () => {
+			const media = makeMedia({
+				thumbnailPath: 'thumbnails/user-uuid-1/media-uuid-1.bin',
+			});
+			mockMediaRepository.findById.mockResolvedValue(media);
+			mockStorageService.download.mockResolvedValueOnce(Readable.from(Buffer.from('x')));
+			mockAccessLogRepo.save.mockRejectedValueOnce(new Error('db unreachable'));
+			const errorSpy = jest.spyOn((service as any).logger, 'error').mockImplementation(() => {});
+
+			await service.streamThumbnail('media-uuid-1', 'user-uuid-1');
+			await new Promise((resolve) => process.nextTick(resolve));
+
+			expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('db unreachable'));
+			errorSpy.mockRestore();
 		});
 	});
 
