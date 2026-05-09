@@ -21,7 +21,8 @@ export const envValidationSchema = Joi.object({
 	S3_ENDPOINT: Joi.string().required(),
 	S3_PUBLIC_ENDPOINT: Joi.string().uri().optional(),
 	S3_REGION: Joi.string().optional().default('us-east-1'),
-	SIGNED_URL_EXPIRY_SECONDS: Joi.number().integer().positive().max(604800).optional().default(604800),
+	// 1h limite fenetre d'exploitation post-revoke (was 7j)
+	SIGNED_URL_EXPIRY_SECONDS: Joi.number().integer().positive().max(604800).optional().default(3600),
 	MESSAGE_BLOB_TTL_DAYS: Joi.number().integer().positive().optional().default(30),
 	THUMBNAIL_BLOB_TTL_DAYS: Joi.number().integer().positive().optional().default(30),
 }).options({ allowUnknown: true });
