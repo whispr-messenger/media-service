@@ -59,7 +59,7 @@ export class UploadMediaDto {
 }
 
 export class ShareMediaDto {
-	// WHISPR-941 : PATCH /:id/share — liste d'UUIDs à ajouter à l'ACL.
+	// WHISPR-941 : PATCH /:id/share - liste d'UUIDs à ajouter à l'ACL.
 	@ApiProperty({
 		description: 'UUIDs to add to the shared_with ACL (union with existing)',
 		type: [String],
