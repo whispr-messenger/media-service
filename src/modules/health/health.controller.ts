@@ -8,9 +8,10 @@ import { InjectS3, S3 } from 'nestjs-s3';
 import { JwksService } from '../jwks/jwks.service';
 import { Public } from '../auth/public.decorator';
 
-// Health probes must never be rate-limited - kubelet hits them every few
-// seconds and a 429 would cause pod flapping (WHISPR-1012).
-@SkipThrottle()
+// Les probes kubelet tapent /health/ready toutes les 10s. Avec des throttlers
+// nommes (short/medium/long), @SkipThrottle() sans argument ne skip rien et
+// renvoie 429 apres 3 hits, ce qui fait flapper le pod en NotReady (WHISPR-1012).
+@SkipThrottle({ short: true, medium: true, long: true })
 @Public()
 @ApiTags('Health')
 @Controller('health')
