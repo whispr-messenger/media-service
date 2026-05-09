@@ -30,6 +30,7 @@ import { StorageService, StorageContext } from './storage.service';
 import { QuotaService } from './quota.service';
 import { GroupService } from './group.service';
 import { validateMagicBytes } from './magic-bytes.validator';
+import { checkImageDimensions, checkPdfJavaScript, checkClamAv } from './content-safety.validator';
 import { createClient } from '@redis/client';
 import { MediaContext, UploadMediaResponseDto, MediaMetadataDto } from './dto/upload-media.dto';
 import { REDIS_CLIENT } from './media.tokens';
@@ -225,6 +226,11 @@ export class MediaService {
 						`MIME type '${file.mimetype}' is not allowed for context '${context}'`
 					);
 				}
+
+				// WHISPR-1433: content safety - image bomb, PDF JS, ClamAV (fail-open)
+				await checkImageDimensions(blobBuffer, file.mimetype);
+				checkPdfJavaScript(blobBuffer, file.mimetype);
+				await checkClamAv(blobBuffer);
 
 				// WHISPR-362: Blob deduplication via SHA-256 (scoped per owner+context)
 				const sha256 = createHash('sha256').update(blobBuffer).digest('hex');
