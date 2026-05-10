@@ -5,7 +5,7 @@ import { tap } from 'rxjs/operators';
 import { Request, Response } from 'express';
 
 // WHISPR-1068 : émet des objets structurés au lieu d'un JSON.stringify
-// manuel — JsonLogger les fusionne avec les champs système. Ajoute aussi
+// manuel - JsonLogger les fusionne avec les champs système. Ajoute aussi
 // la propagation X-Request-Id (absente jusqu'ici côté media-service).
 @Injectable()
 export class LoggingInterceptor implements NestInterceptor {

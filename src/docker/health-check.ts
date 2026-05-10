@@ -29,19 +29,19 @@ console.log(`[${timestamp()}] Timeout: ${options.timeout}ms`);
 const req = http.request(options, (res: http.IncomingMessage) => {
 	console.log(`[${timestamp()}] Response received with status code: ${res.statusCode}`);
 
-	let body = '';
-	res.on('data', (chunk) => {
-		body += chunk;
+	let bodyLength = 0;
+	res.on('data', (chunk: Buffer | string) => {
+		bodyLength += typeof chunk === 'string' ? Buffer.byteLength(chunk) : chunk.length;
 	});
 
 	res.on('end', () => {
-		console.log(`[${timestamp()}] Response body: ${body}`);
+		console.log(`[${timestamp()}] Response body length: ${bodyLength} bytes`);
 
 		if (res.statusCode === 200) {
-			console.log(`[${timestamp()}] ✓ Health check PASSED`);
+			console.log(`[${timestamp()}] Health check PASSED`);
 			process.exit(0);
 		} else {
-			console.error(`[${timestamp()}] ✗ Health check FAILED: Invalid status code ${res.statusCode}`);
+			console.error(`[${timestamp()}] Health check FAILED: Invalid status code ${res.statusCode}`);
 			process.exit(1);
 		}
 	});

@@ -103,7 +103,7 @@ describe('LifecycleService', () => {
 		expect(mockS3.send).toHaveBeenCalledTimes(2);
 	});
 
-	it('does not throw when ensureLifecyclePolicies fails — onApplicationBootstrap catches it', async () => {
+	it('does not throw when ensureLifecyclePolicies fails - onApplicationBootstrap catches it', async () => {
 		mockS3.send.mockRejectedValue(new Error('S3 error'));
 
 		await expect(service.onApplicationBootstrap()).resolves.toBeUndefined();
