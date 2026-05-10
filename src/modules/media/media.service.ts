@@ -30,6 +30,7 @@ import { StorageService, StorageContext } from './storage.service';
 import { QuotaService } from './quota.service';
 import { GroupService } from './group.service';
 import { validateMagicBytes } from './magic-bytes.validator';
+import { checkImageDimensions, checkPdfJavaScript, checkClamAv } from './content-safety.validator';
 import { createClient } from '@redis/client';
 import { MediaContext, UploadMediaResponseDto, MediaMetadataDto } from './dto/upload-media.dto';
 import { REDIS_CLIENT } from './media.tokens';
@@ -42,20 +43,21 @@ import {
 	DEFAULT_DAILY_UPLOAD_LIMIT,
 } from './quota.constants';
 
-// Blob size limits per context (in bytes)
+// limites de taille des blobs par contexte (en bytes)
 const CONTEXT_SIZE_LIMITS: Record<MediaContext, number> = {
 	[MediaContext.MESSAGE]: 100 * 1024 * 1024, // 100 MB
 	[MediaContext.AVATAR]: 5 * 1024 * 1024, // 5 MB
 	[MediaContext.GROUP_ICON]: 5 * 1024 * 1024, // 5 MB
 };
 
-// Contexts whose blobs are readable by any authenticated user (ACL only).
-// Delivery still goes through a presigned URL — the bucket is private and
-// `getPublicUrl` is intentionally never used here, so `profilePicturePrivacy`
-// (enforced upstream by user-service) is not bypassed by a guessable URL.
+// contextes dont les blobs sont lisibles par n'importe quel user
+// authentifie (ACL uniquement). la delivery passe quand meme par une
+// URL presignee - le bucket reste prive et `getPublicUrl` n'est jamais
+// utilise ici expres, comme ca `profilePicturePrivacy` (enforce cote
+// user-service) n'est pas bypass par une URL devinable.
 const PUBLIC_READABLE_CONTEXTS = new Set<string>([MediaContext.AVATAR, MediaContext.GROUP_ICON]);
 
-// Thumbnails must always be a safe image type regardless of the blob context.
+// les thumbnails doivent toujours etre un type d'image safe, peu importe le contexte du blob
 const THUMBNAIL_ALLOWED_MIME = new Set<string>([
 	'image/jpeg',
 	'image/png',
@@ -66,7 +68,7 @@ const THUMBNAIL_ALLOWED_MIME = new Set<string>([
 ]);
 const THUMBNAIL_MAX_BYTES = 5 * 1024 * 1024;
 
-// Strict MIME allowlists per context — unknown types are rejected for uploads
+// allowlist MIME stricte par contexte - les types inconnus sont refuses a l'upload
 const CONTEXT_MIME_ALLOWLIST: Record<MediaContext, Set<string>> = {
 	[MediaContext.MESSAGE]: new Set([
 		'image/jpeg',
@@ -112,11 +114,11 @@ const CONTEXT_MIME_ALLOWLIST: Record<MediaContext, Set<string>> = {
 	]),
 };
 
-// Redis key TTLs
+// TTL des cles Redis
 const META_CACHE_TTL_MS = 30 * 60 * 1000; // 30 min
-const DEDUP_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
-const SEMAPHORE_TTL_SECONDS = 30 * 60; // 30 min safety net TTL in seconds
-const SEMAPHORE_TTL_REFRESH_INTERVAL_MS = 5 * 60 * 1000; // refresh every 5 min while uploading
+const DEDUP_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 jours
+const SEMAPHORE_TTL_SECONDS = 30 * 60; // 30 min, filet de securite TTL en secondes
+const SEMAPHORE_TTL_REFRESH_INTERVAL_MS = 5 * 60 * 1000; // refresh toutes les 5 min pendant l'upload
 
 const MAX_CONCURRENT_UPLOADS = 3;
 
@@ -149,10 +151,8 @@ export class MediaService {
 		private readonly metricsService: MetricsService,
 		private readonly groupService: GroupService
 	) {
-		this.signedUrlExpirySeconds = this.configService.get<number>(
-			'SIGNED_URL_EXPIRY_SECONDS',
-			7 * 24 * 60 * 60
-		);
+		// 1h limite fenetre d'exploitation post-revoke (was 7j)
+		this.signedUrlExpirySeconds = this.configService.get<number>('SIGNED_URL_EXPIRY_SECONDS', 60 * 60);
 		this.presigner = this.buildPresignerClient();
 	}
 
@@ -169,7 +169,7 @@ export class MediaService {
 		const secretAccessKey = this.configService.get<string>('S3_SECRET_ACCESS_KEY');
 		if (!accessKeyId || !secretAccessKey) {
 			this.logger.warn(
-				'S3_PUBLIC_ENDPOINT set but credentials missing — falling back to internal S3 client for presigning'
+				'S3_PUBLIC_ENDPOINT set but credentials missing - falling back to internal S3 client for presigning'
 			);
 			return null;
 		}
@@ -195,7 +195,7 @@ export class MediaService {
 	}
 
 	// =========================================================================
-	// POST /media/v1/upload — WHISPR-359
+	// POST /media/v1/upload - WHISPR-359
 	// =========================================================================
 
 	async upload(
@@ -219,14 +219,21 @@ export class MediaService {
 				// WHISPR-361: Blob size limits per context
 				this.enforceContextSizeLimit(file.size, context);
 
-				// WHISPR-360: MIME allowlist + magic bytes validation
+				// WHISPR-360 / WHISPR-1371: magic bytes d'abord (defense-in-depth),
+				// puis MIME allowlist. Comme ca un fichier extension-spoofed est rejete
+				// avant qu'un futur audit/log/quota-claim soit declenche par le MIME declare.
+				const blobBuffer = file.buffer ?? Buffer.alloc(0);
+				validateMagicBytes(blobBuffer, file.mimetype);
 				if (!CONTEXT_MIME_ALLOWLIST[context].has(file.mimetype)) {
 					throw new UnsupportedMediaTypeException(
 						`MIME type '${file.mimetype}' is not allowed for context '${context}'`
 					);
 				}
-				const blobBuffer = file.buffer ?? Buffer.alloc(0);
-				validateMagicBytes(blobBuffer, file.mimetype);
+
+				// WHISPR-1433: content safety - image bomb, PDF JS, ClamAV (fail-open)
+				await checkImageDimensions(blobBuffer, file.mimetype);
+				checkPdfJavaScript(blobBuffer, file.mimetype);
+				await checkClamAv(blobBuffer);
 
 				// WHISPR-362: Blob deduplication via SHA-256 (scoped per owner+context)
 				const sha256 = createHash('sha256').update(blobBuffer).digest('hex');
@@ -268,7 +275,10 @@ export class MediaService {
 
 				let thumbnailPath: string | null = null;
 				if (thumbnailFile) {
-					// Validate thumbnail: only safe image MIME types, max 5 MB, magic-bytes check
+					// validation thumbnail : magic-bytes d'abord (defense-in-depth),
+					// puis MIME allowlist + size cap.
+					const thumbBuffer = thumbnailFile.buffer ?? Buffer.alloc(0);
+					validateMagicBytes(thumbBuffer, thumbnailFile.mimetype);
 					if (!THUMBNAIL_ALLOWED_MIME.has(thumbnailFile.mimetype)) {
 						throw new UnsupportedMediaTypeException(
 							`Thumbnail MIME type '${thumbnailFile.mimetype}' is not allowed`
@@ -279,8 +289,6 @@ export class MediaService {
 							`Thumbnail size ${thumbnailFile.size} exceeds the 5 MB limit`
 						);
 					}
-					const thumbBuffer = thumbnailFile.buffer ?? Buffer.alloc(0);
-					validateMagicBytes(thumbBuffer, thumbnailFile.mimetype);
 
 					const thumbnailStoragePath = this.storageService.buildPath('thumbnails', ownerId, id);
 					const thumbStream = thumbnailFile.stream ?? Readable.from(thumbBuffer);
@@ -313,7 +321,7 @@ export class MediaService {
 
 				await this.dataSource.transaction((manager) => this.mediaRepository.save(media, manager));
 
-				// Cache dedup entry
+				// cache l'entree de dedup
 				await this.cache.set(dedupKey, id, DEDUP_CACHE_TTL_MS);
 
 				// WHISPR-357: Update quota
@@ -346,7 +354,7 @@ export class MediaService {
 	}
 
 	// =========================================================================
-	// GET /media/v1/:id — WHISPR-364
+	// GET /media/v1/:id - WHISPR-364
 	// =========================================================================
 
 	async getMetadata(id: string, requesterId: string): Promise<MediaMetadataDto> {
@@ -388,7 +396,7 @@ export class MediaService {
 	}
 
 	// =========================================================================
-	// GET /media/v1/:id/blob — WHISPR-365
+	// GET /media/v1/:id/blob - WHISPR-365
 	// =========================================================================
 
 	async getBlob(
@@ -414,7 +422,7 @@ export class MediaService {
 			return { media, url, expiresAt };
 		});
 
-		// Async access log (non-blocking)
+		// log d'acces asynchrone (non-bloquant)
 		this.writeAccessLog(media.id, requesterId, 'blob', ipAddress, userAgent).catch((err) => {
 			this.logger.error(
 				`Failed to write access log for media ${media.id}: ${err instanceof Error ? err.message : String(err)}`
@@ -427,7 +435,7 @@ export class MediaService {
 	}
 
 	// =========================================================================
-	// GET /media/v1/:id/thumbnail — WHISPR-366
+	// GET /media/v1/:id/thumbnail - WHISPR-366
 	// =========================================================================
 
 	async getThumbnail(
@@ -468,10 +476,10 @@ export class MediaService {
 	}
 
 	// =========================================================================
-	// GET /media/v1/:id/blob?stream=1 — fallback bytes proxy
+	// GET /media/v1/:id/blob?stream=1 - fallback bytes proxy
 	// =========================================================================
 
-	// Stream raw blob bytes back to the client. Used by clients that cannot
+	// stream les bytes bruts du blob vers le client. utilise par les clients qui ne peuvent pas
 	// reach the presigned URL hostname directly (typically mobile/web apps
 	// behind k8s when `S3_PUBLIC_ENDPOINT` is not configured and the signed
 	// URL points at a cluster-internal MinIO endpoint).
@@ -490,7 +498,11 @@ export class MediaService {
 		this.enforceReadAccess(media.context as MediaContext, media.ownerId, media.sharedWith, requesterId);
 
 		const bodyStream = await this.storageService.download(media.storagePath);
-		this.writeAccessLog(media.id, requesterId, 'blob', ipAddress, userAgent).catch(() => {});
+		this.writeAccessLog(media.id, requesterId, 'blob', ipAddress, userAgent).catch((err) => {
+			this.logger.error(
+				`Failed to write access log for media ${media.id}: ${err instanceof Error ? err.message : String(err)}`
+			);
+		});
 
 		return new StreamableFile(bodyStream, {
 			type: media.contentType,
@@ -498,7 +510,7 @@ export class MediaService {
 		});
 	}
 
-	// Stream raw thumbnail bytes back to the client, or `null` when no
+	// stream les bytes bruts de la thumbnail vers le client, ou `null` si aucune
 	// thumbnail is stored (the controller converts that into a 404).
 	async streamThumbnail(
 		id: string,
@@ -517,16 +529,20 @@ export class MediaService {
 		if (!media.thumbnailPath) return null;
 
 		const bodyStream = await this.storageService.download(media.thumbnailPath);
-		this.writeAccessLog(media.id, requesterId, 'thumbnail', ipAddress, userAgent).catch(() => {});
+		this.writeAccessLog(media.id, requesterId, 'thumbnail', ipAddress, userAgent).catch((err) => {
+			this.logger.error(
+				`Failed to write access log for media ${media.id}: ${err instanceof Error ? err.message : String(err)}`
+			);
+		});
 
 		// Le contentType de la thumbnail n'est pas persisté (seul celui du blob
 		// l'est). Les thumbnails sont toujours image/jpeg|png|gif|webp|heic|heif
-		// — on renvoie `image/*` laisser le client décoder par magic bytes.
+		// - on renvoie `image/*` laisser le client décoder par magic bytes.
 		return new StreamableFile(bodyStream, { type: 'image/*' });
 	}
 
 	// =========================================================================
-	// PATCH /media/v1/:id/share — ACL shared_with
+	// PATCH /media/v1/:id/share - ACL shared_with
 	// =========================================================================
 
 	/**
@@ -572,7 +588,7 @@ export class MediaService {
 	}
 
 	// =========================================================================
-	// DELETE /media/v1/:id — WHISPR-367
+	// DELETE /media/v1/:id - WHISPR-367
 	// =========================================================================
 
 	async delete(id: string, requesterId: string, ipAddress?: string, userAgent?: string): Promise<void> {
@@ -586,32 +602,32 @@ export class MediaService {
 				throw new ForbiddenException(`You do not own media ${id}`);
 			}
 
-			// Soft delete DB record first while the RLS GUC is set.
+			// soft delete en DB d'abord pendant que le GUC RLS est positionne
 			await this.mediaRepository.softDelete(id, manager);
 
 			return media;
 		});
 
-		// Delete underlying S3 objects so storage and quota stay in sync
+		// supprime les objets S3 sous-jacents pour que storage et quota restent alignes
 		await this.storageService.delete(media.storagePath);
 		if (media.thumbnailPath) {
 			await this.storageService.delete(media.thumbnailPath);
 		}
 
-		// Invalidate metadata cache
+		// invalide le cache des metadonnees
 		await this.cache.del(`media:meta:${id}`);
 
-		// Release quota
+		// libere le quota
 		await this.quotaService.recordDelete(requesterId, media.blobSize);
 
-		// Access log
+		// log d'acces
 		this.writeAccessLog(media.id, requesterId, 'delete', ipAddress, userAgent).catch((err) => {
 			this.logger.error(
 				`Failed to write access log for media ${media.id}: ${err instanceof Error ? err.message : String(err)}`
 			);
 		});
 
-		// WHISPR-372: Publish media.deleted event (fire-and-forget — failure does not affect the delete response)
+		// WHISPR-372: Publish media.deleted event (fire-and-forget - failure does not affect the delete response)
 		const deletedPayload = JSON.stringify({
 			mediaId: media.id,
 			ownerId: media.ownerId,
@@ -629,7 +645,7 @@ export class MediaService {
 	}
 
 	// =========================================================================
-	// GET /media/v1/quota — WHISPR-368
+	// GET /media/v1/quota - WHISPR-368
 	// =========================================================================
 
 	async getUserQuota(userId: string): Promise<UserQuotaResponseDto> {
@@ -668,7 +684,7 @@ export class MediaService {
 	}
 
 	// =========================================================================
-	// GET /media/v1/my-media — WHISPR-369
+	// GET /media/v1/my-media - WHISPR-369
 	// =========================================================================
 
 	async getUserMedia(userId: string, page: number, limit: number): Promise<PaginatedMediaResponseDto> {
@@ -697,7 +713,7 @@ export class MediaService {
 	}
 
 	// =========================================================================
-	// Private helpers
+	// helpers prives
 	// =========================================================================
 
 	private enforceContextSizeLimit(size: number, context: MediaContext): void {

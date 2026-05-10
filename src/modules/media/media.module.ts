@@ -43,7 +43,7 @@ import { RlsSubscriber } from './rls.subscriber';
 		LifecycleService,
 		RlsContextService,
 		RlsSubscriber,
-		// Global interceptor — applies to all routes including unauthenticated ones.
+		// Global interceptor - applies to all routes including unauthenticated ones.
 		// This is intentional: the interceptor is a no-op when userId is absent,
 		// and registering it globally avoids forgetting to apply it on new routes.
 		{
