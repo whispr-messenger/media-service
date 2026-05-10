@@ -36,12 +36,12 @@ async function bootstrap() {
 
 	createSwaggerDocumentation(app, port, configService, globalPrefix);
 
-	// WHISPR-945: drop the previous `origin: true` — combined with
+	// WHISPR-945: drop the previous `origin: true` - combined with
 	// `credentials: true` it reflected every Origin header back, which is a
 	// CSRF vector against any authenticated browser session. We now read a
 	// comma-separated allowlist from CORS_ALLOWED_ORIGINS (matching the env
 	// var used by user-service and scheduling-service). When the env is
-	// unset we fail closed and emit no CORS headers — native iOS/Android
+	// unset we fail closed and emit no CORS headers - native iOS/Android
 	// clients are unaffected, only browser-based clients are blocked.
 	const allowedOrigins = String(configService.get<string>('CORS_ALLOWED_ORIGINS', '') ?? '')
 		.split(',')
@@ -65,7 +65,7 @@ async function bootstrap() {
 		logger.log(`CORS enabled for origins: ${allowedOrigins.join(', ')}`);
 	} else {
 		logger.warn(
-			'CORS_ALLOWED_ORIGINS is not set — browser clients will be blocked. ' +
+			'CORS_ALLOWED_ORIGINS is not set - browser clients will be blocked. ' +
 				'Configure the env var (comma-separated) to enable cross-origin access.'
 		);
 	}

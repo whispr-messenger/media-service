@@ -6,7 +6,7 @@ import { Public } from '../auth/public.decorator';
 import { MetricsService } from './metrics.service';
 import { MetricsGuard } from './metrics.guard';
 
-// Prometheus scrape endpoint — already protected by MetricsGuard,
+// Prometheus scrape endpoint - already protected by MetricsGuard,
 // not subject to user-facing rate limiting (WHISPR-1012).
 @SkipThrottle()
 @Public()
