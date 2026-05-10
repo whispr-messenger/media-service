@@ -101,7 +101,7 @@ const mockS3 = {
 const mockConfigService = {
 	get: jest.fn((key: string, defaultValue?: unknown) => {
 		const config: Record<string, unknown> = {
-			SIGNED_URL_EXPIRY_SECONDS: 604800,
+			SIGNED_URL_EXPIRY_SECONDS: 3600,
 			MESSAGE_BLOB_TTL_DAYS: 30,
 		};
 		return config[key] ?? defaultValue;
@@ -284,6 +284,26 @@ describe('MediaService', () => {
 				PayloadTooLargeException
 			);
 		});
+
+		// WHISPR-1371: defense-in-depth, magic-bytes doit etre verifie AVANT le MIME allowlist
+		it('rejects via magic-bytes before MIME allowlist when content is spoofed', async () => {
+			// MIME 'application/pdf' n'est pas dans l'allowlist AVATAR mais EST dans MAGIC_MAP.
+			// Buffer = JPEG. Sous l'ancien ordre on aurait eu un message "MIME not allowed".
+			// Sous le nouvel ordre, magic-bytes throw d'abord avec un message different.
+			const spoofed: Express.Multer.File = {
+				originalname: 'fake.pdf',
+				mimetype: 'application/pdf',
+				size: jpegBuffer.length,
+				buffer: jpegBuffer,
+			} as unknown as Express.Multer.File;
+
+			await expect(service.upload('user-uuid-1', spoofed, MediaContext.AVATAR)).rejects.toThrow(
+				/does not match the actual file content/
+			);
+			// ni l'allowlist ni le storage ne doivent avoir ete atteints
+			expect(mockStorageService.upload).not.toHaveBeenCalled();
+			expect(mockQuotaService.recordUpload).not.toHaveBeenCalled();
+		});
 	});
 
 	describe('getMetadata()', () => {
@@ -346,7 +366,7 @@ describe('MediaService', () => {
 
 				await service.delete('media-uuid-1', 'user-uuid-1');
 
-				// publish is fire-and-forget — wait for microtasks to flush
+				// publish is fire-and-forget - wait for microtasks to flush
 				await Promise.resolve();
 
 				expect(mockRedisClient.publish).toHaveBeenCalledWith(
@@ -465,7 +485,7 @@ describe('MediaService', () => {
 		});
 
 		// WHISPR-1190: avatars/group_icons stay readable by any authenticated user
-		// (ACL), but delivery is now via a presigned URL — the bucket is private.
+		// (ACL), but delivery is now via a presigned URL - the bucket is private.
 		it('allows any user to download avatar blob via a presigned URL', async () => {
 			const media = makeMedia({ ownerId: 'owner-1', context: MediaContext.AVATAR });
 			mockMediaRepository.findById.mockResolvedValue(media);
@@ -488,7 +508,7 @@ describe('MediaService', () => {
 
 		// WHISPR-985: expiresAt must reflect regeneration, not the stale DB value
 		describe('expiresAt on signed URL regeneration (WHISPR-985)', () => {
-			const SIGNED_URL_EXPIRY_SECONDS = 604800; // matches mockConfigService default
+			const SIGNED_URL_EXPIRY_SECONDS = 3600; // matches mockConfigService default
 
 			it('returns a freshly computed expiresAt when no cached expiry exists', async () => {
 				const media = makeMedia({ signedUrlExpiresAt: null });
@@ -636,7 +656,7 @@ describe('MediaService', () => {
 			expect(mockMetricsService.downloadsTotal.inc).toHaveBeenCalledTimes(1);
 		});
 
-		// An empty response (no thumbnail stored) is not a download — don't inflate the counter.
+		// An empty response (no thumbnail stored) is not a download - don't inflate the counter.
 		it('does not increment downloadsTotal when no thumbnail exists', async () => {
 			const media = makeMedia({ thumbnailPath: null });
 			mockMediaRepository.findById.mockResolvedValue(media);
@@ -691,6 +711,23 @@ describe('MediaService', () => {
 			mockMediaRepository.findById.mockResolvedValue(null);
 			await expect(service.streamBlob('missing', 'user-uuid-1')).rejects.toThrow(NotFoundException);
 		});
+
+		// WHISPR-1356 - regression: l'audit trail ne doit JAMAIS s'evaporer
+		// silencieusement, sinon impossible de reconstituer un incident.
+		it('logs an error if writeAccessLog fails (audit trail must surface)', async () => {
+			const media = makeMedia();
+			mockMediaRepository.findById.mockResolvedValue(media);
+			mockStorageService.download.mockResolvedValueOnce(Readable.from(Buffer.from('x')));
+			mockAccessLogRepo.save.mockRejectedValueOnce(new Error('redis down'));
+			const errorSpy = jest.spyOn((service as any).logger, 'error').mockImplementation(() => {});
+
+			await service.streamBlob('media-uuid-1', 'user-uuid-1');
+			// laisse la promesse de log s'executer
+			await new Promise((resolve) => process.nextTick(resolve));
+
+			expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('redis down'));
+			errorSpy.mockRestore();
+		});
 	});
 
 	describe('streamThumbnail()', () => {
@@ -730,6 +767,23 @@ describe('MediaService', () => {
 			await expect(service.streamThumbnail('media-uuid-1', 'stranger')).rejects.toThrow(
 				ForbiddenException
 			);
+		});
+
+		// WHISPR-1356 - meme regression que streamBlob, sur le path thumbnail.
+		it('logs an error if writeAccessLog fails (audit trail must surface)', async () => {
+			const media = makeMedia({
+				thumbnailPath: 'thumbnails/user-uuid-1/media-uuid-1.bin',
+			});
+			mockMediaRepository.findById.mockResolvedValue(media);
+			mockStorageService.download.mockResolvedValueOnce(Readable.from(Buffer.from('x')));
+			mockAccessLogRepo.save.mockRejectedValueOnce(new Error('db unreachable'));
+			const errorSpy = jest.spyOn((service as any).logger, 'error').mockImplementation(() => {});
+
+			await service.streamThumbnail('media-uuid-1', 'user-uuid-1');
+			await new Promise((resolve) => process.nextTick(resolve));
+
+			expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('db unreachable'));
+			errorSpy.mockRestore();
 		});
 	});
 
@@ -895,7 +949,7 @@ describe('MediaService', () => {
 		});
 	});
 
-	describe('upload() — GROUP_ICON authorization (WHISPR-932)', () => {
+	describe('upload() - GROUP_ICON authorization (WHISPR-932)', () => {
 		const file: Express.Multer.File = {
 			originalname: 'icon.jpg',
 			mimetype: 'image/jpeg',

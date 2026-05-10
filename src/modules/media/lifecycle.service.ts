@@ -16,9 +16,9 @@ import {
  * have changed in configuration, the rules are updated. Two prefixes
  * are currently covered:
  *
- * - `messages/`    — per-message blobs; TTL driven by MESSAGE_BLOB_TTL_DAYS
+ * - `messages/`    - per-message blobs; TTL driven by MESSAGE_BLOB_TTL_DAYS
  *                    (default: 30 days after the object's LastModified date)
- * - `thumbnails/`  — thumbnail blobs; TTL driven by THUMBNAIL_BLOB_TTL_DAYS
+ * - `thumbnails/`  - thumbnail blobs; TTL driven by THUMBNAIL_BLOB_TTL_DAYS
  *                    (default: 30 days)
  *
  * MinIO supports lifecycle policies via the AWS S3-compatible API, so no
@@ -79,7 +79,7 @@ export class LifecycleService implements OnApplicationBootstrap {
 				this.thumbnailBlobTtlDays;
 
 		if (rulesUpToDate) {
-			this.logger.log('S3 lifecycle policies already configured — skipping');
+			this.logger.log('S3 lifecycle policies already configured - skipping');
 			return;
 		}
 
