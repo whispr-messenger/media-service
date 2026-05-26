@@ -13,6 +13,7 @@ import { MediaAccessLogPartitionService } from './media-access-log-partition.ser
 import { StorageService } from './storage.service';
 import { QuotaService } from './quota.service';
 import { GroupService } from './group.service';
+import { MessagingService } from './messaging.service';
 import { LifecycleService } from './lifecycle.service';
 import { RlsContextService } from './rls-context.service';
 import { RlsInterceptor } from './rls.interceptor';
@@ -37,6 +38,7 @@ import { RlsSubscriber } from './rls.subscriber';
 		MediaRepository,
 		StorageService,
 		GroupService,
+		MessagingService,
 		MediaService,
 		MediaAccessLogPartitionService,
 		QuotaService,

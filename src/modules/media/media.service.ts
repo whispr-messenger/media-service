@@ -9,6 +9,7 @@ import {
 	PayloadTooLargeException,
 	ServiceUnavailableException,
 	StreamableFile,
+	UnprocessableEntityException,
 	UnsupportedMediaTypeException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -42,6 +43,10 @@ import {
 	DEFAULT_FILES_LIMIT,
 	DEFAULT_DAILY_UPLOAD_LIMIT,
 } from './quota.constants';
+import { MessagingService } from './messaging.service';
+
+// content-type attendu pour les blobs E2EE (ciphertext opaque)
+const E2EE_REQUIRED_CONTENT_TYPE = 'application/octet-stream';
 
 // limites de taille des blobs par contexte (en bytes)
 const CONTEXT_SIZE_LIMITS: Record<MediaContext, number> = {
@@ -153,7 +158,8 @@ export class MediaService {
 		private readonly accessLogRepo: Repository<MediaAccessLog>,
 		@Inject(REDIS_CLIENT) private readonly redisClient: ReturnType<typeof createClient>,
 		private readonly metricsService: MetricsService,
-		private readonly groupService: GroupService
+		private readonly groupService: GroupService,
+		private readonly messagingService: MessagingService
 	) {
 		// 1h limite fenetre d'exploitation post-revoke (was 7j)
 		this.signedUrlExpirySeconds = this.configService.get<number>('SIGNED_URL_EXPIRY_SECONDS', 60 * 60);
@@ -196,6 +202,28 @@ export class MediaService {
 
 	private get presignerClient(): S3 | S3Client {
 		return this.presigner ?? (this.s3 as unknown as S3Client);
+	}
+
+	// =========================================================================
+	// E2EE defense in depth
+	// =========================================================================
+
+	/**
+	 * Verifie qu'un upload est compatible avec l'etat E2EE de la conversation.
+	 *
+	 * - Conv E2EE + content-type != application/octet-stream → 422
+	 * - Conv plaintext → aucune restriction supplementaire
+	 *
+	 * Fail-open : si messaging-service est injoignable, on laisse passer.
+	 */
+	async enforceE2EEContentType(conversationId: string, contentType: string): Promise<void> {
+		const isE2EE = await this.messagingService.isConversationE2EE(conversationId);
+		if (isE2EE && contentType !== E2EE_REQUIRED_CONTENT_TYPE) {
+			throw new UnprocessableEntityException({
+				error: 'plaintext_media_not_allowed_on_e2ee_conversation',
+				message: `Conversation ${conversationId} has E2EE enabled - only application/octet-stream is accepted`,
+			});
+		}
 	}
 
 	// =========================================================================

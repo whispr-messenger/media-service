@@ -25,4 +25,9 @@ export const envValidationSchema = Joi.object({
 	SIGNED_URL_EXPIRY_SECONDS: Joi.number().integer().positive().max(604800).optional().default(3600),
 	MESSAGE_BLOB_TTL_DAYS: Joi.number().integer().positive().optional().default(30),
 	THUMBNAIL_BLOB_TTL_DAYS: Joi.number().integer().positive().optional().default(30),
+	// WHISPR-E2EE : client vers messaging-service pour valider e2ee-status
+	MESSAGING_SERVICE_URL: Joi.string().uri().optional(),
+	MESSAGING_SERVICE_TIMEOUT_MS: Joi.number().integer().positive().optional().default(3000),
+	// Token partage entre services internes (meme valeur que dans messaging-service)
+	INTERNAL_API_TOKEN: Joi.string().optional(),
 }).options({ allowUnknown: true });

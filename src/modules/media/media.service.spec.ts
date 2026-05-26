@@ -12,6 +12,7 @@ import { getDataSourceToken, getRepositoryToken } from '@nestjs/typeorm';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { getS3ConnectionToken } from 'nestjs-s3';
 import { MediaService } from './media.service';
+import { MessagingService } from './messaging.service';
 import { MediaRepository } from './repositories/media.repository';
 import { StorageService } from './storage.service';
 import { QuotaService } from './quota.service';
@@ -71,6 +72,10 @@ const mockQuotaService = {
 
 const mockGroupService = {
 	isAdmin: jest.fn().mockResolvedValue(true),
+};
+
+const mockMessagingService = {
+	isConversationE2EE: jest.fn().mockResolvedValue(false),
 };
 
 const mockCache = {
@@ -150,6 +155,7 @@ describe('MediaService', () => {
 				{ provide: StorageService, useValue: mockStorageService },
 				{ provide: QuotaService, useValue: mockQuotaService },
 				{ provide: GroupService, useValue: mockGroupService },
+				{ provide: MessagingService, useValue: mockMessagingService },
 				{ provide: getS3ConnectionToken('default'), useValue: mockS3 },
 				{ provide: ConfigService, useValue: mockConfigService },
 				{ provide: getDataSourceToken(), useValue: mockDataSource },
@@ -1137,6 +1143,47 @@ describe('MediaService', () => {
 			mockAccessLogRepo.save.mockRejectedValueOnce(new Error('DB error'));
 
 			expect(() => service.logAccess('media-1', 'user-1', 'download')).not.toThrow();
+		});
+	});
+
+	describe('enforceE2EEContentType()', () => {
+		it('ne lance pas d exception quand la conv n est pas E2EE', async () => {
+			mockMessagingService.isConversationE2EE.mockResolvedValue(false);
+
+			await expect(service.enforceE2EEContentType('conv-plain', 'image/jpeg')).resolves.toBeUndefined();
+		});
+
+		it('ne lance pas d exception sur conv E2EE avec octet-stream', async () => {
+			mockMessagingService.isConversationE2EE.mockResolvedValue(true);
+
+			await expect(
+				service.enforceE2EEContentType('conv-e2ee', 'application/octet-stream')
+			).resolves.toBeUndefined();
+		});
+
+		it('lance UnprocessableEntityException sur conv E2EE avec image/jpeg', async () => {
+			const { UnprocessableEntityException } = await import('@nestjs/common');
+			mockMessagingService.isConversationE2EE.mockResolvedValue(true);
+
+			await expect(service.enforceE2EEContentType('conv-e2ee', 'image/jpeg')).rejects.toThrow(
+				UnprocessableEntityException
+			);
+		});
+
+		it('lance UnprocessableEntityException sur conv E2EE avec video/mp4', async () => {
+			const { UnprocessableEntityException } = await import('@nestjs/common');
+			mockMessagingService.isConversationE2EE.mockResolvedValue(true);
+
+			await expect(service.enforceE2EEContentType('conv-e2ee', 'video/mp4')).rejects.toThrow(
+				UnprocessableEntityException
+			);
+		});
+
+		it('fail-open si isConversationE2EE retourne false (service injoignable)', async () => {
+			mockMessagingService.isConversationE2EE.mockResolvedValue(false);
+
+			// image/jpeg sur conv fail-open (false) doit passer sans exception
+			await expect(service.enforceE2EEContentType('conv-down', 'image/jpeg')).resolves.toBeUndefined();
 		});
 	});
 });
