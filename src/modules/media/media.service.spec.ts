@@ -29,6 +29,12 @@ jest.mock('@aws-sdk/s3-request-presigner', () => ({
 	getSignedUrl: jest.fn().mockResolvedValue('https://presigned.url/file'),
 }));
 
+jest.mock('./content-safety.validator', () => ({
+	checkImageDimensions: jest.fn().mockResolvedValue(undefined),
+	checkPdfJavaScript: jest.fn().mockReturnValue(undefined),
+	checkClamAv: jest.fn().mockResolvedValue(undefined),
+}));
+
 const makeMedia = (overrides: Partial<Media> = {}): Media =>
 	Object.assign(new Media(), {
 		id: 'media-uuid-1',
@@ -230,34 +236,48 @@ describe('MediaService', () => {
 		});
 
 		it('refreshes semaphore TTL while an upload is in progress', async () => {
-			jest.useFakeTimers();
+			const media = makeMedia();
+			mockMediaRepository.save.mockResolvedValue(media);
 
-			try {
-				const media = makeMedia();
-				mockMediaRepository.save.mockResolvedValue(media);
+			// Capture le callback de l'interval sans fake timers globaux.
+			// Le spy est installe avant l'appel upload() mais setInterval n'est
+			// appele qu'apres plusieurs awaits internes (incr, expire, autorisation...).
+			let capturedCallback: (() => void) | undefined;
+			const setIntervalSpy = jest
+				.spyOn(globalThis, 'setInterval')
+				.mockImplementation((fn: TimerHandler, _delay?: number) => {
+					capturedCallback = fn as () => void;
+					return 0 as unknown as ReturnType<typeof globalThis.setInterval>;
+				});
 
-				let resolveUpload: (() => void) | undefined;
-				mockStorageService.upload.mockImplementationOnce(
-					() =>
-						new Promise<void>((resolve) => {
-							resolveUpload = resolve;
-						})
-				);
+			let resolveUpload: (() => void) | undefined;
+			mockStorageService.upload.mockImplementationOnce(
+				() =>
+					new Promise<void>((resolve) => {
+						resolveUpload = resolve;
+					})
+			);
 
-				const uploadPromise = service.upload('user-uuid-1', file, MediaContext.MESSAGE);
-				await Promise.resolve();
+			const uploadPromise = service.upload('user-uuid-1', file, MediaContext.MESSAGE);
 
-				expect(mockRedisClient.expire).toHaveBeenCalledTimes(1);
+			// Attendre que setInterval soit appele (plusieurs awaits internes dans upload)
+			// en drainant la microtask queue via setImmediate
+			await new Promise((r) => globalThis.setImmediate(r));
 
-				await jest.advanceTimersByTimeAsync(5 * 60 * 1000);
+			expect(mockRedisClient.expire).toHaveBeenCalledTimes(1);
+			expect(capturedCallback).toBeDefined();
 
-				expect(mockRedisClient.expire).toHaveBeenCalledTimes(2);
+			// Declenche manuellement le callback TTL-refresh
+			capturedCallback!();
+			// Flush les microtasks de la promesse async refresh()
+			await new Promise((r) => globalThis.setImmediate(r));
 
-				resolveUpload?.();
-				await uploadPromise;
-			} finally {
-				jest.useRealTimers();
-			}
+			expect(mockRedisClient.expire).toHaveBeenCalledTimes(2);
+
+			resolveUpload?.();
+			await uploadPromise;
+
+			setIntervalSpy.mockRestore();
 		});
 
 		it('throws 429 HttpException when semaphore is at max', async () => {
