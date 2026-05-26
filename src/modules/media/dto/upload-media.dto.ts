@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsArray, IsEnum, IsOptional, IsUUID } from 'class-validator';
 import { Transform } from 'class-transformer';
+import { IsString } from 'class-validator';
 
 export enum MediaContext {
 	MESSAGE = 'message',
@@ -42,6 +43,16 @@ export class UploadMediaDto {
 	@IsOptional()
 	@IsUUID()
 	ownerId?: string;
+
+	// WHISPR-E2EE : ID de la conversation cible pour les uploads de type message.
+	// Obligatoire quand context=message - utilise pour valider E2EE vs plaintext.
+	// Peut aussi arriver via le header X-Conversation-Id (priorite au header).
+	@ApiPropertyOptional({
+		description: 'Conversation UUID (required when context=message)',
+	})
+	@IsOptional()
+	@IsString()
+	conversationId?: string;
 
 	// WHISPR-941 : liste d'UUIDs supplémentaires autorisés à lire ce média
 	// (typiquement, les membres de la conversation à laquelle il sera attaché).
