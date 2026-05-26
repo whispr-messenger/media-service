@@ -145,9 +145,7 @@ const mockMetricsService = {
 describe('MediaService', () => {
 	let service: MediaService;
 
-	beforeEach(async () => {
-		jest.clearAllMocks();
-
+	beforeAll(async () => {
 		const module: TestingModule = await Test.createTestingModule({
 			providers: [
 				MediaService,
@@ -170,6 +168,10 @@ describe('MediaService', () => {
 		}).compile();
 
 		service = module.get<MediaService>(MediaService);
+	});
+
+	beforeEach(() => {
+		jest.clearAllMocks();
 	});
 
 	it('wraps RLS-sensitive repository reads and writes in explicit transactions', async () => {
