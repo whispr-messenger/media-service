@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
@@ -6,20 +6,48 @@ import { DataSource } from 'typeorm';
 const ADVISORY_LOCK_KEY = 350001;
 
 @Injectable()
-export class MediaAccessLogPartitionService {
+export class MediaAccessLogPartitionService implements OnApplicationBootstrap {
 	private readonly logger = new Logger(MediaAccessLogPartitionService.name);
 
 	constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
+
+	/**
+	 * Crée la partition du mois courant au démarrage si elle est absente.
+	 * Le cron ci-dessous crée uniquement le mois suivant le 1er de chaque mois,
+	 * ce qui laisse un trou lors du premier déploiement après changement de mois
+	 * (les écritures tombent alors dans la partition _default non purgée).
+	 */
+	async onApplicationBootstrap(): Promise<void> {
+		try {
+			const now = new Date();
+			await this.ensurePartitionForMonth(now);
+		} catch (err) {
+			// Non-bloquant : on log et on laisse l'app démarrer normalement.
+			this.logger.warn(
+				`Bootstrap partition check failed: ${err instanceof Error ? err.message : String(err)}`
+			);
+		}
+	}
 
 	@Cron('0 0 1 * *', { timeZone: 'UTC' })
 	async createNextMonthPartition(): Promise<void> {
 		const now = new Date();
 		const nextMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
-		const monthAfter = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 2, 1));
+		await this.ensurePartitionForMonth(nextMonth);
+	}
 
-		const partitionName = this.formatPartitionName(nextMonth);
-		const fromDate = this.formatTimestamp(nextMonth);
-		const toDate = this.formatTimestamp(monthAfter);
+	/**
+	 * Crée (si absente) la partition couvrant le mois de `date`.
+	 * Protégé par un advisory lock pour éviter les créations concurrentes
+	 * en environnement multi-replica.
+	 */
+	async ensurePartitionForMonth(date: Date): Promise<void> {
+		const start = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
+		const end = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1));
+
+		const partitionName = this.formatPartitionName(start);
+		const fromDate = this.formatTimestamp(start);
+		const toDate = this.formatTimestamp(end);
 
 		const [{ pg_try_advisory_lock: acquired }] = await this.dataSource.query(
 			`SELECT pg_try_advisory_lock($1)`,

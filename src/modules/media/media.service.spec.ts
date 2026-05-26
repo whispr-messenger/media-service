@@ -372,6 +372,44 @@ describe('MediaService', () => {
 			expect(mockStorageService.upload).not.toHaveBeenCalled();
 			expect(mockQuotaService.recordUpload).not.toHaveBeenCalled();
 		});
+
+		it('deletes uploaded S3 blob if DB save fails (orphan cleanup)', async () => {
+			// Simule un blob S3 uploadé mais une erreur DB au moment du save.
+			// On vérifie que storageService.delete est appelé sur le storagePath.
+			mockStorageService.buildPath.mockReturnValueOnce('messages/user-uuid-1/new-id.bin');
+			mockMediaRepository.save.mockRejectedValueOnce(new Error('DB constraint violation'));
+
+			await expect(service.upload('user-uuid-1', file, MediaContext.MESSAGE)).rejects.toThrow(
+				'DB constraint violation'
+			);
+
+			expect(mockStorageService.upload).toHaveBeenCalled();
+			expect(mockStorageService.delete).toHaveBeenCalledWith('messages/user-uuid-1/new-id.bin');
+			// quota ne doit pas etre incremente si le save a echoue
+			expect(mockQuotaService.recordUpload).not.toHaveBeenCalled();
+		});
+
+		it('deletes both blob and thumbnail from S3 if DB save fails with thumbnail', async () => {
+			mockStorageService.buildPath
+				.mockReturnValueOnce('messages/user-uuid-1/new-id.bin') // blob
+				.mockReturnValueOnce('thumbnails/user-uuid-1/new-id.bin'); // thumbnail
+			mockMediaRepository.save.mockRejectedValueOnce(new Error('DB down'));
+
+			const thumbBuffer = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]);
+			const thumbnailFile: Express.Multer.File = {
+				originalname: 'thumb.jpg',
+				mimetype: 'image/jpeg',
+				size: thumbBuffer.length,
+				buffer: thumbBuffer,
+			} as unknown as Express.Multer.File;
+
+			await expect(
+				service.upload('user-uuid-1', file, MediaContext.MESSAGE, thumbnailFile)
+			).rejects.toThrow('DB down');
+
+			expect(mockStorageService.delete).toHaveBeenCalledWith('messages/user-uuid-1/new-id.bin');
+			expect(mockStorageService.delete).toHaveBeenCalledWith('thumbnails/user-uuid-1/new-id.bin');
+		});
 	});
 
 	describe('getMetadata()', () => {
