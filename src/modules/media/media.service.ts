@@ -92,6 +92,13 @@ const CONTEXT_MIME_ALLOWLIST: Record<MediaContext, Set<string>> = {
 		'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
 		'application/vnd.openxmlformats-officedocument.presentationml.presentation',
 		'application/zip',
+		// E2EE-encrypted blobs : le client (Signal) chiffre les bytes avant upload,
+		// donc les magic-bytes ne correspondent plus au MIME d'origine. On accepte
+		// `application/octet-stream` comme MIME opaque ; le MIME reel est preserve
+		// cote messaging-service dans la metadata du message pour le destinataire.
+		// `application/octet-stream` n'est pas dans MAGIC_MAP -> passe through le
+		// validateur magic-bytes sans rejection.
+		'application/octet-stream',
 	]),
 	[MediaContext.AVATAR]: new Set([
 		'image/jpeg',

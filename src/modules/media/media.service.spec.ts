@@ -285,6 +285,46 @@ describe('MediaService', () => {
 			);
 		});
 
+		it('accepts application/octet-stream for E2EE-encrypted message uploads', async () => {
+			// E2EE blob : ciphertext opaque, ne matche aucune magic-byte connue.
+			// On verifie que (1) le validateur magic-bytes passe through pour
+			// application/octet-stream (pas dans MAGIC_MAP), et (2) l'allowlist
+			// MESSAGE accepte ce MIME.
+			const encryptedBuffer = Buffer.from([0x9f, 0x7c, 0x44, 0xa1, 0x02, 0x33, 0xbe, 0xee]);
+			const e2eeFile: Express.Multer.File = {
+				originalname: 'encrypted.bin',
+				mimetype: 'application/octet-stream',
+				size: encryptedBuffer.length,
+				buffer: encryptedBuffer,
+			} as unknown as Express.Multer.File;
+
+			const media = makeMedia({ contentType: 'application/octet-stream' });
+			mockMediaRepository.save.mockResolvedValue(media);
+
+			const result = await service.upload('user-uuid-1', e2eeFile, MediaContext.MESSAGE);
+
+			expect(result).toHaveProperty('media_id');
+			expect(mockStorageService.upload).toHaveBeenCalled();
+		});
+
+		it('still rejects application/octet-stream for AVATAR and GROUP_ICON contexts', async () => {
+			// L'exception octet-stream est scopee a MESSAGE pour ne pas affaiblir
+			// les uploads avatar / group icon ou un blob opaque n'a pas de sens.
+			const opaque: Express.Multer.File = {
+				originalname: 'encrypted.bin',
+				mimetype: 'application/octet-stream',
+				size: 8,
+				buffer: Buffer.from([0x9f, 0x7c, 0x44, 0xa1, 0x02, 0x33, 0xbe, 0xee]),
+			} as unknown as Express.Multer.File;
+
+			await expect(service.upload('user-uuid-1', opaque, MediaContext.AVATAR)).rejects.toThrow(
+				/not allowed for context/
+			);
+			await expect(service.upload('user-uuid-1', opaque, MediaContext.GROUP_ICON)).rejects.toThrow(
+				/not allowed for context/
+			);
+		});
+
 		// WHISPR-1371: defense-in-depth, magic-bytes doit etre verifie AVANT le MIME allowlist
 		it('rejects via magic-bytes before MIME allowlist when content is spoofed', async () => {
 			// MIME 'application/pdf' n'est pas dans l'allowlist AVATAR mais EST dans MAGIC_MAP.
