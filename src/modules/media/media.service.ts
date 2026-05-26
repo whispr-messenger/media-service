@@ -351,7 +351,25 @@ export class MediaService {
 					media.sharedWith = null;
 				}
 
-				await this.dataSource.transaction((manager) => this.mediaRepository.save(media, manager));
+				try {
+					await this.dataSource.transaction((manager) => this.mediaRepository.save(media, manager));
+				} catch (dbErr) {
+					// Nettoyage des blobs S3 déjà uploadés pour éviter les orphelins permanents
+					// (avatars/ et group_icons/ n'ont pas de lifecycle TTL contrairement à messages/).
+					await this.storageService.delete(storagePath).catch((s3Err: unknown) => {
+						this.logger.error(
+							`S3 orphan cleanup failed for ${storagePath}: ${s3Err instanceof Error ? s3Err.message : String(s3Err)}`
+						);
+					});
+					if (thumbnailPath) {
+						await this.storageService.delete(thumbnailPath).catch((s3Err: unknown) => {
+							this.logger.error(
+								`S3 orphan cleanup failed for thumbnail ${thumbnailPath}: ${s3Err instanceof Error ? s3Err.message : String(s3Err)}`
+							);
+						});
+					}
+					throw dbErr;
+				}
 
 				// cache l'entree de dedup
 				await this.cache.set(dedupKey, id, DEDUP_CACHE_TTL_MS);

@@ -135,4 +135,117 @@ describe('validateMagicBytes()', () => {
 	it('rejects WAV bytes declared as image/webp (RIFF+WAVE not RIFF+WEBP)', () => {
 		expect(() => validateMagicBytes(wav, 'image/webp')).toThrow(UnsupportedMediaTypeException);
 	});
+
+	// HEIC brands : heic (ancien), heix (iPhone 14/15), hevc
+	it('passes image/heic with brand heic (ftyp box at offset 4)', () => {
+		// box size (4 bytes) + "ftypheic"
+		const heicBuf = Buffer.from([
+			0x00,
+			0x00,
+			0x00,
+			0x18, // box size
+			0x66,
+			0x74,
+			0x79,
+			0x70, // ftyp
+			0x68,
+			0x65,
+			0x69,
+			0x63, // heic
+			0x00,
+			0x00,
+			0x00,
+			0x00,
+		]);
+		expect(() => validateMagicBytes(heicBuf, 'image/heic')).not.toThrow();
+	});
+
+	it('passes image/heic with brand heix (iPhone 14/15)', () => {
+		const heixBuf = Buffer.from([
+			0x00,
+			0x00,
+			0x00,
+			0x18,
+			0x66,
+			0x74,
+			0x79,
+			0x70, // ftyp
+			0x68,
+			0x65,
+			0x69,
+			0x78, // heix
+			0x00,
+			0x00,
+			0x00,
+			0x00,
+		]);
+		expect(() => validateMagicBytes(heixBuf, 'image/heic')).not.toThrow();
+	});
+
+	it('passes image/heic with brand hevc', () => {
+		const hevcBuf = Buffer.from([
+			0x00,
+			0x00,
+			0x00,
+			0x18,
+			0x66,
+			0x74,
+			0x79,
+			0x70, // ftyp
+			0x68,
+			0x65,
+			0x76,
+			0x63, // hevc
+			0x00,
+			0x00,
+			0x00,
+			0x00,
+		]);
+		expect(() => validateMagicBytes(hevcBuf, 'image/heic')).not.toThrow();
+	});
+
+	it('rejects unknown HEIC brand declared as image/heic', () => {
+		const unknownBuf = Buffer.from([
+			0x00,
+			0x00,
+			0x00,
+			0x18,
+			0x66,
+			0x74,
+			0x79,
+			0x70, // ftyp
+			0x78,
+			0x78,
+			0x78,
+			0x78, // xxxx - brand inconnu
+			0x00,
+			0x00,
+			0x00,
+			0x00,
+		]);
+		expect(() => validateMagicBytes(unknownBuf, 'image/heic')).toThrow(UnsupportedMediaTypeException);
+	});
+
+	// HEIF brands : mif1 (existant), msf1 (Live Photos)
+	it('passes image/heif with brand msf1 (Live Photos)', () => {
+		const msf1Buf = Buffer.from([
+			0x00,
+			0x00,
+			0x00,
+			0x18,
+			0x66,
+			0x74,
+			0x79,
+			0x70, // ftyp
+			0x6d,
+			0x73,
+			0x66,
+			0x31, // msf1
+			0x00,
+			0x00,
+			0x00,
+			0x00,
+		]);
+		expect(() => validateMagicBytes(msf1Buf, 'image/heif')).not.toThrow();
+	});
 });
