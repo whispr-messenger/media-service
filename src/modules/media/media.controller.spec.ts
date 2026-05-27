@@ -1,11 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, UnprocessableEntityException } from '@nestjs/common';
 import { MediaController, UPLOAD_MAX_BYTES } from './media.controller';
 import { MediaService } from './media.service';
 import { MediaContext, UploadMediaDto } from './dto/upload-media.dto';
 import type { Request } from 'express';
 
-const makeReq = (userId: string): Request => ({ user: { userId } }) as unknown as Request;
+const makeReq = (userId: string, extraHeaders: Record<string, string> = {}): Request =>
+	({ user: { userId }, headers: extraHeaders, socket: {} }) as unknown as Request;
 
 const mockMediaService = {
 	upload: jest.fn(),
@@ -19,6 +20,7 @@ const mockMediaService = {
 	getUserQuota: jest.fn(),
 	getUserMedia: jest.fn(),
 	logAccess: jest.fn(),
+	enforceE2EEContentType: jest.fn(),
 };
 
 describe('MediaController', () => {
@@ -36,7 +38,13 @@ describe('MediaController', () => {
 	});
 
 	describe('upload()', () => {
+		// context=message necessite desormais un conversationId - on le passe via header
 		const dto: UploadMediaDto = { context: MediaContext.MESSAGE, ownerId: 'user-uuid-1' };
+		const dtoWithConv: UploadMediaDto = {
+			context: MediaContext.MESSAGE,
+			ownerId: 'user-uuid-1',
+			conversationId: 'conv-test-uuid',
+		};
 		const file = {
 			originalname: 'photo.jpg',
 			mimetype: 'image/jpeg',
@@ -54,9 +62,10 @@ describe('MediaController', () => {
 				size: 2048,
 			};
 			mockMediaService.upload.mockResolvedValue(expected);
+			mockMediaService.enforceE2EEContentType.mockResolvedValue(undefined);
 
 			const result = await controller.upload(
-				makeReq('user-uuid-1'),
+				makeReq('user-uuid-1', { 'x-conversation-id': 'conv-test-uuid' }),
 				{ file: [file], thumbnail: [] },
 				dto
 			);
@@ -66,19 +75,31 @@ describe('MediaController', () => {
 
 		it('throws BadRequestException when no file is provided', async () => {
 			await expect(
-				controller.upload(makeReq('user-uuid-1'), { file: [], thumbnail: [] }, dto)
+				controller.upload(
+					makeReq('user-uuid-1', { 'x-conversation-id': 'conv-test' }),
+					{ file: [], thumbnail: [] },
+					dto
+				)
 			).rejects.toThrow(BadRequestException);
 		});
 
 		it('throws BadRequestException when authenticated user is missing', async () => {
-			const req = { user: {} } as unknown as Request;
-			await expect(controller.upload(req, { file: [file], thumbnail: [] }, dto)).rejects.toThrow(
-				BadRequestException
-			);
+			const req = {
+				user: {},
+				headers: { 'x-conversation-id': 'conv-x' },
+				socket: {},
+			} as unknown as Request;
+			await expect(
+				controller.upload(req, { file: [file], thumbnail: [] }, dtoWithConv)
+			).rejects.toThrow(BadRequestException);
 		});
 
 		it('throws BadRequestException when ownerId does not match authenticated user', async () => {
-			const mismatchDto: UploadMediaDto = { context: MediaContext.MESSAGE, ownerId: 'other-user' };
+			const mismatchDto: UploadMediaDto = {
+				context: MediaContext.MESSAGE,
+				ownerId: 'other-user',
+				conversationId: 'conv-mismatch',
+			};
 			await expect(
 				controller.upload(makeReq('user-uuid-1'), { file: [file] }, mismatchDto)
 			).rejects.toThrow(BadRequestException);
@@ -87,6 +108,71 @@ describe('MediaController', () => {
 		// WHISPR-1013: guard against unbounded uploads at the multer layer
 		it('exposes a 100 MB upload ceiling via UPLOAD_MAX_BYTES', () => {
 			expect(UPLOAD_MAX_BYTES).toBe(100 * 1024 * 1024);
+		});
+
+		// WHISPR-E2EE defense in depth
+		it('throws BadRequestException quand context=message et conversationId absent', async () => {
+			const dtoMessage: UploadMediaDto = { context: MediaContext.MESSAGE, ownerId: 'user-uuid-1' };
+			await expect(
+				controller.upload(makeReq('user-uuid-1'), { file: [file] }, dtoMessage)
+			).rejects.toThrow(BadRequestException);
+		});
+
+		it('passe la validation quand X-Conversation-Id header present (conv plaintext)', async () => {
+			mockMediaService.enforceE2EEContentType.mockResolvedValue(undefined);
+			mockMediaService.upload.mockResolvedValue({ media_id: 'm-1' });
+			const dtoMessage: UploadMediaDto = { context: MediaContext.MESSAGE, ownerId: 'user-uuid-1' };
+
+			const result = await controller.upload(
+				makeReq('user-uuid-1', { 'x-conversation-id': 'conv-abc' }),
+				{ file: [file] },
+				dtoMessage
+			);
+
+			expect(mockMediaService.enforceE2EEContentType).toHaveBeenCalledWith('conv-abc', 'image/jpeg');
+			expect(result).toEqual({ media_id: 'm-1' });
+		});
+
+		it('passe la validation quand conversationId dans le body', async () => {
+			mockMediaService.enforceE2EEContentType.mockResolvedValue(undefined);
+			mockMediaService.upload.mockResolvedValue({ media_id: 'm-2' });
+			const dtoMessage: UploadMediaDto = {
+				context: MediaContext.MESSAGE,
+				ownerId: 'user-uuid-1',
+				conversationId: 'conv-body-123',
+			};
+
+			await controller.upload(makeReq('user-uuid-1'), { file: [file] }, dtoMessage);
+
+			expect(mockMediaService.enforceE2EEContentType).toHaveBeenCalledWith(
+				'conv-body-123',
+				'image/jpeg'
+			);
+		});
+
+		it('propage UnprocessableEntityException quand enforceE2EEContentType refuse', async () => {
+			mockMediaService.enforceE2EEContentType.mockRejectedValue(
+				new UnprocessableEntityException('plaintext_media_not_allowed_on_e2ee_conversation')
+			);
+			const dtoMessage: UploadMediaDto = {
+				context: MediaContext.MESSAGE,
+				ownerId: 'user-uuid-1',
+				conversationId: 'conv-e2ee',
+			};
+
+			await expect(
+				controller.upload(makeReq('user-uuid-1'), { file: [file] }, dtoMessage)
+			).rejects.toThrow(UnprocessableEntityException);
+		});
+
+		it('ne demande pas de conversationId pour context=avatar', async () => {
+			mockMediaService.upload.mockResolvedValue({ media_id: 'm-3' });
+			const dtoAvatar: UploadMediaDto = { context: MediaContext.AVATAR, ownerId: 'user-uuid-1' };
+
+			await controller.upload(makeReq('user-uuid-1'), { file: [file] }, dtoAvatar);
+
+			// enforceE2EEContentType ne doit pas etre appele quand pas de conversationId
+			expect(mockMediaService.enforceE2EEContentType).not.toHaveBeenCalled();
 		});
 	});
 

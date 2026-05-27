@@ -9,6 +9,7 @@ import {
 	PayloadTooLargeException,
 	ServiceUnavailableException,
 	StreamableFile,
+	UnprocessableEntityException,
 	UnsupportedMediaTypeException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -42,6 +43,10 @@ import {
 	DEFAULT_FILES_LIMIT,
 	DEFAULT_DAILY_UPLOAD_LIMIT,
 } from './quota.constants';
+import { MessagingService } from './messaging.service';
+
+// content-type attendu pour les blobs E2EE (ciphertext opaque)
+const E2EE_REQUIRED_CONTENT_TYPE = 'application/octet-stream';
 
 // limites de taille des blobs par contexte (en bytes)
 const CONTEXT_SIZE_LIMITS: Record<MediaContext, number> = {
@@ -86,15 +91,19 @@ const CONTEXT_MIME_ALLOWLIST: Record<MediaContext, Set<string>> = {
 		'audio/wav',
 		'audio/mp4',
 		'audio/aac',
-		'audio/x-m4a',
-		'audio/m4a',
-		'audio/x-caf',
 		'application/pdf',
 		'application/msword',
 		'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 		'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
 		'application/vnd.openxmlformats-officedocument.presentationml.presentation',
 		'application/zip',
+		// E2EE-encrypted blobs : le client (Signal) chiffre les bytes avant upload,
+		// donc les magic-bytes ne correspondent plus au MIME d'origine. On accepte
+		// `application/octet-stream` comme MIME opaque ; le MIME reel est preserve
+		// cote messaging-service dans la metadata du message pour le destinataire.
+		// `application/octet-stream` n'est pas dans MAGIC_MAP -> passe through le
+		// validateur magic-bytes sans rejection.
+		'application/octet-stream',
 	]),
 	[MediaContext.AVATAR]: new Set([
 		'image/jpeg',
@@ -149,7 +158,8 @@ export class MediaService {
 		private readonly accessLogRepo: Repository<MediaAccessLog>,
 		@Inject(REDIS_CLIENT) private readonly redisClient: ReturnType<typeof createClient>,
 		private readonly metricsService: MetricsService,
-		private readonly groupService: GroupService
+		private readonly groupService: GroupService,
+		private readonly messagingService: MessagingService
 	) {
 		// 1h limite fenetre d'exploitation post-revoke (was 7j)
 		this.signedUrlExpirySeconds = this.configService.get<number>('SIGNED_URL_EXPIRY_SECONDS', 60 * 60);
@@ -192,6 +202,28 @@ export class MediaService {
 
 	private get presignerClient(): S3 | S3Client {
 		return this.presigner ?? (this.s3 as unknown as S3Client);
+	}
+
+	// =========================================================================
+	// E2EE defense in depth
+	// =========================================================================
+
+	/**
+	 * Verifie qu'un upload est compatible avec l'etat E2EE de la conversation.
+	 *
+	 * - Conv E2EE + content-type != application/octet-stream → 422
+	 * - Conv plaintext → aucune restriction supplementaire
+	 *
+	 * Fail-open : si messaging-service est injoignable, on laisse passer.
+	 */
+	async enforceE2EEContentType(conversationId: string, contentType: string): Promise<void> {
+		const isE2EE = await this.messagingService.isConversationE2EE(conversationId);
+		if (isE2EE && contentType !== E2EE_REQUIRED_CONTENT_TYPE) {
+			throw new UnprocessableEntityException({
+				error: 'plaintext_media_not_allowed_on_e2ee_conversation',
+				message: `Conversation ${conversationId} has E2EE enabled - only application/octet-stream is accepted`,
+			});
+		}
 	}
 
 	// =========================================================================
@@ -319,7 +351,25 @@ export class MediaService {
 					media.sharedWith = null;
 				}
 
-				await this.dataSource.transaction((manager) => this.mediaRepository.save(media, manager));
+				try {
+					await this.dataSource.transaction((manager) => this.mediaRepository.save(media, manager));
+				} catch (dbErr) {
+					// Nettoyage des blobs S3 déjà uploadés pour éviter les orphelins permanents
+					// (avatars/ et group_icons/ n'ont pas de lifecycle TTL contrairement à messages/).
+					await this.storageService.delete(storagePath).catch((s3Err: unknown) => {
+						this.logger.error(
+							`S3 orphan cleanup failed for ${storagePath}: ${s3Err instanceof Error ? s3Err.message : String(s3Err)}`
+						);
+					});
+					if (thumbnailPath) {
+						await this.storageService.delete(thumbnailPath).catch((s3Err: unknown) => {
+							this.logger.error(
+								`S3 orphan cleanup failed for thumbnail ${thumbnailPath}: ${s3Err instanceof Error ? s3Err.message : String(s3Err)}`
+							);
+						});
+					}
+					throw dbErr;
+				}
 
 				// cache l'entree de dedup
 				await this.cache.set(dedupKey, id, DEDUP_CACHE_TTL_MS);

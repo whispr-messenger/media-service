@@ -8,7 +8,6 @@ const webm = Buffer.from([0x1a, 0x45, 0xdf, 0xa3, 0x01, 0x00, 0x00, 0x00]);
 
 // MP4: 4 bytes size (any) + "ftyp"
 const mp4 = Buffer.from([0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d]);
-const caf = Buffer.from([0x63, 0x61, 0x66, 0x66, 0x00, 0x01, 0x00, 0x00]);
 
 // WebP: RIFF at 0, 4-byte size, WEBP at 8
 const webp = Buffer.from([
@@ -91,15 +90,6 @@ describe('validateMagicBytes()', () => {
 		expect(() => validateMagicBytes(mp4, 'video/mp4')).not.toThrow();
 	});
 
-	it('passes M4A aliases with MP4 bytes', () => {
-		expect(() => validateMagicBytes(mp4, 'audio/x-m4a')).not.toThrow();
-		expect(() => validateMagicBytes(mp4, 'audio/m4a')).not.toThrow();
-	});
-
-	it('passes CAF with audio/x-caf', () => {
-		expect(() => validateMagicBytes(caf, 'audio/x-caf')).not.toThrow();
-	});
-
 	it('throws UnsupportedMediaTypeException when JPEG bytes are declared as image/png', () => {
 		expect(() => validateMagicBytes(jpeg, 'image/png')).toThrow(UnsupportedMediaTypeException);
 	});
@@ -144,5 +134,118 @@ describe('validateMagicBytes()', () => {
 
 	it('rejects WAV bytes declared as image/webp (RIFF+WAVE not RIFF+WEBP)', () => {
 		expect(() => validateMagicBytes(wav, 'image/webp')).toThrow(UnsupportedMediaTypeException);
+	});
+
+	// HEIC brands : heic (ancien), heix (iPhone 14/15), hevc
+	it('passes image/heic with brand heic (ftyp box at offset 4)', () => {
+		// box size (4 bytes) + "ftypheic"
+		const heicBuf = Buffer.from([
+			0x00,
+			0x00,
+			0x00,
+			0x18, // box size
+			0x66,
+			0x74,
+			0x79,
+			0x70, // ftyp
+			0x68,
+			0x65,
+			0x69,
+			0x63, // heic
+			0x00,
+			0x00,
+			0x00,
+			0x00,
+		]);
+		expect(() => validateMagicBytes(heicBuf, 'image/heic')).not.toThrow();
+	});
+
+	it('passes image/heic with brand heix (iPhone 14/15)', () => {
+		const heixBuf = Buffer.from([
+			0x00,
+			0x00,
+			0x00,
+			0x18,
+			0x66,
+			0x74,
+			0x79,
+			0x70, // ftyp
+			0x68,
+			0x65,
+			0x69,
+			0x78, // heix
+			0x00,
+			0x00,
+			0x00,
+			0x00,
+		]);
+		expect(() => validateMagicBytes(heixBuf, 'image/heic')).not.toThrow();
+	});
+
+	it('passes image/heic with brand hevc', () => {
+		const hevcBuf = Buffer.from([
+			0x00,
+			0x00,
+			0x00,
+			0x18,
+			0x66,
+			0x74,
+			0x79,
+			0x70, // ftyp
+			0x68,
+			0x65,
+			0x76,
+			0x63, // hevc
+			0x00,
+			0x00,
+			0x00,
+			0x00,
+		]);
+		expect(() => validateMagicBytes(hevcBuf, 'image/heic')).not.toThrow();
+	});
+
+	it('rejects unknown HEIC brand declared as image/heic', () => {
+		const unknownBuf = Buffer.from([
+			0x00,
+			0x00,
+			0x00,
+			0x18,
+			0x66,
+			0x74,
+			0x79,
+			0x70, // ftyp
+			0x78,
+			0x78,
+			0x78,
+			0x78, // xxxx - brand inconnu
+			0x00,
+			0x00,
+			0x00,
+			0x00,
+		]);
+		expect(() => validateMagicBytes(unknownBuf, 'image/heic')).toThrow(UnsupportedMediaTypeException);
+	});
+
+	// HEIF brands : mif1 (existant), msf1 (Live Photos)
+	it('passes image/heif with brand msf1 (Live Photos)', () => {
+		const msf1Buf = Buffer.from([
+			0x00,
+			0x00,
+			0x00,
+			0x18,
+			0x66,
+			0x74,
+			0x79,
+			0x70, // ftyp
+			0x6d,
+			0x73,
+			0x66,
+			0x31, // msf1
+			0x00,
+			0x00,
+			0x00,
+			0x00,
+		]);
+		expect(() => validateMagicBytes(msf1Buf, 'image/heif')).not.toThrow();
 	});
 });

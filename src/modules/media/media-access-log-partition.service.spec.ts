@@ -107,4 +107,31 @@ describe('MediaAccessLogPartitionService', () => {
 		const unlockCall = queryMock.mock.calls.find(([sql]: [string]) => sql.includes('pg_advisory_unlock'));
 		expect(unlockCall).toBeDefined();
 	});
+
+	describe('onApplicationBootstrap()', () => {
+		it('crée la partition du mois courant au démarrage', async () => {
+			jest.useFakeTimers();
+			jest.setSystemTime(new Date('2026-05-26T10:00:00Z'));
+
+			await service.onApplicationBootstrap();
+
+			const ddlCall = queryMock.mock.calls.find(([sql]: [string]) => sql.includes('CREATE TABLE'));
+			expect(ddlCall).toBeDefined();
+			const sql: string = ddlCall[0];
+			expect(sql).toContain('media_access_logs_2026_05');
+			expect(sql).toContain("'2026-05-01 00:00:00+00'");
+			expect(sql).toContain("'2026-06-01 00:00:00+00'");
+		});
+
+		it("ne lève pas d'exception si la création échoue (non-bloquant)", async () => {
+			queryMock.mockImplementation((sql: string) => {
+				if (sql.includes('pg_try_advisory_lock'))
+					return Promise.resolve([{ pg_try_advisory_lock: true }]);
+				if (sql.includes('CREATE TABLE')) return Promise.reject(new Error('DB unavailable'));
+				return Promise.resolve(undefined);
+			});
+
+			await expect(service.onApplicationBootstrap()).resolves.toBeUndefined();
+		});
+	});
 });

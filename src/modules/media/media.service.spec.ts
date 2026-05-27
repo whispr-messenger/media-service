@@ -12,6 +12,7 @@ import { getDataSourceToken, getRepositoryToken } from '@nestjs/typeorm';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { getS3ConnectionToken } from 'nestjs-s3';
 import { MediaService } from './media.service';
+import { MessagingService } from './messaging.service';
 import { MediaRepository } from './repositories/media.repository';
 import { StorageService } from './storage.service';
 import { QuotaService } from './quota.service';
@@ -26,6 +27,12 @@ import { Readable } from 'stream';
 
 jest.mock('@aws-sdk/s3-request-presigner', () => ({
 	getSignedUrl: jest.fn().mockResolvedValue('https://presigned.url/file'),
+}));
+
+jest.mock('./content-safety.validator', () => ({
+	checkImageDimensions: jest.fn().mockResolvedValue(undefined),
+	checkPdfJavaScript: jest.fn().mockReturnValue(undefined),
+	checkClamAv: jest.fn().mockResolvedValue(undefined),
 }));
 
 const makeMedia = (overrides: Partial<Media> = {}): Media =>
@@ -71,6 +78,10 @@ const mockQuotaService = {
 
 const mockGroupService = {
 	isAdmin: jest.fn().mockResolvedValue(true),
+};
+
+const mockMessagingService = {
+	isConversationE2EE: jest.fn().mockResolvedValue(false),
 };
 
 const mockCache = {
@@ -140,9 +151,7 @@ const mockMetricsService = {
 describe('MediaService', () => {
 	let service: MediaService;
 
-	beforeEach(async () => {
-		jest.clearAllMocks();
-
+	beforeAll(async () => {
 		const module: TestingModule = await Test.createTestingModule({
 			providers: [
 				MediaService,
@@ -150,6 +159,7 @@ describe('MediaService', () => {
 				{ provide: StorageService, useValue: mockStorageService },
 				{ provide: QuotaService, useValue: mockQuotaService },
 				{ provide: GroupService, useValue: mockGroupService },
+				{ provide: MessagingService, useValue: mockMessagingService },
 				{ provide: getS3ConnectionToken('default'), useValue: mockS3 },
 				{ provide: ConfigService, useValue: mockConfigService },
 				{ provide: getDataSourceToken(), useValue: mockDataSource },
@@ -164,6 +174,10 @@ describe('MediaService', () => {
 		}).compile();
 
 		service = module.get<MediaService>(MediaService);
+	});
+
+	beforeEach(() => {
+		jest.clearAllMocks();
 	});
 
 	it('wraps RLS-sensitive repository reads and writes in explicit transactions', async () => {
@@ -222,34 +236,48 @@ describe('MediaService', () => {
 		});
 
 		it('refreshes semaphore TTL while an upload is in progress', async () => {
-			jest.useFakeTimers();
+			const media = makeMedia();
+			mockMediaRepository.save.mockResolvedValue(media);
 
-			try {
-				const media = makeMedia();
-				mockMediaRepository.save.mockResolvedValue(media);
+			// Capture le callback de l'interval sans fake timers globaux.
+			// Le spy est installe avant l'appel upload() mais setInterval n'est
+			// appele qu'apres plusieurs awaits internes (incr, expire, autorisation...).
+			let capturedCallback: (() => void) | undefined;
+			const setIntervalSpy = jest
+				.spyOn(globalThis, 'setInterval')
+				.mockImplementation((fn: TimerHandler, _delay?: number) => {
+					capturedCallback = fn as () => void;
+					return 0 as unknown as ReturnType<typeof globalThis.setInterval>;
+				});
 
-				let resolveUpload: (() => void) | undefined;
-				mockStorageService.upload.mockImplementationOnce(
-					() =>
-						new Promise<void>((resolve) => {
-							resolveUpload = resolve;
-						})
-				);
+			let resolveUpload: (() => void) | undefined;
+			mockStorageService.upload.mockImplementationOnce(
+				() =>
+					new Promise<void>((resolve) => {
+						resolveUpload = resolve;
+					})
+			);
 
-				const uploadPromise = service.upload('user-uuid-1', file, MediaContext.MESSAGE);
-				await Promise.resolve();
+			const uploadPromise = service.upload('user-uuid-1', file, MediaContext.MESSAGE);
 
-				expect(mockRedisClient.expire).toHaveBeenCalledTimes(1);
+			// Attendre que setInterval soit appele (plusieurs awaits internes dans upload)
+			// en drainant la microtask queue via setImmediate
+			await new Promise((r) => globalThis.setImmediate(r));
 
-				await jest.advanceTimersByTimeAsync(5 * 60 * 1000);
+			expect(mockRedisClient.expire).toHaveBeenCalledTimes(1);
+			expect(capturedCallback).toBeDefined();
 
-				expect(mockRedisClient.expire).toHaveBeenCalledTimes(2);
+			// Declenche manuellement le callback TTL-refresh
+			capturedCallback!();
+			// Flush les microtasks de la promesse async refresh()
+			await new Promise((r) => globalThis.setImmediate(r));
 
-				resolveUpload?.();
-				await uploadPromise;
-			} finally {
-				jest.useRealTimers();
-			}
+			expect(mockRedisClient.expire).toHaveBeenCalledTimes(2);
+
+			resolveUpload?.();
+			await uploadPromise;
+
+			setIntervalSpy.mockRestore();
 		});
 
 		it('throws 429 HttpException when semaphore is at max', async () => {
@@ -285,6 +313,46 @@ describe('MediaService', () => {
 			);
 		});
 
+		it('accepts application/octet-stream for E2EE-encrypted message uploads', async () => {
+			// E2EE blob : ciphertext opaque, ne matche aucune magic-byte connue.
+			// On verifie que (1) le validateur magic-bytes passe through pour
+			// application/octet-stream (pas dans MAGIC_MAP), et (2) l'allowlist
+			// MESSAGE accepte ce MIME.
+			const encryptedBuffer = Buffer.from([0x9f, 0x7c, 0x44, 0xa1, 0x02, 0x33, 0xbe, 0xee]);
+			const e2eeFile: Express.Multer.File = {
+				originalname: 'encrypted.bin',
+				mimetype: 'application/octet-stream',
+				size: encryptedBuffer.length,
+				buffer: encryptedBuffer,
+			} as unknown as Express.Multer.File;
+
+			const media = makeMedia({ contentType: 'application/octet-stream' });
+			mockMediaRepository.save.mockResolvedValue(media);
+
+			const result = await service.upload('user-uuid-1', e2eeFile, MediaContext.MESSAGE);
+
+			expect(result).toHaveProperty('media_id');
+			expect(mockStorageService.upload).toHaveBeenCalled();
+		});
+
+		it('still rejects application/octet-stream for AVATAR and GROUP_ICON contexts', async () => {
+			// L'exception octet-stream est scopee a MESSAGE pour ne pas affaiblir
+			// les uploads avatar / group icon ou un blob opaque n'a pas de sens.
+			const opaque: Express.Multer.File = {
+				originalname: 'encrypted.bin',
+				mimetype: 'application/octet-stream',
+				size: 8,
+				buffer: Buffer.from([0x9f, 0x7c, 0x44, 0xa1, 0x02, 0x33, 0xbe, 0xee]),
+			} as unknown as Express.Multer.File;
+
+			await expect(service.upload('user-uuid-1', opaque, MediaContext.AVATAR)).rejects.toThrow(
+				/not allowed for context/
+			);
+			await expect(service.upload('user-uuid-1', opaque, MediaContext.GROUP_ICON)).rejects.toThrow(
+				/not allowed for context/
+			);
+		});
+
 		// WHISPR-1371: defense-in-depth, magic-bytes doit etre verifie AVANT le MIME allowlist
 		it('rejects via magic-bytes before MIME allowlist when content is spoofed', async () => {
 			// MIME 'application/pdf' n'est pas dans l'allowlist AVATAR mais EST dans MAGIC_MAP.
@@ -303,6 +371,44 @@ describe('MediaService', () => {
 			// ni l'allowlist ni le storage ne doivent avoir ete atteints
 			expect(mockStorageService.upload).not.toHaveBeenCalled();
 			expect(mockQuotaService.recordUpload).not.toHaveBeenCalled();
+		});
+
+		it('deletes uploaded S3 blob if DB save fails (orphan cleanup)', async () => {
+			// Simule un blob S3 uploadé mais une erreur DB au moment du save.
+			// On vérifie que storageService.delete est appelé sur le storagePath.
+			mockStorageService.buildPath.mockReturnValueOnce('messages/user-uuid-1/new-id.bin');
+			mockMediaRepository.save.mockRejectedValueOnce(new Error('DB constraint violation'));
+
+			await expect(service.upload('user-uuid-1', file, MediaContext.MESSAGE)).rejects.toThrow(
+				'DB constraint violation'
+			);
+
+			expect(mockStorageService.upload).toHaveBeenCalled();
+			expect(mockStorageService.delete).toHaveBeenCalledWith('messages/user-uuid-1/new-id.bin');
+			// quota ne doit pas etre incremente si le save a echoue
+			expect(mockQuotaService.recordUpload).not.toHaveBeenCalled();
+		});
+
+		it('deletes both blob and thumbnail from S3 if DB save fails with thumbnail', async () => {
+			mockStorageService.buildPath
+				.mockReturnValueOnce('messages/user-uuid-1/new-id.bin') // blob
+				.mockReturnValueOnce('thumbnails/user-uuid-1/new-id.bin'); // thumbnail
+			mockMediaRepository.save.mockRejectedValueOnce(new Error('DB down'));
+
+			const thumbBuffer = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]);
+			const thumbnailFile: Express.Multer.File = {
+				originalname: 'thumb.jpg',
+				mimetype: 'image/jpeg',
+				size: thumbBuffer.length,
+				buffer: thumbBuffer,
+			} as unknown as Express.Multer.File;
+
+			await expect(
+				service.upload('user-uuid-1', file, MediaContext.MESSAGE, thumbnailFile)
+			).rejects.toThrow('DB down');
+
+			expect(mockStorageService.delete).toHaveBeenCalledWith('messages/user-uuid-1/new-id.bin');
+			expect(mockStorageService.delete).toHaveBeenCalledWith('thumbnails/user-uuid-1/new-id.bin');
 		});
 	});
 
@@ -1097,6 +1203,47 @@ describe('MediaService', () => {
 			mockAccessLogRepo.save.mockRejectedValueOnce(new Error('DB error'));
 
 			expect(() => service.logAccess('media-1', 'user-1', 'download')).not.toThrow();
+		});
+	});
+
+	describe('enforceE2EEContentType()', () => {
+		it('ne lance pas d exception quand la conv n est pas E2EE', async () => {
+			mockMessagingService.isConversationE2EE.mockResolvedValue(false);
+
+			await expect(service.enforceE2EEContentType('conv-plain', 'image/jpeg')).resolves.toBeUndefined();
+		});
+
+		it('ne lance pas d exception sur conv E2EE avec octet-stream', async () => {
+			mockMessagingService.isConversationE2EE.mockResolvedValue(true);
+
+			await expect(
+				service.enforceE2EEContentType('conv-e2ee', 'application/octet-stream')
+			).resolves.toBeUndefined();
+		});
+
+		it('lance UnprocessableEntityException sur conv E2EE avec image/jpeg', async () => {
+			const { UnprocessableEntityException } = await import('@nestjs/common');
+			mockMessagingService.isConversationE2EE.mockResolvedValue(true);
+
+			await expect(service.enforceE2EEContentType('conv-e2ee', 'image/jpeg')).rejects.toThrow(
+				UnprocessableEntityException
+			);
+		});
+
+		it('lance UnprocessableEntityException sur conv E2EE avec video/mp4', async () => {
+			const { UnprocessableEntityException } = await import('@nestjs/common');
+			mockMessagingService.isConversationE2EE.mockResolvedValue(true);
+
+			await expect(service.enforceE2EEContentType('conv-e2ee', 'video/mp4')).rejects.toThrow(
+				UnprocessableEntityException
+			);
+		});
+
+		it('fail-open si isConversationE2EE retourne false (service injoignable)', async () => {
+			mockMessagingService.isConversationE2EE.mockResolvedValue(false);
+
+			// image/jpeg sur conv fail-open (false) doit passer sans exception
+			await expect(service.enforceE2EEContentType('conv-down', 'image/jpeg')).resolves.toBeUndefined();
 		});
 	});
 });

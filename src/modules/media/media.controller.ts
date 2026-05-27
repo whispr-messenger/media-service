@@ -83,6 +83,10 @@ export class MediaController {
 				thumbnail: { type: 'string', format: 'binary' },
 				context: { type: 'string', enum: Object.values(MediaContext) },
 				ownerId: { type: 'string', format: 'uuid' },
+				conversationId: {
+					type: 'string',
+					description: 'Conversation UUID (required when context=message)',
+				},
 				sharedWith: {
 					type: 'string',
 					description: 'JSON array or CSV of user UUIDs to share with',
@@ -94,6 +98,7 @@ export class MediaController {
 	@ApiResponse({ status: 400, description: 'Validation error' })
 	@ApiResponse({ status: 413, description: 'Quota exceeded or file too large' })
 	@ApiResponse({ status: 415, description: 'Content-Type mismatch (magic bytes)' })
+	@ApiResponse({ status: 422, description: 'Plaintext media refused on E2EE conversation' })
 	@ApiResponse({ status: 429, description: 'Too many concurrent uploads' })
 	@UseInterceptors(
 		FileFieldsInterceptor(
@@ -128,7 +133,26 @@ export class MediaController {
 
 		const context = dto.context ?? MediaContext.MESSAGE;
 
-		this.logger.debug(`Upload request from user ${ownerId} context=${context}`);
+		// WHISPR-E2EE defense in depth : pour les uploads de type message,
+		// le conversationId est obligatoire. Il peut arriver via le header
+		// X-Conversation-Id (priorite) ou le body field conversationId.
+		const conversationId = (req as any).headers?.['x-conversation-id'] ?? dto.conversationId ?? null;
+
+		if (context === MediaContext.MESSAGE && !conversationId) {
+			throw new BadRequestException({
+				error: 'conversation_id_required',
+				message: 'X-Conversation-Id header or conversationId body field required for message uploads',
+			});
+		}
+
+		// Validation E2EE : sur une conv chiffree, seul application/octet-stream est accepte.
+		if (conversationId) {
+			await this.mediaService.enforceE2EEContentType(conversationId, file.mimetype);
+		}
+
+		this.logger.debug(
+			`Upload request from user ${ownerId} context=${context} conv=${conversationId ?? 'none'}`
+		);
 		return this.mediaService.upload(ownerId, file, context, thumbnail, dto.sharedWith);
 	}
 

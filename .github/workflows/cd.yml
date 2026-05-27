@@ -39,10 +39,14 @@ jobs:
     steps:
       - name: Generate GitHub App Token
         id: generate_token
-        uses: tibdex/github-app-token@v2
+        uses: actions/create-github-app-token@v1
         with:
-          app_id: ${{ secrets.ACTIONS_CD }}
-          private_key: ${{ secrets.ACTIONS_CD_PRIVATE_KEY }}
+          app-id: ${{ secrets.ACTIONS_CD }}
+          private-key: ${{ secrets.ACTIONS_CD_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: |
+            media-service
+            infrastructure
 
       - name: Checkout media-service
         uses: actions/checkout@v4
@@ -126,6 +130,9 @@ jobs:
           yq -i ".spec.template.spec.containers[0].image = \"${FULL_IMAGE}\"" k8s/whispr/production/media-service/deployment.yaml
           yq -i ".spec.template.spec.containers[0].image = \"${FULL_IMAGE}\"" k8s/whispr/production/media-service/migration-job.yaml
           yq -i ".spec.template.spec.containers[0].image = \"${FULL_IMAGE}\"" k8s/whispr/preprod/media-service/deployment.yaml
+          if [ -f "k8s/whispr/preprod/media-service/migration-job.yaml" ]; then
+            yq -i ".spec.template.spec.containers[0].image = \"${FULL_IMAGE}\"" k8s/whispr/preprod/media-service/migration-job.yaml
+          fi
 
       - name: Verify update
         run: |
@@ -137,6 +144,10 @@ jobs:
           yq '.spec.template.spec.containers[0].image' k8s/whispr/production/media-service/migration-job.yaml
           echo "Updated preprod deployment manifest:"
           yq '.spec.template.spec.containers[0].image' k8s/whispr/preprod/media-service/deployment.yaml
+          if [ -f "k8s/whispr/preprod/media-service/migration-job.yaml" ]; then
+            echo "Updated preprod migration job manifest:"
+            yq '.spec.template.spec.containers[0].image' k8s/whispr/preprod/media-service/migration-job.yaml
+          fi
 
       - name: Commit and push changes
         run: |
