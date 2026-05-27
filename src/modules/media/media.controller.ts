@@ -231,7 +231,11 @@ export class MediaController {
 	// absorber une rafale d'avatars (un écran de chat en affiche ~10 d'un coup).
 	// Les paliers `medium` (20/10s) et `long` (100/60s) hérités du défaut
 	// continuent de protéger contre l'abus longue durée.
-	@Throttle({ short: { ttl: 1000, limit: 30 } })
+	@Throttle({
+		short: { ttl: 1000, limit: 200 },
+		medium: { ttl: 10_000, limit: 600 },
+		long: { ttl: 60_000, limit: 3000 },
+	})
 	@Get(':id/blob')
 	@ApiOperation({
 		summary: 'Get a presigned GET URL for the blob (or the bytes if stream=1)',
@@ -269,7 +273,11 @@ export class MediaController {
 	// WHISPR-1192: même override que /blob - les thumbnails sont chargés en
 	// même temps que les blobs (ou à leur place pour les vidéos), donc le
 	// même palier court 30/1s s'applique.
-	@Throttle({ short: { ttl: 1000, limit: 30 } })
+	@Throttle({
+		short: { ttl: 1000, limit: 200 },
+		medium: { ttl: 10_000, limit: 600 },
+		long: { ttl: 60_000, limit: 3000 },
+	})
 	@Get(':id/thumbnail')
 	@ApiOperation({
 		summary: 'Get a presigned GET URL for the thumbnail (url=null if none) or the bytes if stream=1',
