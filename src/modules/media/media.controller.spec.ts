@@ -106,8 +106,8 @@ describe('MediaController', () => {
 		});
 
 		// WHISPR-1013: guard against unbounded uploads at the multer layer
-		it('exposes a 100 MB upload ceiling via UPLOAD_MAX_BYTES', () => {
-			expect(UPLOAD_MAX_BYTES).toBe(100 * 1024 * 1024);
+		it('exposes a 200 MB upload ceiling via UPLOAD_MAX_BYTES', () => {
+			expect(UPLOAD_MAX_BYTES).toBe(200 * 1024 * 1024);
 		});
 
 		// WHISPR-E2EE defense in depth

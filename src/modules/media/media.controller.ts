@@ -48,10 +48,11 @@ import { PaginatedMediaResponseDto } from './dto/paginated-media-response.dto';
  * Limite haute appliquee par multer / FileFieldsInterceptor pour qu'un
  * client malveillant ne DoS pas le pod en streamant un body sans borne
  * en memoire (WHISPR-1013). Les limites par contexte
- * (MESSAGE=100MB, AVATAR/GROUP_ICON=5MB) restent enforce au niveau
+ * (MESSAGE=200MB, AVATAR/GROUP_ICON=5MB) restent enforce au niveau
  * service, c'est juste le garde-fou exterieur.
  */
-export const UPLOAD_MAX_BYTES = 100 * 1024 * 1024;
+// 200 MB pour la demo (vide tkts marge MinIO 30 GB) - reduire post-demo
+export const UPLOAD_MAX_BYTES = 200 * 1024 * 1024;
 
 @ApiTags('Media')
 @ApiBearerAuth('bearer')

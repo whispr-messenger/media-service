@@ -50,7 +50,7 @@ const E2EE_REQUIRED_CONTENT_TYPE = 'application/octet-stream';
 
 // limites de taille des blobs par contexte (en bytes)
 const CONTEXT_SIZE_LIMITS: Record<MediaContext, number> = {
-	[MediaContext.MESSAGE]: 100 * 1024 * 1024, // 100 MB
+	[MediaContext.MESSAGE]: 200 * 1024 * 1024, // 200 MB (demo, reduire post-demo)
 	[MediaContext.AVATAR]: 5 * 1024 * 1024, // 5 MB
 	[MediaContext.GROUP_ICON]: 5 * 1024 * 1024, // 5 MB
 };

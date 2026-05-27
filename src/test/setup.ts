@@ -28,7 +28,7 @@ jest.mock('@nestjs/config', () => ({
 				'storage.bucket': process.env.GOOGLE_CLOUD_STORAGE_BUCKET,
 				'grpc.authService.url': process.env.AUTH_SERVICE_URL,
 				'grpc.moderationService.url': process.env.MODERATION_SERVICE_URL,
-				'media.maxFileSize': 100 * 1024 * 1024, // 100MB
+				'media.maxFileSize': 200 * 1024 * 1024, // 200MB
 			};
 			return config[key] || defaultValue;
 		}),
