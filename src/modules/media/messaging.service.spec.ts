@@ -136,4 +136,86 @@ describe('MessagingService', () => {
 			expect(result).toBe(false);
 		});
 	});
+
+	describe('isConversationMember()', () => {
+		it('retourne la valeur cachee (true) sans appel reseau', async () => {
+			mockCache.get.mockResolvedValue(true);
+			const fetchSpy = jest.spyOn(globalThis, 'fetch');
+
+			const result = await service.isConversationMember('conv-1', 'user-1');
+
+			expect(result).toBe(true);
+			expect(mockCache.get).toHaveBeenCalledWith('member:conv:conv-1:user-1');
+			expect(fetchSpy).not.toHaveBeenCalled();
+			fetchSpy.mockRestore();
+		});
+
+		it('appelle messaging-service et cache un membre confirme', async () => {
+			mockCache.get.mockResolvedValue(undefined);
+			mockCache.set.mockResolvedValue(undefined);
+			const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValue({
+				ok: true,
+				status: 200,
+				json: async () => ({ conversation_id: 'conv-1', user_id: 'user-1', is_member: true }),
+			} as Response);
+
+			const result = await service.isConversationMember('conv-1', 'user-1');
+
+			expect(result).toBe(true);
+			expect(mockCache.set).toHaveBeenCalledWith(
+				'member:conv:conv-1:user-1',
+				true,
+				expect.any(Number)
+			);
+			expect(fetchSpy).toHaveBeenCalledWith(
+				expect.stringContaining('/internal/conversations/conv-1/members/user-1'),
+				expect.objectContaining({
+					headers: expect.objectContaining({ 'x-internal-token': 'test-token' }),
+				})
+			);
+			fetchSpy.mockRestore();
+		});
+
+		it('retourne false et ne cache PAS un non-membre', async () => {
+			mockCache.get.mockResolvedValue(undefined);
+			mockCache.set.mockResolvedValue(undefined);
+			const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValue({
+				ok: true,
+				status: 200,
+				json: async () => ({ conversation_id: 'conv-1', user_id: 'user-2', is_member: false }),
+			} as Response);
+
+			const result = await service.isConversationMember('conv-1', 'user-2');
+
+			expect(result).toBe(false);
+			expect(mockCache.set).not.toHaveBeenCalled();
+			fetchSpy.mockRestore();
+		});
+
+		it('retourne false (fail-closed) sur erreur HTTP non-ok', async () => {
+			mockCache.get.mockResolvedValue(undefined);
+			const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValue({
+				ok: false,
+				status: 500,
+				json: async () => ({}),
+			} as Response);
+
+			const result = await service.isConversationMember('conv-1', 'user-1');
+
+			expect(result).toBe(false);
+			fetchSpy.mockRestore();
+		});
+
+		it('retourne false (fail-closed) si messaging-service injoignable', async () => {
+			mockCache.get.mockResolvedValue(undefined);
+			const fetchSpy = jest
+				.spyOn(globalThis, 'fetch')
+				.mockRejectedValue(new Error('ECONNREFUSED'));
+
+			const result = await service.isConversationMember('conv-1', 'user-1');
+
+			expect(result).toBe(false);
+			fetchSpy.mockRestore();
+		});
+	});
 });

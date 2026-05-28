@@ -45,6 +45,15 @@ export class Media {
 	@Column({ name: 'shared_with', type: 'uuid', array: true, nullable: true })
 	sharedWith: string[] | null;
 
+	// Conversation à laquelle ce média MESSAGE est rattaché. Permet d'autoriser
+	// le download par les membres COURANTS de la conversation (via une
+	// vérification de membership live auprès de messaging-service), et pas
+	// seulement le snapshot `shared_with` figé au moment de l'upload.
+	// NULL pour les médias non liés à une conversation (avatars, group_icons)
+	// ou uploadés avant l'ajout de cette colonne.
+	@Column({ name: 'conversation_id', type: 'uuid', nullable: true })
+	conversationId: string | null;
+
 	@CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
 	createdAt: Date;
 

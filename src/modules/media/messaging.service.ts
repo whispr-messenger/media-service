@@ -8,9 +8,20 @@ import { Cache } from 'cache-manager';
 // tout en restant coherent avec les toggles recents de l'utilisateur.
 const E2EE_STATUS_CACHE_TTL_MS = 60_000;
 
+// TTL du cache membership : 30s. Plus court que l'e2ee-status car un
+// changement de membership (join/leave) doit etre reflete rapidement pour
+// l'autorisation de download.
+const MEMBERSHIP_CACHE_TTL_MS = 30_000;
+
 interface E2eeStatusResponse {
 	conversation_id: string;
 	e2ee_enabled: boolean;
+}
+
+interface MemberStatusResponse {
+	conversation_id: string;
+	user_id: string;
+	is_member: boolean;
 }
 
 /**
@@ -57,6 +68,72 @@ export class MessagingService {
 		// On cache meme les false pour eviter les requetes repetees
 		await this.cache.set(cacheKey, result, E2EE_STATUS_CACHE_TTL_MS);
 		return result;
+	}
+
+	/**
+	 * Retourne true si `userId` est membre COURANT et actif de la conversation.
+	 * Resultat mis en cache 30s.
+	 *
+	 * Comportement fail-CLOSED : contrairement a `isConversationE2EE`, on ne
+	 * laisse PAS passer en cas de doute, car ce check est une porte
+	 * d'autorisation (download d'un media). Si messaging-service est injoignable
+	 * ou repond une erreur, on retourne false → l'appelant retombe sur 403.
+	 */
+	async isConversationMember(conversationId: string, userId: string): Promise<boolean> {
+		const cacheKey = `member:conv:${conversationId}:${userId}`;
+		const cached = await this.cache.get<boolean>(cacheKey);
+		if (cached !== undefined && cached !== null) {
+			return cached;
+		}
+
+		const result = await this.fetchMemberStatus(conversationId, userId);
+		// On ne cache QUE les true : un false transitoire (service down, course
+		// avec un join en cours) ne doit pas etre fige 30s et bloquer un membre
+		// legitime au prochain essai.
+		if (result) {
+			await this.cache.set(cacheKey, result, MEMBERSHIP_CACHE_TTL_MS);
+		}
+		return result;
+	}
+
+	private async fetchMemberStatus(conversationId: string, userId: string): Promise<boolean> {
+		if (!this.baseUrl) {
+			this.logger.warn(
+				'MESSAGING_SERVICE_URL non configure - membership non verifiable (fail-closed)'
+			);
+			return false;
+		}
+
+		const url = `${this.baseUrl}/messaging/api/v1/internal/conversations/${encodeURIComponent(conversationId)}/members/${encodeURIComponent(userId)}`;
+		const headers: Record<string, string> = { Accept: 'application/json' };
+		if (this.internalToken) {
+			headers['x-internal-token'] = this.internalToken;
+		}
+
+		const controller = new AbortController();
+		const timer = globalThis.setTimeout(() => controller.abort(), this.timeoutMs);
+
+		try {
+			const response = await fetch(url, { headers, signal: controller.signal });
+
+			if (!response.ok) {
+				this.logger.warn(
+					`messaging-service member-status HTTP ${response.status} pour conv ${conversationId} user ${userId} - fail-closed`
+				);
+				return false;
+			}
+
+			const body = (await response.json()) as MemberStatusResponse;
+			return body.is_member === true;
+		} catch (err) {
+			const msg = err instanceof Error ? err.message : String(err);
+			this.logger.warn(
+				`messaging-service injoignable (${msg}) - fail-closed pour conv ${conversationId} user ${userId}`
+			);
+			return false;
+		} finally {
+			globalThis.clearTimeout(timer);
+		}
 	}
 
 	private async fetchE2eeStatus(conversationId: string): Promise<boolean> {

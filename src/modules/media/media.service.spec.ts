@@ -47,6 +47,7 @@ const makeMedia = (overrides: Partial<Media> = {}): Media =>
 		expiresAt: null,
 		signedUrlExpiresAt: null,
 		sharedWith: null,
+		conversationId: null,
 		isActive: true,
 		createdAt: new Date(),
 		updatedAt: new Date(),
@@ -82,6 +83,7 @@ const mockGroupService = {
 
 const mockMessagingService = {
 	isConversationE2EE: jest.fn().mockResolvedValue(false),
+	isConversationMember: jest.fn().mockResolvedValue(false),
 };
 
 const mockCache = {
@@ -588,6 +590,44 @@ describe('MediaService', () => {
 			mockMediaRepository.findById.mockResolvedValue(media);
 
 			await expect(service.getBlob('media-uuid-1', 'stranger')).rejects.toThrow(ForbiddenException);
+		});
+
+		// Bug fix: a user who JOINED the conversation after the media was uploaded
+		// is absent from the static sharedWith snapshot, but is a CURRENT member.
+		it('allows a current conversation member absent from sharedWith via live membership check', async () => {
+			const media = makeMedia({
+				ownerId: 'owner-1',
+				sharedWith: ['friend-1'],
+				conversationId: 'conv-1',
+			});
+			mockMediaRepository.findById.mockResolvedValue(media);
+			mockMessagingService.isConversationMember.mockResolvedValueOnce(true);
+
+			const result = await service.getBlob('media-uuid-1', 'late-joiner');
+
+			expect(result.url).toBe('https://presigned.url/file');
+			expect(mockMessagingService.isConversationMember).toHaveBeenCalledWith('conv-1', 'late-joiner');
+		});
+
+		it('denies a genuine non-member even when media is conversation-linked', async () => {
+			const media = makeMedia({
+				ownerId: 'owner-1',
+				sharedWith: ['friend-1'],
+				conversationId: 'conv-1',
+			});
+			mockMediaRepository.findById.mockResolvedValue(media);
+			mockMessagingService.isConversationMember.mockResolvedValueOnce(false);
+
+			await expect(service.getBlob('media-uuid-1', 'stranger')).rejects.toThrow(ForbiddenException);
+		});
+
+		it('does not call membership check when media has no conversationId', async () => {
+			const media = makeMedia({ ownerId: 'owner-1', sharedWith: ['friend-1'], conversationId: null });
+			mockMediaRepository.findById.mockResolvedValue(media);
+			mockMessagingService.isConversationMember.mockClear();
+
+			await expect(service.getBlob('media-uuid-1', 'stranger')).rejects.toThrow(ForbiddenException);
+			expect(mockMessagingService.isConversationMember).not.toHaveBeenCalled();
 		});
 
 		// WHISPR-1190: avatars/group_icons stay readable by any authenticated user

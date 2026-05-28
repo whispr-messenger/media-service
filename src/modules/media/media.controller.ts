@@ -154,7 +154,7 @@ export class MediaController {
 		this.logger.debug(
 			`Upload request from user ${ownerId} context=${context} conv=${conversationId ?? 'none'}`
 		);
-		return this.mediaService.upload(ownerId, file, context, thumbnail, dto.sharedWith);
+		return this.mediaService.upload(ownerId, file, context, thumbnail, dto.sharedWith, conversationId);
 	}
 
 	// =========================================================================

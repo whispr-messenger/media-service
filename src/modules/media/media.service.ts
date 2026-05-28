@@ -235,7 +235,8 @@ export class MediaService {
 		file: Express.Multer.File,
 		context: MediaContext,
 		thumbnailFile?: Express.Multer.File,
-		sharedWith?: string[]
+		sharedWith?: string[],
+		conversationId?: string | null
 	): Promise<UploadMediaResponseDto> {
 		// WHISPR-363: Concurrent upload semaphore (max 3 per user)
 		await this.acquireSemaphore(ownerId);
@@ -337,6 +338,7 @@ export class MediaService {
 				media.id = id;
 				media.ownerId = ownerId;
 				media.context = context;
+				media.conversationId = conversationId ?? null;
 				media.storagePath = storagePath;
 				media.thumbnailPath = thumbnailPath;
 				media.contentType = file.mimetype;
@@ -411,11 +413,20 @@ export class MediaService {
 		const cacheKey = `media:meta:${id}`;
 		// Le cache garde la `sharedWith` de façon interne pour pouvoir évaluer
 		// l'ACL sans refaire un round-trip DB. Elle est retirée avant de rendre.
-		type CachedMeta = MediaMetadataDto & { sharedWith?: string[] | null };
+		type CachedMeta = MediaMetadataDto & {
+			sharedWith?: string[] | null;
+			conversationId?: string | null;
+		};
 		const cached = await this.cache.get<CachedMeta>(cacheKey);
 		if (cached) {
-			this.enforceReadAccess(cached.context, cached.ownerId, cached.sharedWith, requesterId);
-			const { sharedWith: _omit, ...dto } = cached;
+			await this.enforceReadAccess(
+				cached.context,
+				cached.ownerId,
+				cached.sharedWith,
+				requesterId,
+				cached.conversationId
+			);
+			const { sharedWith: _omit, conversationId: _omitConv, ...dto } = cached;
 			return dto;
 		}
 
@@ -426,7 +437,13 @@ export class MediaService {
 			throw new NotFoundException(`Media ${id} not found`);
 		}
 
-		this.enforceReadAccess(media.context as MediaContext, media.ownerId, media.sharedWith, requesterId);
+		await this.enforceReadAccess(
+			media.context as MediaContext,
+			media.ownerId,
+			media.sharedWith,
+			requesterId,
+			media.conversationId
+		);
 
 		const dto: MediaMetadataDto = {
 			id: media.id,
@@ -440,7 +457,11 @@ export class MediaService {
 			hasThumbnail: media.thumbnailPath !== null,
 		};
 
-		const cacheEntry: CachedMeta = { ...dto, sharedWith: media.sharedWith };
+		const cacheEntry: CachedMeta = {
+			...dto,
+			sharedWith: media.sharedWith,
+			conversationId: media.conversationId,
+		};
 		await this.cache.set(cacheKey, cacheEntry, META_CACHE_TTL_MS);
 		return dto;
 	}
@@ -461,11 +482,12 @@ export class MediaService {
 				throw new NotFoundException(`Media ${id} not found`);
 			}
 
-			this.enforceReadAccess(
+			await this.enforceReadAccess(
 				media.context as MediaContext,
 				media.ownerId,
 				media.sharedWith,
-				requesterId
+				requesterId,
+				media.conversationId
 			);
 
 			const { url, expiresAt } = await this.getOrGenerateSignedUrl(media, manager);
@@ -503,7 +525,13 @@ export class MediaService {
 
 		// Authz : on vérifie même quand il n'y a pas de thumbnail, pour éviter
 		// de divulguer l'existence d'un média privé via un 404 vs 403.
-		this.enforceReadAccess(media.context as MediaContext, media.ownerId, media.sharedWith, requesterId);
+		await this.enforceReadAccess(
+			media.context as MediaContext,
+			media.ownerId,
+			media.sharedWith,
+			requesterId,
+			media.conversationId
+		);
 
 		// Pas de thumbnail stockée → on renvoie url=null (au lieu de 404), ce qui
 		// permet au client de retomber proprement sur /blob sans parser d'erreur.
@@ -545,7 +573,13 @@ export class MediaService {
 		if (!media) {
 			throw new NotFoundException(`Media ${id} not found`);
 		}
-		this.enforceReadAccess(media.context as MediaContext, media.ownerId, media.sharedWith, requesterId);
+		await this.enforceReadAccess(
+			media.context as MediaContext,
+			media.ownerId,
+			media.sharedWith,
+			requesterId,
+			media.conversationId
+		);
 
 		const bodyStream = await this.storageService.download(media.storagePath);
 		this.writeAccessLog(media.id, requesterId, 'blob', ipAddress, userAgent).catch((err) => {
@@ -574,7 +608,13 @@ export class MediaService {
 		if (!media) {
 			throw new NotFoundException(`Media ${id} not found`);
 		}
-		this.enforceReadAccess(media.context as MediaContext, media.ownerId, media.sharedWith, requesterId);
+		await this.enforceReadAccess(
+			media.context as MediaContext,
+			media.ownerId,
+			media.sharedWith,
+			requesterId,
+			media.conversationId
+		);
 
 		if (!media.thumbnailPath) return null;
 
@@ -806,15 +846,29 @@ export class MediaService {
 	 *   3) utilisateur explicitement listé dans `shared_with`
 	 *      (typiquement, membre de la conversation où le média a été posté)
 	 */
-	private enforceReadAccess(
+	private async enforceReadAccess(
 		context: MediaContext | string,
 		ownerId: string,
 		sharedWith: string[] | null | undefined,
-		requesterId: string
-	): void {
+		requesterId: string,
+		conversationId?: string | null
+	): Promise<void> {
 		if (PUBLIC_READABLE_CONTEXTS.has(context)) return;
 		if (ownerId === requesterId) return;
 		if (sharedWith && sharedWith.includes(requesterId)) return;
+
+		// Fallback : le média est rattaché à une conversation et le demandeur en
+		// est un membre COURANT (même s'il a rejoint après l'upload, donc absent
+		// du snapshot `shared_with`). On interroge messaging-service en live.
+		// Fail-closed : un service injoignable → false → 403 ci-dessous.
+		if (conversationId) {
+			const isMember = await this.messagingService.isConversationMember(
+				conversationId,
+				requesterId
+			);
+			if (isMember) return;
+		}
+
 		throw new ForbiddenException('Access denied');
 	}
 
