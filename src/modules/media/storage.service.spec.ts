@@ -4,6 +4,13 @@ import { getS3ConnectionToken } from 'nestjs-s3';
 import { Readable } from 'stream';
 import { StorageService } from './storage.service';
 
+const mockUploadDone = jest.fn().mockResolvedValue({});
+jest.mock('@aws-sdk/lib-storage', () => ({
+	Upload: jest.fn().mockImplementation(() => ({ done: mockUploadDone })),
+}));
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { Upload: MockUpload } = require('@aws-sdk/lib-storage');
+
 const mockS3 = {
 	send: jest.fn().mockResolvedValue({}),
 	getObject: jest.fn(),
@@ -76,37 +83,41 @@ describe('StorageService', () => {
 	});
 
 	describe('upload', () => {
-		it('should send PutObjectCommand with stream, contentType and contentLength', async () => {
+		it('should build multipart Upload with stream, contentType and contentLength', async () => {
 			const stream = Readable.from(Buffer.from('data'));
 			await service.upload('messages/user-1/uuid-1.bin', stream, 'application/octet-stream', 4);
 
-			expect(mockS3.send).toHaveBeenCalledWith(
+			expect(MockUpload).toHaveBeenCalledWith(
 				expect.objectContaining({
-					input: expect.objectContaining({
+					client: mockS3,
+					params: expect.objectContaining({
 						Bucket: 'test-bucket',
 						Key: 'messages/user-1/uuid-1.bin',
+						Body: stream,
 						ContentType: 'application/octet-stream',
 						ContentLength: 4,
 					}),
+					partSize: 8 * 1024 * 1024,
 				})
 			);
+			expect(mockUploadDone).toHaveBeenCalled();
 		});
 
-		it('should send PutObjectCommand without ContentLength when not provided', async () => {
+		it('should omit ContentLength when not provided', async () => {
 			const stream = Readable.from(Buffer.from('data'));
 			await service.upload('avatars/user-1/uuid-1', stream, 'image/png');
 
-			expect(mockS3.send).toHaveBeenCalledWith(
+			expect(MockUpload).toHaveBeenCalledWith(
 				expect.objectContaining({
-					input: expect.objectContaining({
+					params: expect.objectContaining({
 						Bucket: 'test-bucket',
 						Key: 'avatars/user-1/uuid-1',
 						ContentType: 'image/png',
 					}),
 				})
 			);
-			const call = mockS3.send.mock.calls[0][0];
-			expect(call.input.ContentLength).toBeUndefined();
+			const params = MockUpload.mock.calls[0][0].params;
+			expect(params.ContentLength).toBeUndefined();
 		});
 	});
 

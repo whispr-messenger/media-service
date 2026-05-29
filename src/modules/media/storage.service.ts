@@ -1,8 +1,17 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectS3, S3 } from 'nestjs-s3';
-import { DeleteObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
+import { DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { Upload } from '@aws-sdk/lib-storage';
 import { Readable } from 'stream';
+
+// MinIO en erasure set rejette tout PUT body > 16 MiB ("chunk too big").
+// On reste largement sous cette limite avec un partSize multipart de 8 MiB,
+// ce qui couvre n'importe quelle taille de vidéo chiffrée envoyée par le
+// client. Pour les uploads < 8 MiB, lib-storage retombe sur un PUT unique
+// — donc aucun overhead pour les avatars / thumbnails.
+const MULTIPART_PART_SIZE_BYTES = 8 * 1024 * 1024;
+const MULTIPART_QUEUE_SIZE = 4;
 
 export type StorageContext = 'messages' | 'avatars' | 'group_icons' | 'thumbnails';
 
@@ -68,15 +77,19 @@ export class StorageService {
 		contentLength?: number
 	): Promise<void> {
 		this.logger.debug(`Uploading to ${storagePath}`);
-		await this.s3.send(
-			new PutObjectCommand({
+		const upload = new Upload({
+			client: this.s3,
+			params: {
 				Bucket: this.bucket,
 				Key: storagePath,
 				Body: stream,
 				ContentType: contentType,
 				...(contentLength !== undefined ? { ContentLength: contentLength } : {}),
-			})
-		);
+			},
+			partSize: MULTIPART_PART_SIZE_BYTES,
+			queueSize: MULTIPART_QUEUE_SIZE,
+		});
+		await upload.done();
 	}
 
 	async download(storagePath: string): Promise<Readable> {
